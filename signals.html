@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Login — InvestySignals</title>
-  <meta name="description" content="Login to your InvestySignals account." />
+  <title>Signals — InvestySignals</title>
+  <meta name="description" content="Latest trading signals published to the platform." />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -23,12 +23,16 @@
         <a href="signals.html" data-nav-link>Signals</a>
         <a href="about.html" data-nav-link>About</a>
         <a href="contact.html" data-nav-link>Contact</a>
+        <a href="dashboard.html" data-nav-link data-auth-only style="display:none">Dashboard</a>
+        <a href="analysis.html" data-nav-link data-auth-only style="display:none">Analysis</a>
+        <a href="admin.html" data-nav-link data-admin-only style="display:none">Admin</a>
       </div>
 
       <div class="nav-actions">
         <button class="btn btn-ghost mobile-only" data-mobile-toggle aria-expanded="false" aria-label="Open menu">Menu</button>
+        <a class="btn btn-ghost" href="login.html" data-guest-only>Login</a>
         <a class="btn btn-primary" href="register.html" data-guest-only>Get Started</a>
-        <a class="btn btn-ghost" href="dashboard.html" data-auth-only style="display:none">Dashboard</a>
+        <a class="btn btn-ghost" href="profile.html" data-auth-only style="display:none">Hi, <span data-user-name></span></a>
         <a class="btn btn-danger" href="#" data-auth-only data-logout style="display:none">Logout</a>
       </div>
     </div>
@@ -40,40 +44,44 @@
     <a href="signals.html" data-nav-link>Signals</a>
     <a href="about.html" data-nav-link>About</a>
     <a href="contact.html" data-nav-link>Contact</a>
-    <a href="register.html" data-guest-only>Get Started</a>
     <a href="dashboard.html" data-auth-only style="display:none">Dashboard</a>
+    <a href="analysis.html" data-auth-only style="display:none">Analysis</a>
+    <a href="admin.html" data-admin-only style="display:none">Admin</a>
+    <a href="login.html" data-guest-only>Login</a>
+    <a href="register.html" data-guest-only>Get Started</a>
+    <a href="profile.html" data-auth-only style="display:none">Profile</a>
     <a href="#" data-auth-only data-logout style="display:none">Logout</a>
   </div>
 
   <main class="page">
     <section class="section">
       <div class="container">
-        <div class="card" style="max-width:520px;margin:0 auto">
-          <div class="card-inner" style="padding:24px">
-            <div class="font-display" style="font-weight:700;font-size:1.35rem;letter-spacing:-0.02em">Welcome back</div>
-            <div style="height:8px"></div>
-            <div class="muted">Sign in to your dashboard.</div>
-            <div style="height:16px"></div>
-
-            <form class="form" id="loginForm">
-              <div class="field">
-                <div class="label">Email</div>
-                <input class="input" id="loginEmail" type="email" autocomplete="email" placeholder="you@example.com" required />
-              </div>
-              <div class="field">
-                <div class="label">Password</div>
-                <input class="input" id="loginPassword" type="password" autocomplete="current-password" placeholder="••••••••" required />
-              </div>
-              <button class="btn btn-primary" id="loginBtn" type="submit">Login</button>
-              <div class="hint">No account? <a href="register.html" style="color:var(--accent2);font-weight:700">Create one</a></div>
-            </form>
+        <div class="section-head">
+          <div>
+            <div class="section-title">Signals</div>
+            <div class="muted" style="margin-top:6px">Published signals appear here. Admin can control users and settings from the Admin page.</div>
           </div>
+          <div class="chip"><strong>Feed</strong><span class="muted">Latest 20</span></div>
         </div>
+
+        <div class="grid" id="signalsList" style="gap:12px"></div>
       </div>
     </section>
+
+    <footer class="footer">
+      <div class="container">
+        <div class="fineprint">
+          <span>© <span id="y"></span> InvestySignals</span>
+          <span>Signals feed page</span>
+        </div>
+      </div>
+    </footer>
   </main>
 
   <div class="toast" id="toast"></div>
-  <script type="module" src="./js/login-page.js"></script>
+  <script type="module" src="./js/signals-page.js"></script>
+  <script>
+    document.getElementById('y').textContent = String(new Date().getFullYear());
+  </script>
 </body>
 </html>

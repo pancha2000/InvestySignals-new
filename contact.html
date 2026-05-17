@@ -1,606 +1,154 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Contact Us — InvestySignals</title>
-  <link rel="stylesheet" href="style.css">
-  <style>
-    .contact-page {
-      padding: 6rem 1.5rem 4rem;
-      position: relative;
-      overflow: hidden;
-    }
-    .contact-orb-1 {
-      width: 500px; height: 500px;
-      background: radial-gradient(circle, rgba(245,200,66,0.08) 0%, transparent 65%);
-      top: -100px; right: -100px;
-    }
-    .contact-orb-2 {
-      width: 350px; height: 350px;
-      background: radial-gradient(circle, rgba(77,159,255,0.07) 0%, transparent 65%);
-      bottom: 100px; left: -80px;
-    }
-
-    .contact-header {
-      text-align: center;
-      margin-bottom: 4rem;
-      position: relative; z-index: 1;
-    }
-    .contact-header h1 {
-      font-family: 'Syne', sans-serif;
-      font-size: clamp(2rem, 4vw, 3.2rem);
-      font-weight: 800;
-      letter-spacing: -0.04em;
-      margin: 0.75rem 0;
-    }
-    .contact-header p { font-size: 1.05rem; color: var(--text-muted); line-height: 1.65; }
-
-    /* Layout */
-    .contact-grid {
-      display: grid;
-      grid-template-columns: 1fr 1.6fr;
-      gap: 2rem;
-      max-width: 1050px;
-      margin: 0 auto;
-      position: relative; z-index: 1;
-    }
-
-    /* Info column */
-    .contact-info { display: flex; flex-direction: column; gap: 1rem; }
-
-    .info-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 1.5rem;
-      transition: var(--transition);
-    }
-    .info-card:hover { border-color: rgba(245,200,66,0.28); transform: translateX(4px); }
-
-    .info-card-top {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      margin-bottom: 0.5rem;
-    }
-    .info-icon {
-      width: 40px; height: 40px;
-      border-radius: 10px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 1.1rem;
-      flex-shrink: 0;
-    }
-    .info-card h4 {
-      font-family: 'Syne', sans-serif;
-      font-size: 0.9rem; font-weight: 700;
-      color: var(--text);
-    }
-    .info-card p { font-size: 0.85rem; color: var(--text-muted); line-height: 1.55; }
-    .info-card a { color: var(--gold); transition: var(--transition); }
-    .info-card a:hover { color: var(--gold-light); }
-
-    /* Social */
-    .social-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 1.5rem;
-    }
-    .social-card h4 {
-      font-family: 'Syne', sans-serif;
-      font-size: 0.8rem; font-weight: 700;
-      color: var(--text-dim);
-      text-transform: uppercase; letter-spacing: 0.08em;
-      margin-bottom: 0.85rem;
-    }
-    .social-links { display: flex; flex-direction: column; gap: 0.5rem; }
-
-    .social-link {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      padding: 0.65rem 0.9rem;
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      border-radius: 9px;
-      font-size: 0.85rem;
-      font-weight: 500;
-      color: var(--text-muted);
-      text-decoration: none;
-      transition: var(--transition);
-    }
-    .social-link:hover { border-color: rgba(245,200,66,0.3); color: var(--text); background: var(--bg3); }
-    .social-link .sl-icon { font-size: 1rem; }
-    .social-link .sl-handle { margin-left: auto; font-size: 0.75rem; color: var(--text-dim); }
-
-    /* Form column */
-    .contact-form-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 2.25rem;
-      box-shadow: 0 16px 48px rgba(0,0,0,0.3);
-    }
-
-    .form-title {
-      font-family: 'Syne', sans-serif;
-      font-size: 1.25rem; font-weight: 800;
-      letter-spacing: -0.02em;
-      margin-bottom: 0.35rem;
-    }
-    .form-subtitle { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.75rem; }
-
-    .form-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1rem;
-    }
-
-    .category-select {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 0.5rem;
-      margin-bottom: 1.25rem;
-    }
-    .cat-btn {
-      padding: 0.55rem 0.5rem;
-      background: var(--bg2);
-      border: 1.5px solid var(--border);
-      border-radius: 8px;
-      font-size: 0.75rem;
-      font-weight: 600;
-      color: var(--text-muted);
-      cursor: pointer;
-      transition: var(--transition);
-      text-align: center;
-    }
-    .cat-btn:hover { border-color: rgba(245,200,66,0.3); color: var(--text); }
-    .cat-btn.active { border-color: var(--gold); background: rgba(245,200,66,0.08); color: var(--gold); }
-
-    textarea.form-input {
-      resize: vertical;
-      min-height: 120px;
-      max-height: 280px;
-      font-family: 'DM Sans', sans-serif;
-      line-height: 1.6;
-    }
-
-    .char-count {
-      text-align: right;
-      font-size: 0.72rem;
-      color: var(--text-dim);
-      margin-top: -0.75rem;
-      margin-bottom: 1rem;
-    }
-
-    .send-btn {
-      width: 100%;
-      padding: 0.95rem;
-      background: var(--gold);
-      border: none;
-      border-radius: 10px;
-      font-family: 'Syne', sans-serif;
-      font-size: 1rem; font-weight: 700;
-      color: #0A0B0F;
-      cursor: pointer;
-      transition: var(--transition);
-      display: flex; align-items: center; justify-content: center;
-      gap: 0.5rem;
-      box-shadow: 0 4px 20px rgba(245,200,66,0.25);
-      position: relative; overflow: hidden;
-    }
-    .send-btn::after {
-      content: '';
-      position: absolute; inset: 0;
-      background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, transparent 50%);
-      opacity: 0; transition: opacity 0.3s;
-    }
-    .send-btn:hover { background: var(--gold-light); transform: translateY(-2px); box-shadow: 0 8px 28px rgba(245,200,66,0.4); }
-    .send-btn:hover::after { opacity: 1; }
-    .send-btn:active { transform: translateY(0); }
-    .send-btn.loading { pointer-events: none; opacity: 0.8; }
-    .send-btn .spinner {
-      display: none;
-      width: 18px; height: 18px;
-      border: 2px solid rgba(10,11,15,0.3);
-      border-top-color: #0A0B0F;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-    }
-    .send-btn.loading .btn-label { display: none; }
-    .send-btn.loading .spinner { display: block; }
-
-    .form-note {
-      font-size: 0.75rem;
-      color: var(--text-dim);
-      text-align: center;
-      margin-top: 0.85rem;
-    }
-
-    /* Success state */
-    .success-state {
-      display: none;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      padding: 2rem;
-      gap: 1rem;
-    }
-    .success-state.show { display: flex; animation: fadeUp 0.5s ease both; }
-    .success-icon {
-      width: 72px; height: 72px;
-      background: rgba(34,217,122,0.1);
-      border: 2px solid rgba(34,217,122,0.3);
-      border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 2rem;
-    }
-    .success-state h3 {
-      font-family: 'Syne', sans-serif;
-      font-size: 1.3rem; font-weight: 800;
-      color: var(--text);
-    }
-    .success-state p { font-size: 0.9rem; color: var(--text-muted); line-height: 1.6; }
-
-    /* Toast */
-    .toast {
-      position: fixed;
-      bottom: 2rem; left: 50%;
-      transform: translateX(-50%) translateY(100px);
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 0.85rem 1.5rem;
-      font-size: 0.875rem;
-      display: flex; align-items: center; gap: 0.6rem;
-      z-index: 9999;
-      transition: transform 0.35s cubic-bezier(0.34,1.56,0.64,1);
-      box-shadow: var(--shadow);
-    }
-    .toast.show { transform: translateX(-50%) translateY(0); }
-    .toast.success { border-color: rgba(34,217,122,0.3); color: var(--green); }
-    .toast.error   { border-color: rgba(255,77,109,0.3);  color: var(--red); }
-
-    /* FAQ strip */
-    .faq-strip {
-      max-width: 1050px;
-      margin: 4rem auto 0;
-      position: relative; z-index: 1;
-    }
-    .faq-strip h2 {
-      font-family: 'Syne', sans-serif;
-      font-size: 1.5rem; font-weight: 800;
-      letter-spacing: -0.02em;
-      text-align: center;
-      margin-bottom: 1.5rem;
-    }
-    .faq-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-
-    .faq-mini {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1.25rem;
-      transition: var(--transition);
-    }
-    .faq-mini:hover { border-color: rgba(245,200,66,0.25); }
-    .faq-mini h4 {
-      font-family: 'Syne', sans-serif;
-      font-size: 0.875rem; font-weight: 700;
-      color: var(--text);
-      margin-bottom: 0.4rem;
-      display: flex; align-items: flex-start; gap: 0.5rem;
-    }
-    .faq-mini p { font-size: 0.82rem; color: var(--text-muted); line-height: 1.6; }
-
-    /* Reveal */
-    .reveal { opacity: 0; transform: translateY(25px); transition: opacity 0.65s ease, transform 0.65s ease; }
-    .reveal.visible { opacity: 1; transform: none; }
-
-    @media (max-width: 850px) {
-      .contact-grid { grid-template-columns: 1fr; }
-      .faq-grid     { grid-template-columns: 1fr; }
-      .form-row     { grid-template-columns: 1fr; }
-      .category-select { grid-template-columns: repeat(2, 1fr); }
-    }
-  </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Contact — InvestySignals</title>
+  <meta name="description" content="Contact the InvestySignals team." />
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <div data-announcement style="display:none"></div>
 
-  <nav class="navbar" id="navbar">
-    <a href="index.html" class="nav-logo">
-      <div class="logo-icon">📈</div>
-      Investy<span>Signals</span>
-    </a>
-    <ul class="nav-links">
-      <li><a href="index.html">Home</a></li>
-      <li><a href="pricing.html">Pricing</a></li>
-      <li><a href="about.html">About</a></li>
-      <li><a href="contact.html" class="active">Contact</a></li>
-    </ul>
-    <div class="nav-actions">
-      <a href="login.html" class="btn-outline">Login</a>
-      <a href="register.html" class="btn-primary">Get Started →</a>
+  <nav class="nav" data-nav>
+    <div class="container nav-inner">
+      <a class="brand" href="index.html">
+        <div class="brand-mark"></div>
+        <div class="brand-name">Investy<span class="accent">Signals</span></div>
+      </a>
+
+      <div class="nav-links">
+        <a href="index.html" data-nav-link>Home</a>
+        <a href="pricing.html" data-nav-link>Pricing</a>
+        <a href="signals.html" data-nav-link>Signals</a>
+        <a href="about.html" data-nav-link>About</a>
+        <a href="contact.html" data-nav-link>Contact</a>
+        <a href="dashboard.html" data-nav-link data-auth-only style="display:none">Dashboard</a>
+        <a href="analysis.html" data-nav-link data-auth-only style="display:none">Analysis</a>
+        <a href="admin.html" data-nav-link data-admin-only style="display:none">Admin</a>
+      </div>
+
+      <div class="nav-actions">
+        <button class="btn btn-ghost mobile-only" data-mobile-toggle aria-expanded="false" aria-label="Open menu">Menu</button>
+        <a class="btn btn-ghost" href="login.html" data-guest-only>Login</a>
+        <a class="btn btn-primary" href="register.html" data-guest-only>Get Started</a>
+        <a class="btn btn-ghost" href="profile.html" data-auth-only style="display:none">Hi, <span data-user-name></span></a>
+        <a class="btn btn-danger" href="#" data-auth-only data-logout style="display:none">Logout</a>
+      </div>
     </div>
-    <button class="hamburger" id="hamburger"><span></span><span></span><span></span></button>
   </nav>
 
-  <div class="mobile-menu" id="mobileMenu">
-    <a href="index.html">Home</a>
-    <a href="pricing.html">Pricing</a>
-    <a href="about.html">About</a>
-    <a href="contact.html">Contact</a>
-    <a href="login.html" style="color:var(--gold)">Login</a>
-    <a href="register.html" style="color:var(--gold);font-weight:700">Get Started →</a>
+  <div class="mobile-drawer" data-mobile-drawer>
+    <a href="index.html" data-nav-link>Home</a>
+    <a href="pricing.html" data-nav-link>Pricing</a>
+    <a href="signals.html" data-nav-link>Signals</a>
+    <a href="about.html" data-nav-link>About</a>
+    <a href="contact.html" data-nav-link>Contact</a>
+    <a href="dashboard.html" data-auth-only style="display:none">Dashboard</a>
+    <a href="analysis.html" data-auth-only style="display:none">Analysis</a>
+    <a href="admin.html" data-admin-only style="display:none">Admin</a>
+    <a href="login.html" data-guest-only>Login</a>
+    <a href="register.html" data-guest-only>Get Started</a>
+    <a href="profile.html" data-auth-only style="display:none">Profile</a>
+    <a href="#" data-auth-only data-logout style="display:none">Logout</a>
   </div>
 
-  <div class="page-wrapper contact-page">
-    <div class="glow-orb contact-orb-1"></div>
-    <div class="glow-orb contact-orb-2"></div>
-
-    <div class="contact-header animate-fade-up">
-      <div class="section-label">Get In Touch</div>
-      <h1>We'd Love to Hear<br>From You</h1>
-      <p>Questions, feedback, partnership ideas — ඕනෑම දෙයක් message කරන්න. Hours 24ක් ඇතුළත reply කරනවා.</p>
-    </div>
-
-    <div class="contact-grid">
-
-      <!-- LEFT: Info -->
-      <div class="contact-info reveal">
-
-        <div class="info-card">
-          <div class="info-card-top">
-            <div class="info-icon" style="background:rgba(245,200,66,0.1)">📧</div>
-            <h4>Email Us</h4>
+  <main class="page">
+    <section class="section">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <div class="section-title">Contact</div>
+            <div class="muted" style="margin-top:6px">Questions, feedback, or support — reach out anytime.</div>
           </div>
-          <p>General inquiries:<br><a href="mailto:support@investysignals.com">support@investysignals.com</a></p>
-          <p style="margin-top:0.4rem">Business & partnerships:<br><a href="mailto:business@investysignals.com">business@investysignals.com</a></p>
+          <div class="chip"><strong>Response</strong><span class="muted">24–48 hours</span></div>
         </div>
 
-        <div class="info-card">
-          <div class="info-card-top">
-            <div class="info-icon" style="background:rgba(34,217,122,0.1)">💬</div>
-            <h4>Telegram Support</h4>
-          </div>
-          <p>VIP members ට Telegram direct support available. Join our community:<br>
-            <a href="https://t.me/investysignals" target="_blank">@investysignals</a>
-          </p>
-        </div>
-
-        <div class="info-card">
-          <div class="info-card-top">
-            <div class="info-icon" style="background:rgba(77,159,255,0.1)">⏰</div>
-            <h4>Response Time</h4>
-          </div>
-          <p>General support: <strong style="color:var(--text)">24 hours</strong></p>
-          <p>VIP members: <strong style="color:var(--gold)">2–4 hours</strong></p>
-          <p>Emergency: <strong style="color:var(--green)">Within 1 hour</strong></p>
-        </div>
-
-        <div class="social-card">
-          <h4>Follow Us</h4>
-          <div class="social-links">
-            <a href="#" class="social-link">
-              <span class="sl-icon">📱</span> Telegram
-              <span class="sl-handle">@investysignals</span>
-            </a>
-            <a href="#" class="social-link">
-              <span class="sl-icon">🐦</span> Twitter / X
-              <span class="sl-handle">@investysignals</span>
-            </a>
-            <a href="#" class="social-link">
-              <span class="sl-icon">▶️</span> YouTube
-              <span class="sl-handle">InvestySignals</span>
-            </a>
-            <a href="#" class="social-link">
-              <span class="sl-icon">📸</span> Instagram
-              <span class="sl-handle">@investysignals</span>
-            </a>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- RIGHT: Form -->
-      <div class="contact-form-card reveal" style="transition-delay:0.1s">
-
-        <!-- Form view -->
-        <div id="formView">
-          <div class="form-title">Send Us a Message</div>
-          <div class="form-subtitle">Response time: VIP 2–4 hrs · Free 24 hrs</div>
-
-          <div class="form-group">
-            <label class="form-label">Topic</label>
-            <div class="category-select" id="catSelect">
-              <button class="cat-btn active" onclick="selectCat(this)">🐛 Bug Report</button>
-              <button class="cat-btn" onclick="selectCat(this)">💡 Feature Request</button>
-              <button class="cat-btn" onclick="selectCat(this)">💳 Billing</button>
-              <button class="cat-btn" onclick="selectCat(this)">📡 Signal Issue</button>
-              <button class="cat-btn" onclick="selectCat(this)">🤝 Partnership</button>
-              <button class="cat-btn" onclick="selectCat(this)">❓ General</button>
+        <div class="grid cols-2">
+          <div class="card">
+            <div class="card-inner">
+              <div class="font-display" style="font-weight:700;font-size:1.1rem;letter-spacing:-0.02em">Emails</div>
+              <div style="height:12px"></div>
+              <div class="grid" style="gap:10px">
+                <div class="card" style="background:rgba(0,0,0,0.18)">
+                  <div class="card-inner">
+                    <div class="muted" style="font-size:0.8rem">General</div>
+                    <div style="height:4px"></div>
+                    <div class="font-display" style="font-weight:700">hello@investysignals.store</div>
+                  </div>
+                </div>
+                <div class="card" style="background:rgba(0,0,0,0.18)">
+                  <div class="card-inner">
+                    <div class="muted" style="font-size:0.8rem">Privacy</div>
+                    <div style="height:4px"></div>
+                    <div class="font-display" style="font-weight:700">privacy@investysignals.store</div>
+                  </div>
+                </div>
+                <div class="card" style="background:rgba(0,0,0,0.18)">
+                  <div class="card-inner">
+                    <div class="muted" style="font-size:0.8rem">Legal</div>
+                    <div style="height:4px"></div>
+                    <div class="font-display" style="font-weight:700">legal@investysignals.store</div>
+                  </div>
+                </div>
+              </div>
+              <div style="height:14px"></div>
+              <div class="hint">You can also use the quick form to draft an email.</div>
             </div>
           </div>
 
-          <div class="form-row">
-            <div class="form-group" style="margin:0">
-              <label class="form-label">Your Name</label>
-              <input type="text" id="cName" class="form-input" placeholder="Full name" autocomplete="name">
+          <div class="card">
+            <div class="card-inner">
+              <div class="font-display" style="font-weight:700;font-size:1.1rem;letter-spacing:-0.02em">Quick message</div>
+              <div style="height:12px"></div>
+              <form class="form" id="contactForm">
+                <div class="field">
+                  <div class="label">Subject</div>
+                  <input class="input" id="cSubject" placeholder="Subject" required />
+                </div>
+                <div class="field">
+                  <div class="label">Message</div>
+                  <textarea class="textarea" id="cMessage" placeholder="Write your message..." required></textarea>
+                </div>
+                <button class="btn btn-primary" type="submit">Open email draft</button>
+                <div class="hint">This opens your email client with a pre-filled message.</div>
+              </form>
             </div>
-            <div class="form-group" style="margin:0">
-              <label class="form-label">Email Address</label>
-              <input type="email" id="cEmail" class="form-input" placeholder="your@email.com" autocomplete="email">
-            </div>
           </div>
-          <div style="margin-bottom:1.25rem"></div>
-
-          <div class="form-group">
-            <label class="form-label">Subject</label>
-            <input type="text" id="cSubject" class="form-input" placeholder="Brief subject...">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Message</label>
-            <textarea id="cMessage" class="form-input" placeholder="ඔබේ message detail ලෙස ලියන්න..." maxlength="1000" oninput="updateChar()"></textarea>
-          </div>
-          <div class="char-count"><span id="charNum">0</span>/1000</div>
-
-          <button class="send-btn" id="sendBtn" onclick="sendMessage()">
-            <span class="btn-label">Send Message 📤</span>
-            <div class="spinner"></div>
-          </button>
-          <p class="form-note">🔒 ඔබේ information secure. Spam නෑ.</p>
-        </div>
-
-        <!-- Success view -->
-        <div class="success-state" id="successView">
-          <div class="success-icon">✅</div>
-          <h3>Message Sent!</h3>
-          <p>ඔබේ message සාර්ථකව received. VIP members ට 2–4 hrs, others ට 24 hrs ඇතුළත reply කරනවා.</p>
-          <button onclick="resetForm()" style="padding:0.7rem 1.5rem; background:rgba(245,200,66,0.1); border:1px solid rgba(245,200,66,0.25); border-radius:8px; font-family:'Syne',sans-serif; font-size:0.875rem; font-weight:700; color:var(--gold); cursor:pointer; margin-top:0.5rem;">Send Another →</button>
-        </div>
-
-      </div>
-    </div>
-
-    <!-- FAQ strip -->
-    <div class="faq-strip reveal" style="transition-delay:0.2s">
-      <h2>Quick Answers</h2>
-      <div class="faq-grid">
-        <div class="faq-mini">
-          <h4>🔑 Login issue ද?</h4>
-          <p>Browser cache clear කර try කරන්න. Still stuck? Email support ට "Login Issue" subject ලා message කරන්න.</p>
-        </div>
-        <div class="faq-mini">
-          <h4>💳 Payment failed ද?</h4>
-          <p>Card details re-check කරන්න. Crypto payment prefer නම් USDT (TRC20) available. Billing topic select කර message කරන්න.</p>
-        </div>
-        <div class="faq-mini">
-          <h4>📡 Signal accuracy ගැන?</h4>
-          <p>Historical accuracy 94%+. Signal ගැන specific question ඇත්නම් "Signal Issue" select කරන්න.</p>
-        </div>
-        <div class="faq-mini">
-          <h4>🤝 Partnership ගැන?</h4>
-          <p>Affiliate programs, API resellers, white-label options available. "Partnership" select කර details share කරන්න.</p>
         </div>
       </div>
-    </div>
+    </section>
 
-  </div>
-
-  <!-- FOOTER -->
-  <footer class="footer">
-    <div class="footer-grid">
-      <div class="footer-brand">
-        <a href="index.html" class="nav-logo" style="display:inline-flex">
-          <div class="logo-icon">📈</div>
-          Investy<span>Signals</span>
-        </a>
-        <p>Professional crypto trading signals platform for modern traders.</p>
+    <footer class="footer">
+      <div class="container">
+        <div class="fineprint">
+          <span>© <span id="y"></span> InvestySignals</span>
+          <span>Support via email</span>
+        </div>
       </div>
-      <div class="footer-col">
-        <h4>Platform</h4>
-        <ul>
-          <li><a href="dashboard.html">Dashboard</a></li>
-          <li><a href="pricing.html">Pricing</a></li>
-          <li><a href="register.html">Sign Up</a></li>
-        </ul>
-      </div>
-      <div class="footer-col">
-        <h4>Company</h4>
-        <ul>
-          <li><a href="about.html">About Us</a></li>
-          <li><a href="contact.html">Contact</a></li>
-        </ul>
-      </div>
-      <div class="footer-col">
-        <h4>Legal</h4>
-        <ul>
-          <li><a href="#">Privacy Policy</a></li>
-          <li><a href="#">Terms of Service</a></li>
-          <li><a href="#">Risk Disclaimer</a></li>
-        </ul>
-      </div>
-    </div>
-    <div class="footer-bottom">
-      <p>© 2025 InvestySignals. All rights reserved.</p>
-      <p style="color:var(--text-dim);font-size:0.75rem">Trading involves risk.</p>
-    </div>
-  </footer>
+    </footer>
+  </main>
 
   <div class="toast" id="toast"></div>
+  <script type="module">
+    import { initSiteChrome } from "./js/site.js";
+    import { showToast } from "./js/ui.js";
+    initSiteChrome();
+    document.getElementById('y').textContent = String(new Date().getFullYear());
 
-  <script>
-    // Navbar
-    const navbar = document.getElementById('navbar');
-    window.addEventListener('scroll', () => navbar.classList.toggle('scrolled', window.scrollY > 40));
-    const hamburger = document.getElementById('hamburger');
-    const mobileMenu = document.getElementById('mobileMenu');
-    hamburger.addEventListener('click', () => {
-      hamburger.classList.toggle('open');
-      mobileMenu.classList.toggle('open');
+    const f = document.getElementById('contactForm');
+    f.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const subject = String(document.getElementById('cSubject').value || '').trim();
+      const message = String(document.getElementById('cMessage').value || '').trim();
+      if (!subject || !message) {
+        showToast({ title: 'Missing details', body: 'Please fill subject and message.' });
+        return;
+      }
+      const to = 'hello@investysignals.store';
+      const url = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}`;
+      window.location.href = url;
     });
-
-    // Reveal
-    const io = new IntersectionObserver(entries => {
-      entries.forEach(e => { if(e.isIntersecting){ e.target.classList.add('visible'); io.unobserve(e.target); } });
-    }, { threshold: 0.1 });
-    document.querySelectorAll('.reveal').forEach(el => io.observe(el));
-
-    // Category select
-    function selectCat(btn) {
-      document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-    }
-
-    // Char count
-    function updateChar() {
-      document.getElementById('charNum').textContent = document.getElementById('cMessage').value.length;
-    }
-
-    // Toast
-    function showToast(msg, type='success') {
-      const t = document.getElementById('toast');
-      t.textContent = msg;
-      t.className = `toast ${type} show`;
-      setTimeout(() => t.classList.remove('show'), 3500);
-    }
-
-    // Send
-    function sendMessage() {
-      const name    = document.getElementById('cName').value.trim();
-      const email   = document.getElementById('cEmail').value.trim();
-      const subject = document.getElementById('cSubject').value.trim();
-      const message = document.getElementById('cMessage').value.trim();
-
-      if(!name)    { showToast('⚠️ නම ඇතුලත් කරන්න.', 'error'); return; }
-      if(!email)   { showToast('⚠️ Email ඇතුලත් කරන්න.', 'error'); return; }
-      if(!subject) { showToast('⚠️ Subject ඇතුලත් කරන්න.', 'error'); return; }
-      if(message.length < 10) { showToast('⚠️ Message ටිකක් detail ලෙස ලියන්න.', 'error'); return; }
-
-      const btn = document.getElementById('sendBtn');
-      btn.classList.add('loading');
-
-      // Simulate send (replace with real backend call)
-      setTimeout(() => {
-        btn.classList.remove('loading');
-        document.getElementById('formView').style.display = 'none';
-        document.getElementById('successView').classList.add('show');
-      }, 1500);
-    }
-
-    function resetForm() {
-      document.getElementById('cName').value = '';
-      document.getElementById('cEmail').value = '';
-      document.getElementById('cSubject').value = '';
-      document.getElementById('cMessage').value = '';
-      document.getElementById('charNum').textContent = '0';
-      document.querySelectorAll('.cat-btn').forEach((b,i) => b.classList.toggle('active', i===0));
-      document.getElementById('successView').classList.remove('show');
-      document.getElementById('formView').style.display = 'block';
-    }
   </script>
 </body>
 </html>

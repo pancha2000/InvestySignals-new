@@ -1,599 +1,179 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>InvestySignals — Smart Crypto Trading</title>
-  <link rel="stylesheet" href="style.css">
-  <style>
-    /* ── Hero ── */
-    .hero {
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      padding: 6rem 1.5rem 4rem;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .hero-orb-1 {
-      width: 500px; height: 500px;
-      background: radial-gradient(circle, rgba(245,200,66,0.12) 0%, transparent 70%);
-      top: -100px; left: -150px;
-    }
-    .hero-orb-2 {
-      width: 400px; height: 400px;
-      background: radial-gradient(circle, rgba(77,159,255,0.08) 0%, transparent 70%);
-      bottom: 50px; right: -100px;
-    }
-
-    .hero-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 0.45rem 1rem;
-      background: rgba(245,200,66,0.08);
-      border: 1px solid rgba(245,200,66,0.2);
-      border-radius: 100px;
-      font-size: 0.78rem;
-      font-weight: 600;
-      letter-spacing: 0.05em;
-      color: var(--gold);
-      margin-bottom: 2rem;
-      text-transform: uppercase;
-      animation: fadeUp 0.6s ease both;
-    }
-
-    .hero-badge .dot {
-      width: 7px; height: 7px;
-      background: var(--gold);
-      border-radius: 50%;
-      animation: pulse-ring 1.5s ease-out infinite;
-      box-shadow: 0 0 0 0 rgba(245,200,66,0.5);
-    }
-
-    @keyframes pulse-dot {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(245,200,66,0.5); }
-      50%       { box-shadow: 0 0 0 6px rgba(245,200,66,0); }
-    }
-    .hero-badge .dot { animation: pulse-dot 2s infinite; }
-
-    .hero h1 {
-      font-family: 'Syne', sans-serif;
-      font-size: clamp(2.4rem, 6vw, 5.5rem);
-      font-weight: 800;
-      line-height: 1.1;
-      letter-spacing: -0.04em;
-      color: var(--text);
-      max-width: 900px;
-      margin-bottom: 1.5rem;
-      animation: fadeUp 0.6s 0.1s ease both;
-    }
-
-    .hero h1 .highlight {
-      background: linear-gradient(135deg, var(--gold) 0%, #FF9500 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    .hero-sub {
-      font-size: 1.1rem;
-      color: var(--text-muted);
-      line-height: 1.7;
-      max-width: 520px;
-      margin-bottom: 2.5rem;
-      animation: fadeUp 0.6s 0.2s ease both;
-    }
-
-    .hero-actions {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-      flex-wrap: wrap;
-      justify-content: center;
-      animation: fadeUp 0.6s 0.3s ease both;
-    }
-
-    .btn-ghost {
-      padding: 0.85rem 1.75rem;
-      background: transparent;
-      border: 1.5px solid var(--border);
-      border-radius: 10px;
-      font-family: 'Syne', sans-serif;
-      font-size: 0.95rem;
-      font-weight: 600;
-      color: var(--text-muted);
-      cursor: pointer;
-      transition: var(--transition);
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    .btn-ghost:hover { border-color: rgba(245,200,66,0.4); color: var(--text); }
-
-    /* ── Ticker ── */
-    .ticker-wrap {
-      width: 100%;
-      overflow: hidden;
-      background: var(--bg2);
-      border-top: 1px solid var(--border);
-      border-bottom: 1px solid var(--border);
-      padding: 0.65rem 0;
-      margin-top: 5rem;
-      position: relative;
-      z-index: 1;
-    }
-
-    .ticker-track {
-      display: flex;
-      gap: 3rem;
-      animation: ticker 30s linear infinite;
-      width: max-content;
-    }
-
-    .ticker-item {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      white-space: nowrap;
-      font-size: 0.82rem;
-      font-weight: 600;
-    }
-
-    .ticker-item .t-name { color: var(--text-muted); }
-    .ticker-item .t-price { color: var(--text); font-family: 'Syne', sans-serif; }
-    .ticker-item .t-change.up { color: var(--green); }
-    .ticker-item .t-change.down { color: var(--red); }
-    .ticker-sep { color: var(--text-dim); }
-
-    /* ── Stats ── */
-    .stats-section {
-      padding: 5rem 2rem;
-      max-width: 1100px;
-      margin: 0 auto;
-      position: relative;
-      z-index: 1;
-    }
-
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 1.5rem;
-    }
-
-    .stat-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 2rem 1.5rem;
-      text-align: center;
-      transition: var(--transition);
-      position: relative;
-      overflow: hidden;
-    }
-
-    .stat-card::before {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 2px;
-      background: linear-gradient(90deg, transparent, var(--gold), transparent);
-      opacity: 0;
-      transition: opacity 0.3s;
-    }
-
-    .stat-card:hover { transform: translateY(-4px); border-color: rgba(245,200,66,0.25); }
-    .stat-card:hover::before { opacity: 1; }
-
-    .stat-num {
-      font-family: 'Syne', sans-serif;
-      font-size: 2.5rem;
-      font-weight: 800;
-      color: var(--gold);
-      letter-spacing: -0.03em;
-      margin-bottom: 0.4rem;
-    }
-
-    .stat-label {
-      font-size: 0.82rem;
-      color: var(--text-muted);
-      font-weight: 500;
-    }
-
-    /* ── Features ── */
-    .features-section {
-      padding: 4rem 2rem 6rem;
-      max-width: 1100px;
-      margin: 0 auto;
-      position: relative;
-      z-index: 1;
-    }
-
-    .features-header { text-align: center; margin-bottom: 3.5rem; }
-    .features-header .section-sub { margin: 0.75rem auto 0; }
-
-    .features-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 1.5rem;
-    }
-
-    .feature-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 2rem;
-      transition: var(--transition);
-      position: relative;
-      overflow: hidden;
-    }
-
-    .feature-card::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: radial-gradient(circle at top left, rgba(245,200,66,0.05), transparent 60%);
-      opacity: 0;
-      transition: opacity 0.4s;
-    }
-
-    .feature-card:hover { transform: translateY(-5px); border-color: rgba(245,200,66,0.25); box-shadow: var(--shadow-gold); }
-    .feature-card:hover::after { opacity: 1; }
-
-    .feature-icon {
-      width: 48px; height: 48px;
-      background: rgba(245,200,66,0.1);
-      border: 1px solid rgba(245,200,66,0.2);
-      border-radius: 12px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 1.4rem;
-      margin-bottom: 1.25rem;
-      transition: var(--transition);
-    }
-
-    .feature-card:hover .feature-icon {
-      background: rgba(245,200,66,0.18);
-      transform: scale(1.1);
-    }
-
-    .feature-card h3 {
-      font-family: 'Syne', sans-serif;
-      font-size: 1.05rem;
-      font-weight: 700;
-      color: var(--text);
-      margin-bottom: 0.6rem;
-    }
-
-    .feature-card p {
-      font-size: 0.875rem;
-      color: var(--text-muted);
-      line-height: 1.65;
-    }
-
-    /* ── CTA ── */
-    .cta-section {
-      margin: 0 2rem 5rem;
-      max-width: 1100px;
-      margin-left: auto;
-      margin-right: auto;
-      background: linear-gradient(135deg, var(--surface) 0%, var(--bg3) 100%);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 4rem 3rem;
-      text-align: center;
-      position: relative;
-      overflow: hidden;
-      z-index: 1;
-    }
-
-    .cta-section::before {
-      content: '';
-      position: absolute;
-      top: -50%; left: 50%;
-      transform: translateX(-50%);
-      width: 400px; height: 400px;
-      background: radial-gradient(circle, rgba(245,200,66,0.1) 0%, transparent 60%);
-      pointer-events: none;
-    }
-
-    .cta-section h2 {
-      font-family: 'Syne', sans-serif;
-      font-size: clamp(1.8rem, 3.5vw, 2.8rem);
-      font-weight: 800;
-      letter-spacing: -0.03em;
-      margin-bottom: 1rem;
-    }
-
-    .cta-section p { font-size: 1rem; color: var(--text-muted); margin-bottom: 2rem; }
-
-    /* ── Scroll reveal ── */
-    .reveal {
-      opacity: 0;
-      transform: translateY(25px);
-      transition: opacity 0.65s ease, transform 0.65s ease;
-    }
-    .reveal.visible { opacity: 1; transform: none; }
-
-    @media (max-width: 900px) {
-      .stats-grid { grid-template-columns: repeat(2, 1fr); }
-      .features-grid { grid-template-columns: 1fr; }
-    }
-    @media (max-width: 560px) {
-      .stats-grid { grid-template-columns: 1fr 1fr; }
-      .cta-section { padding: 2.5rem 1.5rem; }
-    }
-  </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>InvestySignals — Crypto Signals, Cleaner Decisions</title>
+  <meta name="description" content="A modern crypto signals platform with a focused dashboard, clean analysis page, and a powerful admin panel." />
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <div data-announcement style="display:none"></div>
 
-  <!-- NAVBAR -->
-  <nav class="navbar" id="navbar">
-    <a href="index.html" class="nav-logo">
-      <div class="logo-icon">📈</div>
-      Investy<span>Signals</span>
-    </a>
-    <ul class="nav-links">
-      <li><a href="index.html" class="active">Home</a></li>
-      <li><a href="pricing.html">Pricing</a></li>
-      <li><a href="about.html">About</a></li>
-      <li><a href="contact.html">Contact</a></li>
-    </ul>
-    <div class="nav-actions">
-      <a href="login.html" class="btn-outline">Login</a>
-      <a href="register.html" class="btn-primary">Get Started →</a>
+  <nav class="nav" data-nav>
+    <div class="container nav-inner">
+      <a class="brand" href="index.html">
+        <div class="brand-mark"></div>
+        <div class="brand-name">Investy<span class="accent">Signals</span></div>
+      </a>
+
+      <div class="nav-links">
+        <a href="index.html" data-nav-link>Home</a>
+        <a href="pricing.html" data-nav-link>Pricing</a>
+        <a href="signals.html" data-nav-link>Signals</a>
+        <a href="about.html" data-nav-link>About</a>
+        <a href="contact.html" data-nav-link>Contact</a>
+        <a href="dashboard.html" data-nav-link data-auth-only style="display:none">Dashboard</a>
+        <a href="analysis.html" data-nav-link data-auth-only style="display:none">Analysis</a>
+        <a href="admin.html" data-nav-link data-admin-only style="display:none">Admin</a>
+      </div>
+
+      <div class="nav-actions">
+        <button class="btn btn-ghost mobile-only" data-mobile-toggle aria-expanded="false" aria-label="Open menu">Menu</button>
+        <a class="btn btn-ghost" href="login.html" data-guest-only>Login</a>
+        <a class="btn btn-primary" href="register.html" data-guest-only>Get Started</a>
+        <a class="btn btn-ghost" href="profile.html" data-auth-only style="display:none">Hi, <span data-user-name></span></a>
+        <a class="btn btn-danger" href="#" data-auth-only data-logout style="display:none">Logout</a>
+      </div>
     </div>
-    <button class="hamburger" id="hamburger" aria-label="Menu">
-      <span></span><span></span><span></span>
-    </button>
   </nav>
 
-  <!-- MOBILE MENU -->
-  <div class="mobile-menu" id="mobileMenu">
-    <a href="index.html">Home</a>
-    <a href="pricing.html">Pricing</a>
-    <a href="about.html">About</a>
-    <a href="contact.html">Contact</a>
-    <a href="login.html" style="color:var(--gold)">Login</a>
-    <a href="register.html" style="color:var(--gold); font-weight:700">Get Started →</a>
+  <div class="mobile-drawer" data-mobile-drawer>
+    <a href="index.html" data-nav-link>Home</a>
+    <a href="pricing.html" data-nav-link>Pricing</a>
+    <a href="signals.html" data-nav-link>Signals</a>
+    <a href="about.html" data-nav-link>About</a>
+    <a href="contact.html" data-nav-link>Contact</a>
+    <a href="dashboard.html" data-nav-link data-auth-only style="display:none">Dashboard</a>
+    <a href="analysis.html" data-nav-link data-auth-only style="display:none">Analysis</a>
+    <a href="admin.html" data-nav-link data-admin-only style="display:none">Admin</a>
+    <a href="login.html" data-guest-only>Login</a>
+    <a href="register.html" data-guest-only>Get Started</a>
+    <a href="profile.html" data-auth-only style="display:none">Profile</a>
+    <a href="#" data-auth-only data-logout style="display:none">Logout</a>
   </div>
 
-  <div class="page-wrapper">
-
-    <!-- HERO -->
-    <section class="hero">
-      <div class="glow-orb hero-orb-1"></div>
-      <div class="glow-orb hero-orb-2"></div>
-
-      <div class="hero-badge">
-        <span class="dot"></span>
-        Live Signal Platform · v2.0
-      </div>
-
-      <h1>
-        Trade Smarter With<br>
-        <span class="highlight">AI-Powered Signals</span>
-      </h1>
-
-      <p class="hero-sub">
-        Real-time crypto market analysis සහ professional trading signals ලබා ගන්න. ඔබේ trading journey නව මට්ටමකට ගෙන යන්න.
-      </p>
-
-      <div class="hero-actions">
-        <a href="register.html" class="btn-primary btn-large">
-          🚀 Start Free Today
-        </a>
-        <a href="pricing.html" class="btn-ghost">
-          View Plans
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-        </a>
-      </div>
-    </section>
-
-    <!-- TICKER -->
-    <div class="ticker-wrap">
-      <div class="ticker-track" id="tickerTrack">
-        <!-- JS fill -->
-      </div>
-    </div>
-
-    <!-- STATS -->
-    <section class="stats-section">
-      <div class="stats-grid">
-        <div class="stat-card reveal">
-          <div class="stat-num" data-target="12400">0</div>
-          <div class="stat-label">Active Traders</div>
+  <main class="page">
+    <section class="section">
+      <div class="container">
+        <div class="card">
+          <div class="card-inner" style="padding:28px">
+            <div class="badge" style="width:fit-content">Modern · Mobile-first · Clean UI</div>
+            <div style="height:14px"></div>
+            <h1 class="h1">Signals with a <span style="color:var(--accent2)">cleaner</span> workflow.</h1>
+            <div style="height:12px"></div>
+            <p class="lead" style="max-width:720px">
+              A redesigned experience focused on speed, clarity, and control. Dashboard stays clean. Analysis lives on its own page. Admin panel gives you real control over users and settings.
+            </p>
+            <div style="height:18px"></div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              <a class="btn btn-primary" href="register.html">Create account</a>
+              <a class="btn btn-ghost" href="pricing.html">View plans</a>
+              <a class="btn btn-ghost" href="signals.html">See signals</a>
+            </div>
+          </div>
         </div>
-        <div class="stat-card reveal" style="transition-delay:0.1s">
-          <div class="stat-num" data-target="94">0</div>
-          <div class="stat-label">Signal Accuracy %</div>
-        </div>
-        <div class="stat-card reveal" style="transition-delay:0.2s">
-          <div class="stat-num" data-target="50000">0</div>
-          <div class="stat-label">Signals Generated</div>
-        </div>
-        <div class="stat-card reveal" style="transition-delay:0.3s">
-          <div class="stat-num">24/7</div>
-          <div class="stat-label">Market Monitoring</div>
+
+        <div style="height:18px"></div>
+
+        <div class="grid cols-3">
+          <div class="card">
+            <div class="card-inner">
+              <div class="font-display" style="font-weight:700;font-size:1.05rem">Dashboard stays focused</div>
+              <div style="height:8px"></div>
+              <div class="hint">No analysis widgets mixed into the dashboard. One place for what matters right now.</div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-inner">
+              <div class="font-display" style="font-weight:700;font-size:1.05rem">Separate Analysis page</div>
+              <div style="height:8px"></div>
+              <div class="hint">Analysis lives on its own page by design. No legacy analysis code is reused.</div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-inner">
+              <div class="font-display" style="font-weight:700;font-size:1.05rem">Admin controls</div>
+              <div style="height:8px"></div>
+              <div class="hint">User management, ban/unban, plan controls, and global website settings in one panel.</div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
 
-    <!-- FEATURES -->
-    <section class="features-section">
-      <div class="features-header reveal">
-        <div class="section-label">Why InvestySignals</div>
-        <h2 class="section-title">Everything You Need to<br>Trade with Confidence</h2>
-        <p class="section-sub">Professional-grade tools, simplified for traders of all levels.</p>
-      </div>
+    <section class="section" style="padding-top:0">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <div class="section-title">What you can manage</div>
+            <div class="muted" style="margin-top:6px">Built to look and feel hand-crafted.</div>
+          </div>
+          <div class="chip"><strong>Admin</strong><span class="muted">User + Site controls</span></div>
+        </div>
 
-      <div class="features-grid">
-        <div class="feature-card reveal">
-          <div class="feature-icon">⚡</div>
-          <h3>Real-Time Analysis</h3>
-          <p>Live market data processing with sub-second signal generation. Never miss a trading opportunity.</p>
-        </div>
-        <div class="feature-card reveal" style="transition-delay:0.1s">
-          <div class="feature-icon">🎯</div>
-          <h3>High Accuracy Signals</h3>
-          <p>RSI, MACD, EMA සහ Order Block indicators combine කර 94%+ accuracy signal deliver කරනවා.</p>
-        </div>
-        <div class="feature-card reveal" style="transition-delay:0.2s">
-          <div class="feature-icon">🛡️</div>
-          <h3>Risk Management</h3>
-          <p>Every signal includes stop-loss and take-profit levels to protect your capital automatically.</p>
-        </div>
-        <div class="feature-card reveal" style="transition-delay:0.1s">
-          <div class="feature-icon">🌐</div>
-          <h3>500+ Crypto Pairs</h3>
-          <p>BTC, ETH, SOL, BNB සිට rare altcoins දක්වා සියලු major trading pairs support කරනවා.</p>
-        </div>
-        <div class="feature-card reveal" style="transition-delay:0.2s">
-          <div class="feature-icon">📊</div>
-          <h3>Portfolio Tracking</h3>
-          <p>Your trades, your performance. Real-time P&L dashboard with beautiful visualizations.</p>
-        </div>
-        <div class="feature-card reveal" style="transition-delay:0.3s">
-          <div class="feature-icon">📱</div>
-          <h3>Mobile Ready</h3>
-          <p>ඕනම device එකෙන් access කරන්න. Responsive design with instant notifications.</p>
+        <div class="grid cols-2">
+          <div class="card">
+            <div class="card-inner">
+              <div class="font-display" style="font-weight:700;font-size:1.05rem">Users</div>
+              <div style="height:8px"></div>
+              <ul style="display:flex;flex-direction:column;gap:10px;list-style:none;color:var(--muted);line-height:1.6">
+                <li>Search and filter users</li>
+                <li>Ban / unban users</li>
+                <li>Change plans: Free / Pro / Elite</li>
+                <li>Soft delete (restore anytime)</li>
+              </ul>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-inner">
+              <div class="font-display" style="font-weight:700;font-size:1.05rem">Website settings</div>
+              <div style="height:8px"></div>
+              <ul style="display:flex;flex-direction:column;gap:10px;list-style:none;color:var(--muted);line-height:1.6">
+                <li>Maintenance mode</li>
+                <li>Announcement banner</li>
+                <li>Consistent navigation across pages</li>
+                <li>Mobile-first layout</li>
+              </ul>
+            </div>
+          </div>
         </div>
       </div>
     </section>
 
-    <!-- CTA -->
-    <section class="cta-section reveal">
-      <h2>Ready to Start Trading<br>the Smart Way?</h2>
-      <p>Join 12,000+ traders who trust InvestySignals for their daily market analysis.</p>
-      <a href="register.html" class="btn-primary btn-large">
-        Create Free Account →
-      </a>
-    </section>
-
-    <!-- FOOTER -->
     <footer class="footer">
-      <div class="footer-grid">
-        <div class="footer-brand">
-          <a href="index.html" class="nav-logo" style="margin-bottom:0.75rem; display:inline-flex;">
-            <div class="logo-icon">📈</div>
-            Investy<span>Signals</span>
-          </a>
-          <p>Professional crypto trading signals and market analysis platform for modern traders.</p>
+      <div class="container">
+        <div class="footer-grid">
+          <div>
+            <div class="footer-title">InvestySignals</div>
+            <div class="footer-text">A redesigned UI with a clean dashboard, separate analysis, and an admin panel built for control.</div>
+          </div>
+          <div class="footer-links">
+            <a href="pricing.html">Pricing</a>
+            <a href="signals.html">Signals</a>
+            <a href="dashboard.html" data-auth-only style="display:none">Dashboard</a>
+          </div>
+          <div class="footer-links">
+            <a href="about.html">About</a>
+            <a href="contact.html">Contact</a>
+            <a href="terms.html">Terms</a>
+            <a href="privacy.html">Privacy</a>
+          </div>
         </div>
-        <div class="footer-col">
-          <h4>Platform</h4>
-          <ul>
-            <li><a href="dashboard.html">Dashboard</a></li>
-            <li><a href="pricing.html">Pricing</a></li>
-            <li><a href="register.html">Sign Up</a></li>
-          </ul>
+        <div class="fineprint">
+          <span>© <span id="y"></span> InvestySignals</span>
+          <span>Built with a mobile-first design system</span>
         </div>
-        <div class="footer-col">
-          <h4>Company</h4>
-          <ul>
-            <li><a href="about.html">About Us</a></li>
-            <li><a href="contact.html">Contact</a></li>
-          </ul>
-        </div>
-        <div class="footer-col">
-          <h4>Legal</h4>
-          <ul>
-            <li><a href="#">Privacy Policy</a></li>
-            <li><a href="#">Terms of Service</a></li>
-            <li><a href="#">Risk Disclaimer</a></li>
-          </ul>
-        </div>
-      </div>
-      <div class="footer-bottom">
-        <p>© 2025 InvestySignals. All rights reserved.</p>
-        <p style="color:var(--text-dim); font-size:0.75rem;">Trading involves risk. Past performance is not indicative of future results.</p>
       </div>
     </footer>
+  </main>
 
-  </div><!-- end page-wrapper -->
+  <div class="toast" id="toast"></div>
 
-  <script>
-    // Navbar scroll
-    const navbar = document.getElementById('navbar');
-    window.addEventListener('scroll', () => {
-      navbar.classList.toggle('scrolled', window.scrollY > 40);
-    });
-
-    // Hamburger
-    const hamburger = document.getElementById('hamburger');
-    const mobileMenu = document.getElementById('mobileMenu');
-    hamburger.addEventListener('click', () => {
-      hamburger.classList.toggle('open');
-      mobileMenu.classList.toggle('open');
-    });
-    document.querySelectorAll('.mobile-menu a').forEach(a => {
-      a.addEventListener('click', () => {
-        hamburger.classList.remove('open');
-        mobileMenu.classList.remove('open');
-      });
-    });
-
-    // Ticker
-    const coins = [
-      { name:'BTC/USDT', price:'67,420', change:'+2.34%', up:true },
-      { name:'ETH/USDT', price:'3,521', change:'+1.87%', up:true },
-      { name:'SOL/USDT', price:'178.4', change:'-0.52%', up:false },
-      { name:'BNB/USDT', price:'598.1', change:'+0.91%', up:true },
-      { name:'XRP/USDT', price:'0.6142', change:'+3.21%', up:true },
-      { name:'ADA/USDT', price:'0.4821', change:'-1.12%', up:false },
-      { name:'DOGE/USDT', price:'0.1723', change:'+5.44%', up:true },
-      { name:'AVAX/USDT', price:'38.72', change:'-0.38%', up:false },
-      { name:'MATIC/USDT', price:'0.8931', change:'+2.10%', up:true },
-      { name:'LINK/USDT', price:'14.52', change:'+1.65%', up:true },
-    ];
-
-    const track = document.getElementById('tickerTrack');
-    const makeItems = () => coins.map(c =>
-      `<div class="ticker-item">
-        <span class="t-name">${c.name}</span>
-        <span class="t-price">$${c.price}</span>
-        <span class="t-change ${c.up ? 'up' : 'down'}">${c.change}</span>
-        <span class="ticker-sep">•</span>
-      </div>`
-    ).join('');
-    track.innerHTML = makeItems() + makeItems(); // duplicate for seamless loop
-
-    // Scroll reveal
-    const reveals = document.querySelectorAll('.reveal');
-    const io = new IntersectionObserver((entries) => {
-      entries.forEach(e => { if(e.isIntersecting) { e.target.classList.add('visible'); io.unobserve(e.target); } });
-    }, { threshold: 0.12 });
-    reveals.forEach(r => io.observe(r));
-
-    // Counter animation
-    function animateCounter(el, target, suffix='') {
-      let start = 0;
-      const duration = 1800;
-      const step = timestamp => {
-        if(!start) start = timestamp;
-        const progress = Math.min((timestamp - start) / duration, 1);
-        const val = Math.floor(progress * target);
-        el.textContent = val.toLocaleString() + suffix;
-        if(progress < 1) requestAnimationFrame(step);
-      };
-      requestAnimationFrame(step);
-    }
-
-    const counterObs = new IntersectionObserver((entries) => {
-      entries.forEach(e => {
-        if(e.isIntersecting) {
-          const el = e.target;
-          const target = parseInt(el.dataset.target);
-          if(target) animateCounter(el, target);
-          counterObs.unobserve(el);
-        }
-      });
-    }, { threshold: 0.5 });
-
-    document.querySelectorAll('[data-target]').forEach(el => counterObs.observe(el));
+  <script type="module">
+    import { initSiteChrome } from "./js/site.js";
+    initSiteChrome();
+    document.getElementById('y').textContent = String(new Date().getFullYear());
   </script>
 </body>
 </html>

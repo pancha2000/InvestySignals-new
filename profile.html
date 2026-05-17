@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Profile — InvestySignals</title>
+  <meta name="description" content="Manage your profile and view your current plan." />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div data-announcement style="display:none"></div>
+
+  <nav class="nav" data-nav>
+    <div class="container nav-inner">
+      <a class="brand" href="index.html">
+        <div class="brand-mark"></div>
+        <div class="brand-name">Investy<span class="accent">Signals</span></div>
+      </a>
+
+      <div class="nav-links">
+        <a href="dashboard.html" data-nav-link data-auth-only style="display:none">Dashboard</a>
+        <a href="analysis.html" data-nav-link data-auth-only style="display:none">Analysis</a>
+        <a href="signals.html" data-nav-link>Signals</a>
+        <a href="pricing.html" data-nav-link>Pricing</a>
+        <a href="about.html" data-nav-link>About</a>
+        <a href="contact.html" data-nav-link>Contact</a>
+        <a href="admin.html" data-nav-link data-admin-only style="display:none">Admin</a>
+      </div>
+
+      <div class="nav-actions">
+        <button class="btn btn-ghost mobile-only" data-mobile-toggle aria-expanded="false" aria-label="Open menu">Menu</button>
+        <a class="btn btn-danger" href="#" data-auth-only data-logout style="display:none">Logout</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="mobile-drawer" data-mobile-drawer>
+    <a href="dashboard.html" data-nav-link data-auth-only style="display:none">Dashboard</a>
+    <a href="analysis.html" data-nav-link data-auth-only style="display:none">Analysis</a>
+    <a href="signals.html" data-nav-link>Signals</a>
+    <a href="pricing.html" data-nav-link>Pricing</a>
+    <a href="about.html" data-nav-link>About</a>
+    <a href="contact.html" data-nav-link>Contact</a>
+    <a href="admin.html" data-nav-link data-admin-only style="display:none">Admin</a>
+    <a href="#" data-auth-only data-logout style="display:none">Logout</a>
+  </div>
+
+  <main class="page">
+    <section class="section">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <div class="section-title">Profile</div>
+            <div class="muted" style="margin-top:6px">Update your display name and view your plan.</div>
+          </div>
+          <div class="chip"><strong>Signed in</strong><span class="muted" id="profileEmail">—</span></div>
+        </div>
+
+        <div class="grid cols-2">
+          <div class="card">
+            <div class="card-inner">
+              <div class="font-display" style="font-weight:700;font-size:1.1rem;letter-spacing:-0.02em">Account</div>
+              <div style="height:12px"></div>
+              <div class="field">
+                <div class="label">Display name</div>
+                <input class="input" id="profileName" placeholder="Your name" />
+              </div>
+              <div style="height:12px"></div>
+              <button class="btn btn-primary" id="profileSave" type="button">Save</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-inner">
+              <div class="font-display" style="font-weight:700;font-size:1.1rem;letter-spacing:-0.02em">Plan</div>
+              <div style="height:12px"></div>
+              <div class="badge" style="width:fit-content">Current</div>
+              <div style="height:10px"></div>
+              <div class="font-display" style="font-size:1.8rem;font-weight:700;letter-spacing:-0.03em" id="profilePlan">—</div>
+              <div style="height:8px"></div>
+              <div class="hint">Admins can change plans from the Admin panel.</div>
+              <div style="height:14px"></div>
+              <a class="btn btn-ghost" href="pricing.html">View pricing</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <div class="container">
+        <div class="fineprint">
+          <span>© <span id="y"></span> InvestySignals</span>
+          <span>Profile page</span>
+        </div>
+      </div>
+    </footer>
+  </main>
+
+  <div class="toast" id="toast"></div>
+  <script type="module" src="./js/profile-page.js"></script>
+  <script>
+    document.getElementById('y').textContent = String(new Date().getFullYear());
+  </script>
+</body>
+</html>

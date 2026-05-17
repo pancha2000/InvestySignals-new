@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Terms of Service — InvestySignals</title>
+  <meta name="description" content="Terms of service for InvestySignals." />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div data-announcement style="display:none"></div>
+
+  <nav class="nav" data-nav>
+    <div class="container nav-inner">
+      <a class="brand" href="index.html">
+        <div class="brand-mark"></div>
+        <div class="brand-name">Investy<span class="accent">Signals</span></div>
+      </a>
+
+      <div class="nav-links">
+        <a href="index.html" data-nav-link>Home</a>
+        <a href="pricing.html" data-nav-link>Pricing</a>
+        <a href="signals.html" data-nav-link>Signals</a>
+        <a href="about.html" data-nav-link>About</a>
+        <a href="contact.html" data-nav-link>Contact</a>
+      </div>
+
+      <div class="nav-actions">
+        <button class="btn btn-ghost mobile-only" data-mobile-toggle aria-expanded="false" aria-label="Open menu">Menu</button>
+        <a class="btn btn-ghost" href="login.html" data-guest-only>Login</a>
+        <a class="btn btn-primary" href="register.html" data-guest-only>Get Started</a>
+        <a class="btn btn-ghost" href="profile.html" data-auth-only style="display:none">Hi, <span data-user-name></span></a>
+        <a class="btn btn-danger" href="#" data-auth-only data-logout style="display:none">Logout</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="mobile-drawer" data-mobile-drawer>
+    <a href="index.html" data-nav-link>Home</a>
+    <a href="pricing.html" data-nav-link>Pricing</a>
+    <a href="signals.html" data-nav-link>Signals</a>
+    <a href="about.html" data-nav-link>About</a>
+    <a href="contact.html" data-nav-link>Contact</a>
+    <a href="login.html" data-guest-only>Login</a>
+    <a href="register.html" data-guest-only>Get Started</a>
+    <a href="profile.html" data-auth-only style="display:none">Profile</a>
+    <a href="#" data-auth-only data-logout style="display:none">Logout</a>
+  </div>
+
+  <main class="page">
+    <section class="section">
+      <div class="container">
+        <div class="card">
+          <div class="card-inner" style="padding:28px">
+            <div class="badge">Terms</div>
+            <div style="height:12px"></div>
+            <div class="font-display" style="font-size:2rem;font-weight:700;letter-spacing:-0.04em">Terms of Service</div>
+            <div style="height:8px"></div>
+            <div class="muted">Last updated: May 2026</div>
+          </div>
+        </div>
+
+        <div style="height:16px"></div>
+
+        <div class="card">
+          <div class="card-inner" style="padding:22px">
+            <div class="badge warn" style="width:fit-content">Disclaimer</div>
+            <div style="height:10px"></div>
+            <div class="hint">
+              InvestySignals provides market information for educational and informational purposes only. Nothing on this website is financial advice. You are responsible for your own decisions and risk management.
+            </div>
+
+            <div style="height:16px"></div>
+            <div class="section-title">Accounts</div>
+            <div style="height:10px"></div>
+            <ul style="padding-left:18px;color:var(--muted);display:flex;flex-direction:column;gap:10px;line-height:1.7">
+              <li>You must provide accurate information when creating an account.</li>
+              <li>Keep your password secure. You are responsible for activity on your account.</li>
+              <li>Admins may ban or delete accounts that violate platform rules.</li>
+            </ul>
+
+            <div style="height:16px"></div>
+            <div class="section-title">Acceptable use</div>
+            <div style="height:10px"></div>
+            <ul style="padding-left:18px;color:var(--muted);display:flex;flex-direction:column;gap:10px;line-height:1.7">
+              <li>No abuse, harassment, or attempts to access restricted areas.</li>
+              <li>No scraping or redistribution of platform content without permission.</li>
+              <li>No automated access that harms performance.</li>
+            </ul>
+
+            <div style="height:16px"></div>
+            <div class="section-title">Contact</div>
+            <div style="height:10px"></div>
+            <div class="hint">For legal questions: <span style="color:var(--accent2);font-weight:700">legal@investysignals.store</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <div class="container">
+        <div class="fineprint">
+          <span>© <span id="y"></span> InvestySignals</span>
+          <span>Terms of service</span>
+        </div>
+      </div>
+    </footer>
+  </main>
+
+  <div class="toast" id="toast"></div>
+  <script type="module">
+    import { initSiteChrome } from "./js/site.js";
+    initSiteChrome();
+    document.getElementById('y').textContent = String(new Date().getFullYear());
+  </script>
+</body>
+</html>

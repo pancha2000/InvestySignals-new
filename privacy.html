@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy — InvestySignals</title>
+  <meta name="description" content="Privacy policy for InvestySignals." />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div data-announcement style="display:none"></div>
+
+  <nav class="nav" data-nav>
+    <div class="container nav-inner">
+      <a class="brand" href="index.html">
+        <div class="brand-mark"></div>
+        <div class="brand-name">Investy<span class="accent">Signals</span></div>
+      </a>
+
+      <div class="nav-links">
+        <a href="index.html" data-nav-link>Home</a>
+        <a href="pricing.html" data-nav-link>Pricing</a>
+        <a href="signals.html" data-nav-link>Signals</a>
+        <a href="about.html" data-nav-link>About</a>
+        <a href="contact.html" data-nav-link>Contact</a>
+      </div>
+
+      <div class="nav-actions">
+        <button class="btn btn-ghost mobile-only" data-mobile-toggle aria-expanded="false" aria-label="Open menu">Menu</button>
+        <a class="btn btn-ghost" href="login.html" data-guest-only>Login</a>
+        <a class="btn btn-primary" href="register.html" data-guest-only>Get Started</a>
+        <a class="btn btn-ghost" href="profile.html" data-auth-only style="display:none">Hi, <span data-user-name></span></a>
+        <a class="btn btn-danger" href="#" data-auth-only data-logout style="display:none">Logout</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="mobile-drawer" data-mobile-drawer>
+    <a href="index.html" data-nav-link>Home</a>
+    <a href="pricing.html" data-nav-link>Pricing</a>
+    <a href="signals.html" data-nav-link>Signals</a>
+    <a href="about.html" data-nav-link>About</a>
+    <a href="contact.html" data-nav-link>Contact</a>
+    <a href="login.html" data-guest-only>Login</a>
+    <a href="register.html" data-guest-only>Get Started</a>
+    <a href="profile.html" data-auth-only style="display:none">Profile</a>
+    <a href="#" data-auth-only data-logout style="display:none">Logout</a>
+  </div>
+
+  <main class="page">
+    <section class="section">
+      <div class="container">
+        <div class="card">
+          <div class="card-inner" style="padding:28px">
+            <div class="badge">Privacy</div>
+            <div style="height:12px"></div>
+            <div class="font-display" style="font-size:2rem;font-weight:700;letter-spacing:-0.04em">Privacy Policy</div>
+            <div style="height:8px"></div>
+            <div class="muted">Last updated: May 2026</div>
+          </div>
+        </div>
+
+        <div style="height:16px"></div>
+
+        <div class="card">
+          <div class="card-inner" style="padding:22px">
+            <div class="section-title">What we collect</div>
+            <div style="height:10px"></div>
+            <ul style="padding-left:18px;color:var(--muted);display:flex;flex-direction:column;gap:10px;line-height:1.7">
+              <li>Account data you provide: email and display name.</li>
+              <li>Basic usage data needed to operate the site (for example, auth sessions).</li>
+              <li>Signals content stored by admins (if published).</li>
+            </ul>
+            <div style="height:14px"></div>
+            <div class="section-title">How we use it</div>
+            <div style="height:10px"></div>
+            <ul style="padding-left:18px;color:var(--muted);display:flex;flex-direction:column;gap:10px;line-height:1.7">
+              <li>To authenticate you and show your dashboard/profile.</li>
+              <li>To protect the platform (ban/unban and admin moderation flags).</li>
+              <li>To show announcements and maintenance mode settings.</li>
+            </ul>
+            <div style="height:14px"></div>
+            <div class="section-title">Third-party services</div>
+            <div style="height:10px"></div>
+            <div class="hint">
+              This site uses Firebase (Google) for authentication and data storage. We do not include AdSense or advertising scripts in this redesigned version.
+            </div>
+            <div style="height:14px"></div>
+            <div class="section-title">Contact</div>
+            <div style="height:10px"></div>
+            <div class="hint">For privacy questions, contact: <span style="color:var(--accent2);font-weight:700">privacy@investysignals.store</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <div class="container">
+        <div class="fineprint">
+          <span>© <span id="y"></span> InvestySignals</span>
+          <span>Privacy policy</span>
+        </div>
+      </div>
+    </footer>
+  </main>
+
+  <div class="toast" id="toast"></div>
+  <script type="module">
+    import { initSiteChrome } from "./js/site.js";
+    initSiteChrome();
+    document.getElementById('y').textContent = String(new Date().getFullYear());
+  </script>
+</body>
+</html>
