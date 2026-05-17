@@ -103,6 +103,22 @@ a {
   z-index: 1000;
 }
 
+/* ── Authenticated Nav ──────────────────────── */
+.auth-nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 64px;
+    background: rgba(13, 16, 24, 0.85);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(245, 200, 66, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    z-index: 1000;
+}
+
 .nav-inner {
   display: flex;
   justify-content: space-between;
@@ -148,6 +164,37 @@ a {
   display: flex;
   gap: 16px;
   align-items: center;
+}
+
+.user-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface);
+    padding: 4px 12px 4px 4px;
+    border-radius: 100px;
+    border: 1px solid var(--border-soft);
+    transition: var(--transition);
+}
+.user-chip:hover { border-color: rgba(245,200,66,0.2); }
+.user-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--gold-dark), var(--gold));
+    color: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 0.78rem;
+    letter-spacing: 0;
+    box-shadow: 0 0 10px rgba(245,200,66,0.3);
+}
+.user-name {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--text-muted);
 }
 
 .hamburger {
@@ -411,7 +458,7 @@ a {
       position: fixed;
       top: 64px;
       left: -100%;
-      width: 250px;
+      width: 260px;
       height: calc(100vh - 64px);
       background: var(--bg2);
       flex-direction: column;
@@ -420,6 +467,7 @@ a {
       border-right: 1px solid var(--border-soft);
       transition: var(--transition);
       gap: 16px;
+      z-index: 1001;
   }
   .auth-nav-menu.open {
       left: 0;
@@ -430,4 +478,18 @@ a {
   .auth-hamburger {
       display: block;
   }
+  .page-title { display: none; }
+  .user-name { display: none; }
+}
+
+/* Global dash-container — consistent top padding under fixed auth-nav */
+.dash-container {
+    padding: 96px 24px 48px;
+    max-width: 1200px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+@media (max-width: 480px) {
+    .dash-container { padding: 88px 16px 32px; }
 }

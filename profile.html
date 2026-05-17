@@ -6,47 +6,10 @@
     <title>Profile | InvestySignals</title>
     <link rel="stylesheet" href="style.css">
     <style>
-        .auth-nav {
-            position: fixed;
-            top: 0; left: 0; right: 0;
-            height: 64px;
-            background: var(--bg2);
-            border-bottom: 1px solid var(--border-soft);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 24px;
-            z-index: 100;
-        }
-        .page-title {
-            font-family: 'Syne', sans-serif;
-            font-weight: 700;
-            color: var(--text);
-            position: absolute;
-            left: 50%;
-            transform: translateX(-50%);
-        }
-        .user-chip {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            background: var(--surface);
-            padding: 6px 12px 6px 6px;
-            border-radius: 100px;
-            border: 1px solid var(--border-soft);
-        }
-        .user-avatar {
-            width: 28px;
-            height: 28px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, var(--gold), #FFF);
-            color: var(--bg);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 700;
-            font-size: 0.8rem;
-        }
+        
+        
+        
+        
         .dash-container {
             padding: 100px 24px 40px;
             max-width: 1000px;
@@ -215,7 +178,7 @@
             .sidebar-menu { flex-direction: row; overflow-x: auto; padding-bottom: 8px; }
             .menu-item { white-space: nowrap; }
             .stats-grid { grid-template-columns: 1fr; }
-            .page-title { display: none; }
+            
             .tab-content { padding: 24px 16px; }
         }
     </style>
@@ -373,24 +336,27 @@
                     <div class="stats-grid">
                         <div class="stat-card">
                             <div class="stat-label">Total Trades</div>
-                            <div class="stat-val">12</div>
+                            <div class="stat-val" id="statTrades">0</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">Win Rate</div>
-                            <div class="stat-val">78%</div>
+                            <div class="stat-val" id="statWinRate" style="color: var(--text-muted);">—</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">Best Trade</div>
-                            <div class="stat-val" style="color: var(--green);">+$340.00</div>
+                            <div class="stat-val" id="statBest" style="color: var(--text-muted);">—</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">Worst Trade</div>
-                            <div class="stat-val" style="color: var(--red);">-$120.50</div>
+                            <div class="stat-val" id="statWorst" style="color: var(--text-muted);">—</div>
                         </div>
                         <div class="stat-card" style="grid-column: span 2;">
                             <div class="stat-label">Total P&L</div>
-                            <div class="stat-val" style="color: var(--green);">+$1,420.50</div>
+                            <div class="stat-val" id="statPL" style="color: var(--text-muted);">$0.00</div>
                         </div>
+                    </div>
+                    <div style="margin-top: 24px; padding: 16px; background: var(--surface); border-radius: var(--radius-sm); font-size: 0.875rem; color: var(--text-muted); text-align: center;">
+                        📋 Complete your first paper trade on the <a href="live-signals.html" style="color: var(--gold);">Paper Trading</a> page to see statistics here.
                     </div>
                 </div>
 
@@ -487,5 +453,33 @@
         document.getElementById('securityForm').addEventListener('submit', (e) => { e.preventDefault(); showToast(); e.target.reset(); pwBar.className='pw-strength-bar'; });
         document.getElementById('prefsForm').addEventListener('submit', (e) => { e.preventDefault(); showToast(); });
     </script>
+
+    <script>
+        
+        const logoutBtn = document.getElementById('logoutBtn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', () => {
+                import("https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js").then(({ getAuth, signOut }) => {
+                    const auth = getAuth();
+                    signOut(auth).then(() => {
+                        sessionStorage.removeItem('user');
+                        window.location.href = 'index.html';
+                    });
+                });
+            });
+        }
+
+        const authHamburger = document.getElementById('authHamburger');
+        const authNavMenu = document.getElementById('authNavMenu');
+        if (authHamburger) {
+            authHamburger.addEventListener('click', () => {
+                authNavMenu.classList.toggle('open');
+            });
+        }
+        document.querySelectorAll('.auth-nav-link').forEach(link => {
+            link.addEventListener('click', () => authNavMenu.classList.remove('open'));
+        });
+    </script>
+
 </body>
 </html>

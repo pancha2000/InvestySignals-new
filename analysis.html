@@ -6,28 +6,186 @@
     <title>Analysis Engine | InvestySignals</title>
     <link rel="stylesheet" href="style.css">
     <style>
-        .auth-nav {
-            position: fixed;
-            top: 0; left: 0; right: 0;
-            height: 64px;
-            background: var(--bg2);
-            border-bottom: 1px solid var(--border-soft);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 24px;
-            z-index: 100;
+        .page-wrap {
+            padding: 88px 24px 48px;
+            max-width: 1000px;
+            margin: 0 auto;
+            width: 100%;
         }
-        .page-title {
-            font-family: 'Syne', sans-serif;
-            font-weight: 700;
-            color: var(--text);
-            position: absolute;
-            left: 50%;
-            transform: translateX(-50%);
+
+        /* ── Page Header ──────────────────────────────── */
+        .page-header-bar {
             display: flex;
-            align-items: center;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
             gap: 12px;
+        }
+        .page-header-bar h1 {
+            font-size: 1.6rem;
+            margin-bottom: 4px;
+        }
+        .page-header-bar p { color: var(--text-muted); font-size: 0.85rem; }
+        .refresh-tag {
+            font-size: 0.72rem;
+            color: var(--text-dim);
+            background: var(--surface);
+            padding: 4px 10px;
+            border-radius: 6px;
+            white-space: nowrap;
+            align-self: flex-start;
+            margin-top: 4px;
+        }
+
+        /* ── Controls Panel ───────────────────────────── */
+        .controls-panel {
+            background: var(--bg2);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--radius);
+            padding: 20px 24px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 16px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+        .control-group {
+            flex: 1;
+            min-width: 140px;
+        }
+        .control-group label {
+            display: block;
+            margin-bottom: 7px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+        .control-select {
+            width: 100%;
+            background: var(--surface);
+            border: 1px solid var(--border-soft);
+            color: var(--text);
+            padding: 11px 14px;
+            border-radius: var(--radius-sm);
+            outline: none;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 0.9rem;
+            appearance: none;
+            transition: var(--transition);
+        }
+        .control-select:focus { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold-glow); }
+
+        /* ── Results Panel ────────────────────────────── */
+        .results-panel {
+            background: var(--bg2);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--radius);
+            padding: 40px;
+            min-height: 380px;
+            display: flex;
+            flex-direction: column;
+        }
+        .empty-state {
+            margin: auto;
+            text-align: center;
+            color: var(--text-muted);
+        }
+        .empty-icon { font-size: 2.5rem; margin-bottom: 14px; opacity: 0.4; }
+        .empty-state h2 { color: var(--text); font-size: 1.2rem; margin-bottom: 6px; }
+        .empty-state p { font-size: 0.85rem; max-width: 320px; }
+
+        .results-content { display: none; animation: fadeIn 0.4s ease; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ── Score Card ───────────────────────────────── */
+        .score-card {
+            background: linear-gradient(135deg, rgba(245,200,66,0.06) 0%, rgba(13,16,24,0) 100%);
+            border: 1px solid rgba(245,200,66,0.2);
+            border-radius: var(--radius-sm);
+            padding: 24px;
+            margin-bottom: 28px;
+            text-align: center;
+            box-shadow: 0 0 30px rgba(245,200,66,0.06);
+        }
+        .score-title {
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--gold);
+            margin-bottom: 14px;
+        }
+        .score-bar-bg {
+            height: 10px;
+            background: var(--surface);
+            border-radius: 100px;
+            overflow: hidden;
+            margin-bottom: 14px;
+            border: 1px solid var(--border-soft);
+        }
+        .score-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--gold-dark), var(--gold));
+            border-radius: 100px;
+            transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .score-value {
+            font-family: 'Syne', sans-serif;
+            font-size: 2rem;
+            font-weight: 800;
+        }
+
+        /* ── Indicator Grid ───────────────────────────── */
+        .indicator-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px;
+            margin-bottom: 28px;
+        }
+        .indicator-card {
+            background: var(--surface);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--radius-xs);
+            padding: 14px 12px;
+            text-align: center;
+            transition: var(--transition);
+        }
+        .indicator-card:hover { border-color: rgba(245,200,66,0.15); }
+        .ind-name { font-size: 0.7rem; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
+        .ind-val { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 0.85rem; }
+
+        /* ── Levels Grid ──────────────────────────────── */
+        .levels-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 14px;
+            margin-bottom: 24px;
+        }
+        .level-card {
+            background: var(--surface);
+            border: 1px dashed var(--border-soft);
+            border-radius: var(--radius-sm);
+            padding: 20px;
+            text-align: center;
+            transition: var(--transition);
+        }
+        .level-title { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+        .level-price {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.3rem;
+            font-weight: 700;
+        }
+
+        .disclaimer {
+            text-align: center;
+            font-size: 0.78rem;
+            color: var(--text-dim);
+            padding-top: 20px;
+            border-top: 1px solid var(--border-soft);
         }
         .last-refresh {
             font-size: 0.75rem;
@@ -38,195 +196,21 @@
             padding: 2px 8px;
             border-radius: 100px;
         }
-        .user-chip {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            background: var(--surface);
-            padding: 6px 12px 6px 6px;
-            border-radius: 100px;
-            border: 1px solid var(--border-soft);
-        }
-        .user-avatar {
-            width: 28px;
-            height: 28px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, var(--gold), #FFF);
-            color: var(--bg);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 700;
-            font-size: 0.8rem;
-        }
-        .user-name {
-            font-size: 0.875rem;
-            font-weight: 500;
-        }
-        .dash-container {
-            padding: 100px 24px 40px;
-            max-width: 1000px;
-            margin: 0 auto;
-            width: 100%;
-        }
-        .controls-panel {
-            background: var(--bg2);
-            border: 1px solid var(--border-soft);
-            border-radius: var(--radius);
-            padding: 24px;
-            margin-bottom: 24px;
-            display: flex;
-            gap: 16px;
-            align-items: flex-end;
-        }
-        .control-group {
-            flex: 1;
-        }
-        .control-group label {
-            display: block;
-            margin-bottom: 8px;
-            font-size: 0.875rem;
-            color: var(--text-muted);
-        }
-        .control-select {
-            width: 100%;
-            background: var(--surface);
-            border: 1px solid var(--border-soft);
-            color: var(--text);
-            padding: 12px 16px;
-            border-radius: var(--radius-sm);
-            outline: none;
-            font-family: 'DM Sans', sans-serif;
-            appearance: none;
-        }
-        .results-panel {
-            background: var(--bg2);
-            border: 1px solid var(--border-soft);
-            border-radius: var(--radius);
-            padding: 40px;
-            min-height: 400px;
-            display: flex;
-            flex-direction: column;
-        }
-        .empty-state {
-            margin: auto;
-            text-align: center;
-            color: var(--text-muted);
-        }
-        .empty-icon {
-            font-size: 3rem;
-            margin-bottom: 16px;
-            opacity: 0.5;
-        }
-        .results-content {
-            display: none;
-            animation: fadeIn 0.5s ease;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        .score-card {
-            background: linear-gradient(135deg, var(--surface) 0%, rgba(245, 200, 66, 0.05) 100%);
-            border: 1px solid var(--gold);
-            border-radius: var(--radius-sm);
-            padding: 24px;
-            margin-bottom: 32px;
-            text-align: center;
-            box-shadow: var(--shadow-gold);
-        }
-        .score-title {
-            font-size: 0.875rem;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: var(--gold);
-            margin-bottom: 16px;
-        }
-        .score-bar-bg {
-            height: 12px;
-            background: var(--bg);
-            border-radius: 100px;
-            overflow: hidden;
-            margin-bottom: 12px;
-        }
-        .score-bar-fill {
-            height: 100%;
-            background: linear-gradient(90deg, var(--gold), #FFF);
-            width: 82%;
-        }
-        .score-value {
-            font-family: 'Syne', sans-serif;
-            font-size: 2rem;
-            font-weight: 800;
-        }
-        .indicator-grid {
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 16px;
-            margin-bottom: 32px;
-        }
-        .indicator-card {
-            background: var(--surface);
-            border: 1px solid var(--border-soft);
-            border-radius: var(--radius-xs);
-            padding: 16px;
-            text-align: center;
-        }
-        .ind-name {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            margin-bottom: 8px;
-        }
-        .ind-val {
-            font-family: 'JetBrains Mono', monospace;
-            font-weight: 600;
-            color: var(--text);
-        }
-        .levels-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 16px;
-            margin-bottom: 24px;
-        }
-        .level-card {
-            background: var(--surface);
-            border: 1px dashed var(--border-soft);
-            border-radius: var(--radius-sm);
-            padding: 16px;
-            text-align: center;
-        }
-        .level-title {
-            font-size: 0.875rem;
-            color: var(--text-muted);
-            margin-bottom: 8px;
-        }
-        .level-price {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 1.25rem;
-            font-weight: 700;
-        }
-        .disclaimer {
-            text-align: center;
-            font-size: 0.8rem;
-            color: var(--text-dim);
-            padding-top: 24px;
-            border-top: 1px solid var(--border-soft);
-        }
 
         @media (max-width: 992px) {
             .indicator-grid { grid-template-columns: repeat(3, 1fr); }
-            .page-title span { display: none; }
         }
         @media (max-width: 768px) {
-            .controls-panel { flex-direction: column; align-items: stretch; }
+            .controls-panel { flex-direction: column; }
             .indicator-grid { grid-template-columns: repeat(2, 1fr); }
             .levels-grid { grid-template-columns: 1fr; }
+            .results-panel { padding: 24px 16px; }
         }
     </style>
 </head>
 <body>
 
-        <nav class="auth-nav">
+    <nav class="auth-nav">
         <div class="auth-nav-left">
             <button class="auth-hamburger" id="authHamburger">☰</button>
             <a href="index.html" class="logo">
@@ -235,30 +219,38 @@
         </div>
         <div class="auth-nav-menu" id="authNavMenu">
             <a href="dashboard.html" class="auth-nav-link">Dashboard</a>
-            <a href="analysis.html" class="auth-nav-link">Analysis</a>
+            <a href="analysis.html" class="auth-nav-link active">Analysis</a>
             <a href="live-signals.html" class="auth-nav-link">Paper Trading</a>
             <a href="signals.html" class="auth-nav-link">Signals</a>
             <a href="profile.html" class="auth-nav-link">Profile</a>
         </div>
         <div class="auth-nav-right">
-            <div class="user-chip" id="userChip" style="display: flex;">
+            <div class="user-chip" id="userChip">
                 <div class="user-avatar" id="userAvatar">U</div>
-                <div class="user-name" id="userName" style="display: block;">User</div>
+                <div class="user-name" id="userName">User</div>
             </div>
-            <button id="logoutBtn" class="btn btn-ghost" style="padding: 6px 12px; font-size: 0.875rem;">Logout</button>
+            <button id="logoutBtn" class="btn btn-ghost" style="padding: 6px 14px; font-size: 0.82rem;">Logout</button>
         </div>
     </nav>
 
-    <div class="dash-container">
+    <div class="page-wrap">
+        <div class="page-header-bar">
+            <div>
+                <h1>Analysis Engine</h1>
+                <p>Multi-factor confluence scanner — 15 technical indicators</p>
+            </div>
+            <span id="refreshTime" class="refresh-tag">Not run yet</span>
+        </div>
+
         <div class="controls-panel">
             <div class="control-group">
                 <label>Trading Pair</label>
                 <select class="control-select" id="pairSelect">
-                    <option value="BTCUSDT">BTC/USDT</option>
-                    <option value="ETHUSDT">ETH/USDT</option>
-                    <option value="SOLUSDT">SOL/USDT</option>
-                    <option value="BNBUSDT">BNB/USDT</option>
-                    <option value="XRPUSDT">XRP/USDT</option>
+                    <option value="BTCUSDT">BTC / USDT</option>
+                    <option value="ETHUSDT">ETH / USDT</option>
+                    <option value="SOLUSDT">SOL / USDT</option>
+                    <option value="BNBUSDT">BNB / USDT</option>
+                    <option value="XRPUSDT">XRP / USDT</option>
                 </select>
             </div>
             <div class="control-group">
@@ -270,60 +262,62 @@
                     <option value="1d">1 Day</option>
                 </select>
             </div>
-            <button class="btn btn-gold" id="runBtn" style="padding: 12px 32px; height: 45px;">Run Analysis</button>
+            <button class="btn btn-gold" id="runBtn" style="padding: 11px 32px; height: 44px; white-space: nowrap;">▶ Run Analysis</button>
         </div>
 
         <div class="results-panel">
             <div class="empty-state" id="emptyState">
                 <div class="empty-icon">⚙️</div>
                 <h2>Ready for Analysis</h2>
-                <p>Select a pair and timeframe, then click Run Analysis.</p>
+                <p>Select a pair and timeframe above, then click Run Analysis.</p>
             </div>
 
             <div class="results-content" id="resultsContent">
                 <div class="score-card">
                     <div class="score-title">Confluence Score</div>
                     <div class="score-bar-bg">
-                        <div class="score-bar-fill"></div>
+                        <div class="score-bar-fill" id="scoreBar" style="width: 0%;"></div>
                     </div>
-                    <div class="score-value">82% <span style="font-size: 1rem; color: var(--green); font-family: 'DM Sans', sans-serif;">LONG</span></div>
+                    <div class="score-value" id="scoreVal">
+                        0% <span style="font-size: 1rem; color: var(--text-muted); font-family: 'DM Sans', sans-serif;">WAITING</span>
+                    </div>
                 </div>
 
                 <div class="indicator-grid">
-                    <div class="indicator-card"><div class="ind-name">RSI (14)</div><div class="ind-val">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">MACD</div><div class="ind-val">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">EMA (20/50)</div><div class="ind-val">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">Bollinger</div><div class="ind-val">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">StochRSI</div><div class="ind-val">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">ADX</div><div class="ind-val">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">OBV</div><div class="ind-val">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">Volume</div><div class="ind-val">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">Funding</div><div class="ind-val">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">VWAP</div><div class="ind-val">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">Supertrend</div><div class="ind-val">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">FVG</div><div class="ind-val">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">ATR</div><div class="ind-val">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">Open Int.</div><div class="ind-val">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">BOS/CHoCH</div><div class="ind-val">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">RSI (14)</div><div class="ind-val" id="i-rsi">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">MACD</div><div class="ind-val" id="i-macd">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">EMA 20/50</div><div class="ind-val" id="i-ema">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">Bollinger</div><div class="ind-val" id="i-bb">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">Stoch RSI</div><div class="ind-val" id="i-stoch">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">ADX</div><div class="ind-val" id="i-adx">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">OBV</div><div class="ind-val" id="i-obv">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">Volume</div><div class="ind-val" id="i-vol">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">Funding</div><div class="ind-val" id="i-fund">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">VWAP</div><div class="ind-val" id="i-vwap">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">Supertrend</div><div class="ind-val" id="i-st">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">FVG</div><div class="ind-val" id="i-fvg">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">ATR</div><div class="ind-val" id="i-atr">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">Open Int.</div><div class="ind-val" id="i-oi">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">BOS/CHoCH</div><div class="ind-val" id="i-bos">—</div></div>
                 </div>
 
                 <div class="levels-grid">
-                    <div class="level-card" style="border-color: var(--red);">
+                    <div class="level-card" style="border-color: rgba(255,77,109,0.3);">
                         <div class="level-title">Stop Loss</div>
-                        <div class="level-price" style="color: var(--red);">—</div>
+                        <div class="level-price" style="color: var(--red);" id="lvl-sl">—</div>
                     </div>
-                    <div class="level-card" style="border-color: var(--text-muted);">
+                    <div class="level-card" style="border-color: rgba(255,255,255,0.08);">
                         <div class="level-title">Entry Target</div>
-                        <div class="level-price">—</div>
+                        <div class="level-price" id="lvl-entry">—</div>
                     </div>
-                    <div class="level-card" style="border-color: var(--green);">
+                    <div class="level-card" style="border-color: rgba(24,217,122,0.3);">
                         <div class="level-title">Take Profit</div>
-                        <div class="level-price" style="color: var(--green);">—</div>
+                        <div class="level-price" style="color: var(--green);" id="lvl-tp">—</div>
                     </div>
                 </div>
 
                 <div class="disclaimer">
-                    ⚠️ Analysis results shown here are placeholders for educational purposes only. Not financial advice.
+                    ⚠ No live data connection established. Connect your Binance API to enable real-time analysis.
                 </div>
             </div>
         </div>
@@ -331,7 +325,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+        import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk",
@@ -349,10 +343,17 @@
             if (!user) {
                 window.location.href = 'login.html';
             } else {
-                document.getElementById('userChip').style.display = 'flex';
                 const name = user.displayName || user.email.split('@')[0];
                 document.getElementById('userAvatar').textContent = name.charAt(0).toUpperCase();
+                document.getElementById('userName').textContent = name;
             }
+        });
+
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+            signOut(auth).then(() => {
+                sessionStorage.removeItem('user');
+                window.location.href = 'index.html';
+            });
         });
 
         const runBtn = document.getElementById('runBtn');
@@ -361,40 +362,32 @@
         const refreshTime = document.getElementById('refreshTime');
 
         runBtn.addEventListener('click', () => {
-            const originalText = runBtn.textContent;
-            runBtn.textContent = 'Analyzing...';
+            const original = runBtn.textContent;
+            runBtn.textContent = '⏳ Analyzing...';
             runBtn.disabled = true;
             emptyState.style.display = 'none';
             resultsContent.style.display = 'none';
 
-            // Simulate API call delay
             setTimeout(() => {
-                runBtn.textContent = originalText;
+                runBtn.textContent = original;
                 runBtn.disabled = false;
                 resultsContent.style.display = 'block';
-                
                 const now = new Date();
-                refreshTime.textContent = `Updated: ${now.toLocaleTimeString()}`;
-                
-                // Demo values setup
-                const prices = {
-                    'BTCUSDT': { entry: '67,432', tp: '69,800', sl: '65,900' },
-                    'ETHUSDT': { entry: '3,540', tp: '3,700', sl: '3,420' },
-                    'SOLUSDT': { entry: '178.50', tp: '192.00', sl: '168.00' },
-                    'BNBUSDT': { entry: '598.00', tp: '625.00', sl: '575.00' },
-                    'XRPUSDT': { entry: '0.618', tp: '0.675', sl: '0.578' }
-                };
-                
-                const pair = document.getElementById('pairSelect').value;
-                const data = prices[pair];
-                
-                const elements = document.querySelectorAll('.level-price');
-                elements[0].textContent = '$' + data.sl;
-                elements[1].textContent = '$' + data.entry;
-                elements[2].textContent = '$' + data.tp;
-                
-            }, 1500);
+                refreshTime.textContent = `Last run: ${now.toLocaleTimeString()}`;
+            }, 600);
         });
     </script>
+
+    <script>
+        const authHamburger = document.getElementById('authHamburger');
+        const authNavMenu = document.getElementById('authNavMenu');
+        if (authHamburger) {
+            authHamburger.addEventListener('click', () => authNavMenu.classList.toggle('open'));
+        }
+        document.querySelectorAll('.auth-nav-link').forEach(link => {
+            link.addEventListener('click', () => authNavMenu.classList.remove('open'));
+        });
+    </script>
+
 </body>
 </html>

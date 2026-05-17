@@ -6,28 +6,11 @@
     <title>Admin Panel | InvestySignals</title>
     <link rel="stylesheet" href="style.css">
     <style>
-        body { margin: 0; background: var(--bg); display: flex; height: 100vh; overflow: hidden; }
+        /* body flex removed — handled by .dash-container */
         
-        .admin-sidebar {
-            width: 260px;
-            background: var(--bg2);
-            border-right: 1px solid var(--border-soft);
-            display: flex;
-            flex-direction: column;
-            z-index: 100;
-        }
-        .admin-logo {
-            height: 64px;
-            display: flex;
-            align-items: center;
-            padding: 0 24px;
-            border-bottom: 1px solid var(--border-soft);
-        }
-        .admin-menu {
-            padding: 24px 16px;
-            overflow-y: auto;
-            flex: 1;
-        }
+        
+        
+        
         .menu-section {
             font-size: 0.75rem;
             text-transform: uppercase;
@@ -58,70 +41,98 @@
             color: var(--red);
         }
         
-        .admin-main {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            position: relative;
-        }
         
-        .admin-topbar {
-            height: 64px;
-            background: var(--bg2);
-            border-bottom: 1px solid var(--border-soft);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 24px;
-        }
         
-        .admin-content {
-            flex: 1;
-            padding: 32px;
-            overflow-y: auto;
-        }
-        .content-section {
-            display: none;
-        }
+        
+        
+        .admin-content { padding-top: 8px; }
+        .content-section { display: none; }
         .content-section.active {
             display: block;
             animation: fadeIn 0.3s ease;
         }
-        
-        .section-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Admin Hero Banner */
+        .admin-hero {
+            background: linear-gradient(135deg, rgba(255,77,109,0.07) 0%, rgba(13,16,24,0) 60%);
+            border: 1px solid rgba(255,77,109,0.12);
+            border-radius: var(--radius);
+            padding: 22px 28px;
             margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .admin-hero-left h2 { font-size: 1.3rem; margin-bottom: 4px; }
+        .admin-hero-left p { font-size: 0.82rem; color: var(--text-muted); }
+        .admin-badge-pill {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: rgba(255,77,109,0.1);
+            border: 1px solid rgba(255,77,109,0.2);
+            color: var(--red);
+            font-size: 0.7rem; font-weight: 700;
+            letter-spacing: 0.08em; text-transform: uppercase;
+            padding: 4px 12px; border-radius: 100px;
+            margin-bottom: 8px;
+        }
+
+        /* Section Header */
+        .section-header {
+            display: flex; justify-content: space-between;
+            align-items: center; margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border-soft);
         }
         .section-title {
             font-family: 'Syne', sans-serif;
-            font-size: 1.5rem;
+            font-size: 1.4rem;
         }
-        
+
+        /* Stat Cards */
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            gap: 16px;
-            margin-bottom: 32px;
+            gap: 14px;
+            margin-bottom: 24px;
         }
         .stat-card {
-            background: var(--surface);
+            background: var(--bg2);
             border: 1px solid var(--border-soft);
             border-radius: var(--radius-sm);
-            padding: 20px;
+            padding: 18px 20px;
+            position: relative;
+            overflow: hidden;
+            transition: var(--transition);
+        }
+        .stat-card:hover { border-color: rgba(245,200,66,0.15); }
+        .stat-card::after {
+            content: '';
+            position: absolute;
+            left: 0; top: 0; bottom: 0;
+            width: 3px; border-radius: 3px 0 0 3px;
+            background: var(--gold);
         }
         .stat-card-title {
             color: var(--text-muted);
-            font-size: 0.875rem;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
             margin-bottom: 8px;
         }
         .stat-card-val {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 1.75rem;
+            font-size: 1.6rem;
             font-weight: 700;
+            line-height: 1;
         }
-        
+
+        /* Data Panel */
         .data-panel {
             background: var(--bg2);
             border: 1px solid var(--border-soft);
@@ -211,37 +222,14 @@
         }
         .danger-item:last-child { border-bottom: none; }
         
-        .login-overlay {
-            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            background: var(--bg);
-            z-index: 1000;
-            display: flex; align-items: center; justify-content: center;
-        }
-        .admin-login-card {
-            background: var(--bg2);
-            border: 1px solid var(--border-soft);
-            border-radius: var(--radius);
-            padding: 40px;
-            width: 100%; max-width: 400px;
-            text-align: center;
-        }
-        .admin-login-card input {
-            width: 100%;
-            background: var(--surface);
-            border: 1px solid var(--border-soft);
-            color: var(--text);
-            padding: 12px;
-            border-radius: var(--radius-sm);
-            margin-bottom: 16px;
-            outline: none;
-        }
+
         
-        .hamburger-admin { display: none; background: none; border: none; color: var(--text); font-size: 1.5rem; cursor: pointer; }
+        
         
         @media (max-width: 992px) {
-            .admin-sidebar { position: fixed; transform: translateX(-100%); transition: var(--transition); height: 100%; }
-            .admin-sidebar.open { transform: translateX(0); }
-            .hamburger-admin { display: block; }
+            
+            
+            
             .stats-grid { grid-template-columns: repeat(2, 1fr); }
         }
         @media (max-width: 768px) {
@@ -252,74 +240,59 @@
     </style>
 </head>
 <body>
-
-    <!-- Admin auth is handled by Firebase below -->
-
-    <!-- Sidebar -->
-    <div class="admin-sidebar" id="adminSidebar">
-        <div class="admin-logo">
+    <!-- Admin auth is handled by Firebase -->
+    <nav class="auth-nav">
+        <div class="auth-nav-left">
+            <button class="auth-hamburger" id="authHamburger">☰</button>
             <a href="index.html" class="logo">
-                <span class="logo-icon">◈</span>
-                INVESTY<span class="logo-accent">ADMIN</span>
+                <span class="logo-icon">◈</span> INVESTY<span class="logo-accent">SIGNALS</span>
             </a>
         </div>
-        <div class="admin-menu">
-            <div class="menu-section">Overview</div>
-            <div class="menu-item active" data-target="dashboard">📊 Dashboard</div>
-            
-            <div class="menu-section">Users</div>
-            <div class="menu-item" data-target="users">👥 All Users</div>
-            <div class="menu-item" data-target="banned">🚫 Banned Users</div>
-            
-            <div class="menu-section">Content</div>
-            <div class="menu-item" data-target="signals">📡 Signals</div>
-            
-            <div class="menu-section">Settings</div>
-            <div class="menu-item" data-target="settings">⚙️ Site Settings</div>
-            <div class="menu-item" data-target="announcements">📢 Announcements</div>
-            
-            <div class="menu-section">System</div>
-            <div class="menu-item danger" data-target="danger">🔴 Danger Zone</div>
+        <div class="auth-nav-menu" id="authNavMenu">
+            <a class="auth-nav-link active menu-item" data-target="dashboard">Dashboard</a>
+            <a class="auth-nav-link menu-item" data-target="users">Users</a>
+            <a class="auth-nav-link menu-item" data-target="signals">Signals</a>
+            <a class="auth-nav-link menu-item" data-target="settings">Settings</a>
+            <a class="auth-nav-link menu-item" style="color: var(--red);" data-target="danger">Danger Zone</a>
         </div>
-    </div>
+        <div class="auth-nav-right">
+            <span class="badge badge-gold" style="display: none; font-size: 0.7rem;" id="adminBadge">⚡ Admin</span>
+            <button id="logoutBtn" class="btn btn-ghost" style="padding: 6px 14px; font-size: 0.82rem;">Logout</button>
+        </div>
+    </nav>
 
-    <!-- Main Content -->
-    <div class="admin-main">
-        <div class="admin-topbar">
-            <div style="display: flex; align-items: center; gap: 16px;">
-                <button class="hamburger-admin" id="hamburgerAdmin">☰</button>
-                <div style="font-weight: 500;">Admin Shell</div>
-            </div>
-            <div style="display: flex; align-items: center; gap: 16px;">
-                <span class="badge badge-gold">Superadmin</span>
-                <button id="logoutBtn" class="btn btn-ghost" style="padding: 6px 12px; font-size: 0.875rem;">Logout</button>
-            </div>
-        </div>
-        
+    <div class="dash-container" style="padding-top: 88px;">
         <div class="admin-content">
-            
+
             <!-- Dashboard Section -->
             <div class="content-section active" id="dashboard">
-                <div class="section-header">
-                    <h1 class="section-title">Dashboard Overview</h1>
+                <div class="admin-hero">
+                    <div class="admin-hero-left">
+                        <div class="admin-badge-pill">🔐 Superadmin Access</div>
+                        <h2>Control Panel</h2>
+                        <p>Manage users, signals, and site settings from here.</p>
+                    </div>
+                    <div style="font-size: 0.75rem; color: var(--text-dim); text-align: right;">
+                        <div id="adminTime"></div>
+                    </div>
                 </div>
                 
                 <div class="stats-grid">
                     <div class="stat-card">
                         <div class="stat-card-title">Total Users</div>
-                        <div class="stat-card-val">15,420</div>
+                        <div class="stat-card-val">1</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-card-title">Active Users</div>
-                        <div class="stat-card-val">8,214</div>
+                        <div class="stat-card-val">1</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-card-title">Total Signals</div>
-                        <div class="stat-card-val">1,254</div>
+                        <div class="stat-card-val">0</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-card-title">Pro/Elite Users</div>
-                        <div class="stat-card-val" style="color: var(--gold);">450</div>
+                        <div class="stat-card-val" style="color: var(--text-muted);">0</div>
                     </div>
                 </div>
                 
@@ -336,29 +309,7 @@
                                     <th>Joined</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                <tr>
-                                    <td style="display: flex; align-items: center;"><div class="user-row-avatar">K</div> Kasun Perera</td>
-                                    <td>kasun@gmail.com</td>
-                                    <td><span class="badge badge-outline" style="color: #4D9FFF; border-color: #4D9FFF;">Pro</span></td>
-                                    <td><span class="badge badge-green">Active</span></td>
-                                    <td>Jan 15, 2026</td>
-                                </tr>
-                                <tr>
-                                    <td style="display: flex; align-items: center;"><div class="user-row-avatar">N</div> Nuwan Silva</td>
-                                    <td>nuwan@yahoo.com</td>
-                                    <td><span class="badge badge-outline">Free</span></td>
-                                    <td><span class="badge badge-green">Active</span></td>
-                                    <td>Feb 3, 2026</td>
-                                </tr>
-                                <tr>
-                                    <td style="display: flex; align-items: center;"><div class="user-row-avatar">A</div> Amali Jayawardena</td>
-                                    <td>amali@hotmail.com</td>
-                                    <td><span class="badge badge-gold">Elite</span></td>
-                                    <td><span class="badge badge-green">Active</span></td>
-                                    <td>Dec 20, 2025</td>
-                                </tr>
-                            </tbody>
+                            <tbody><tr><td colspan="6" style="text-align: center; padding: 32px; color: var(--text-muted);">No users found</td></tr></tbody>
                         </table>
                     </div>
                 </div>
@@ -399,68 +350,7 @@
                                     <th>Actions</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                <tr>
-                                    <td style="display: flex; align-items: center;"><div class="user-row-avatar">K</div> Kasun Perera</td>
-                                    <td>kasun@gmail.com</td>
-                                    <td><span class="badge badge-outline" style="color: #4D9FFF; border-color: #4D9FFF;">Pro</span></td>
-                                    <td><span class="badge badge-green">Active</span></td>
-                                    <td>Jan 15, 2026</td>
-                                    <td>
-                                        <button class="action-btn" title="View Profile">👁</button>
-                                        <button class="action-btn" title="Edit Plan">✏️</button>
-                                        <button class="action-btn delete" title="Ban User">🚫</button>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td style="display: flex; align-items: center;"><div class="user-row-avatar">N</div> Nuwan Silva</td>
-                                    <td>nuwan@yahoo.com</td>
-                                    <td><span class="badge badge-outline">Free</span></td>
-                                    <td><span class="badge badge-green">Active</span></td>
-                                    <td>Feb 3, 2026</td>
-                                    <td>
-                                        <button class="action-btn" title="View Profile">👁</button>
-                                        <button class="action-btn" title="Edit Plan">✏️</button>
-                                        <button class="action-btn delete" title="Ban User">🚫</button>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td style="display: flex; align-items: center;"><div class="user-row-avatar">A</div> Amali Jayawardena</td>
-                                    <td>amali@hotmail.com</td>
-                                    <td><span class="badge badge-gold">Elite</span></td>
-                                    <td><span class="badge badge-green">Active</span></td>
-                                    <td>Dec 20, 2025</td>
-                                    <td>
-                                        <button class="action-btn" title="View Profile">👁</button>
-                                        <button class="action-btn" title="Edit Plan">✏️</button>
-                                        <button class="action-btn delete" title="Ban User">🚫</button>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td style="display: flex; align-items: center;"><div class="user-row-avatar">R</div> Ruwan Fernando</td>
-                                    <td>ruwan@gmail.com</td>
-                                    <td><span class="badge badge-outline">Free</span></td>
-                                    <td><span class="badge badge-red">Banned</span></td>
-                                    <td>Mar 1, 2026</td>
-                                    <td>
-                                        <button class="action-btn" title="View Profile">👁</button>
-                                        <button class="action-btn" title="Edit Plan">✏️</button>
-                                        <button class="action-btn" title="Unban User">✅</button>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td style="display: flex; align-items: center;"><div class="user-row-avatar">D</div> Dilshan Rathnayake</td>
-                                    <td>dilshan@gmail.com</td>
-                                    <td><span class="badge badge-outline" style="color: #4D9FFF; border-color: #4D9FFF;">Pro</span></td>
-                                    <td><span class="badge badge-green">Active</span></td>
-                                    <td>Apr 10, 2026</td>
-                                    <td>
-                                        <button class="action-btn" title="View Profile">👁</button>
-                                        <button class="action-btn" title="Edit Plan">✏️</button>
-                                        <button class="action-btn delete" title="Ban User">🚫</button>
-                                    </td>
-                                </tr>
-                            </tbody>
+                            <tbody><tr><td colspan="6" style="text-align: center; padding: 32px; color: var(--text-muted);">No users found</td></tr></tbody>
                         </table>
                     </div>
                 </div>
@@ -535,6 +425,7 @@
                 </div>
             </div>
             
+        
         </div>
     </div>
 
@@ -558,22 +449,37 @@
             if (!user) {
                 window.location.href = 'login.html';
             } else if (user.email !== 'cdilrukshi52@gmail.com') {
-                // Not an admin, send back to user dashboard
                 window.location.href = 'dashboard.html';
+            } else {
+                document.getElementById('adminBadge').style.display = 'inline-flex';
+                // Live clock in admin hero
+                const clockEl = document.getElementById('adminTime');
+                if (clockEl) {
+                    const tick = () => {
+                        const now = new Date();
+                        clockEl.textContent = now.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                    };
+                    tick();
+                    setInterval(tick, 60000);
+                }
             }
         });
 
         const logoutBtn = document.getElementById('logoutBtn');
-        logoutBtn.addEventListener('click', () => {
-            signOut(auth).then(() => {
-                sessionStorage.removeItem('user');
-                window.location.href = 'index.html';
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', () => {
+                signOut(auth).then(() => {
+                    sessionStorage.removeItem('user');
+                    window.location.href = 'index.html';
+                });
             });
-        });
-
+        }
+    </script>
+    <script>
         // Navigation Logic
         const menuItems = document.querySelectorAll('.menu-item');
         const contentSections = document.querySelectorAll('.content-section');
+        const authNavMenu = document.getElementById('authNavMenu');
         
         menuItems.forEach(item => {
             item.addEventListener('click', () => {
@@ -591,18 +497,22 @@
                     }
                 });
                 
-                // Close sidebar on mobile
-                if (window.innerWidth <= 992) {
-                    document.getElementById('adminSidebar').classList.remove('open');
-                }
+                // Close menu on mobile after click
+                authNavMenu.classList.remove('open');
             });
         });
-        
-        // Mobile Sidebar Toggle
-        const hamburger = document.getElementById('hamburgerAdmin');
-        hamburger.addEventListener('click', () => {
-            document.getElementById('adminSidebar').classList.toggle('open');
+
+        const authHamburger = document.getElementById('authHamburger');
+        if (authHamburger) {
+            authHamburger.addEventListener('click', () => {
+                authNavMenu.classList.toggle('open');
+            });
+        }
+        // Close menu when nav link clicked on mobile
+        document.querySelectorAll('.auth-nav-link').forEach(link => {
+            link.addEventListener('click', () => authNavMenu.classList.remove('open'));
         });
     </script>
+
 </body>
 </html>

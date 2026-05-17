@@ -6,47 +6,6 @@
     <title>Paper Trading | InvestySignals</title>
     <link rel="stylesheet" href="style.css">
     <style>
-        .auth-nav {
-            position: fixed;
-            top: 0; left: 0; right: 0;
-            height: 64px;
-            background: var(--bg2);
-            border-bottom: 1px solid var(--border-soft);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 24px;
-            z-index: 100;
-        }
-        .page-title {
-            font-family: 'Syne', sans-serif;
-            font-weight: 700;
-            color: var(--text);
-            position: absolute;
-            left: 50%;
-            transform: translateX(-50%);
-        }
-        .user-chip {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            background: var(--surface);
-            padding: 6px 12px 6px 6px;
-            border-radius: 100px;
-            border: 1px solid var(--border-soft);
-        }
-        .user-avatar {
-            width: 28px;
-            height: 28px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, var(--gold), #FFF);
-            color: var(--bg);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 700;
-            font-size: 0.8rem;
-        }
         .dash-container {
             padding: 100px 24px 40px;
             max-width: 1200px;
@@ -57,83 +16,104 @@
             background: linear-gradient(135deg, var(--bg2) 0%, rgba(245, 200, 66, 0.05) 100%);
             border: 1px solid var(--border-soft);
             border-radius: var(--radius);
-            padding: 32px;
-            margin-bottom: 24px;
+            padding: 28px 32px;
+            margin-bottom: 20px;
             display: flex;
             justify-content: space-between;
             align-items: flex-end;
             flex-wrap: wrap;
-            gap: 24px;
+            gap: 20px;
         }
-        .balance-item {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
+        .balance-group { display: flex; gap: 40px; flex-wrap: wrap; }
+        .balance-item { display: flex; flex-direction: column; gap: 6px; }
         .b-label {
-            font-size: 0.875rem;
+            font-size: 0.8rem;
             color: var(--text-muted);
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 0.08em;
         }
         .b-val {
             font-family: 'Syne', sans-serif;
-            font-size: 2.5rem;
+            font-size: 2.25rem;
             font-weight: 800;
             color: var(--text);
         }
         .b-val.gold { color: var(--gold); }
         .b-val.green { color: var(--green); }
-        
+        .b-val.red { color: var(--red); }
+
         .stats-strip {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
             gap: 16px;
-            margin-bottom: 32px;
+            margin-bottom: 28px;
         }
         .ss-card {
-            background: var(--surface);
+            background: var(--bg2);
             border: 1px solid var(--border-soft);
             border-radius: var(--radius-sm);
-            padding: 16px;
+            padding: 16px 20px;
         }
-        .ss-label { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; }
+        .ss-label { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
         .ss-val { font-family: 'JetBrains Mono', monospace; font-size: 1.25rem; font-weight: 700; }
-        
+
         .tabs {
             display: flex;
-            gap: 32px;
+            gap: 28px;
             border-bottom: 1px solid var(--border-soft);
             margin-bottom: 24px;
+            overflow-x: auto;
         }
         .tab-btn {
             background: none;
             border: none;
-            padding: 0 0 12px;
+            padding: 0 0 14px;
             color: var(--text-muted);
-            font-size: 1rem;
+            font-size: 0.95rem;
             font-weight: 500;
             cursor: pointer;
             position: relative;
+            white-space: nowrap;
+            font-family: 'DM Sans', sans-serif;
+            transition: var(--transition);
         }
-        .tab-btn.active {
-            color: var(--gold);
-        }
+        .tab-btn:hover { color: var(--text); }
+        .tab-btn.active { color: var(--gold); }
         .tab-btn.active::after {
             content: '';
             position: absolute;
             bottom: -1px; left: 0; right: 0;
             height: 2px;
             background: var(--gold);
+            border-radius: 2px;
         }
-        
+
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+
+        /* Empty state */
+        .empty-state-panel {
+            background: var(--bg2);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--radius);
+            padding: 64px 24px;
+            text-align: center;
+            color: var(--text-muted);
+        }
+        .empty-icon { font-size: 2.5rem; margin-bottom: 16px; opacity: 0.4; }
+        .empty-state-panel h3 { color: var(--text); margin-bottom: 8px; font-size: 1.2rem; }
+        .empty-state-panel p { font-size: 0.88rem; max-width: 360px; margin: 0 auto; }
+
+        /* Trade card (for when real trades exist) */
         .trade-card {
             background: var(--bg2);
             border: 1px solid var(--border-soft);
             border-radius: var(--radius);
             padding: 24px;
             margin-bottom: 16px;
+            transition: var(--transition);
         }
+        .trade-card:hover { border-color: rgba(245,200,66,0.2); }
         .tc-header {
             display: flex;
             justify-content: space-between;
@@ -142,84 +122,50 @@
         }
         .tc-pair {
             font-family: 'Syne', sans-serif;
-            font-size: 1.25rem;
+            font-size: 1.1rem;
             font-weight: 700;
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
         }
         .tc-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            gap: 16px;
-            margin-bottom: 24px;
+            gap: 14px;
         }
-        .tc-item {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-        .tc-label { font-size: 0.75rem; color: var(--text-muted); }
-        .tc-val { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
-        
-        .tc-progress {
-            margin-top: 16px;
-            padding-top: 16px;
-            border-top: 1px solid var(--border-soft);
-        }
-        .tcp-bar {
-            height: 8px;
-            background: var(--surface);
-            border-radius: 100px;
-            position: relative;
-            margin-bottom: 8px;
-        }
-        .tcp-entry {
-            position: absolute;
-            top: -4px;
-            width: 2px;
-            height: 16px;
-            background: var(--text-muted);
-        }
-        .tcp-current {
-            position: absolute;
-            top: -4px;
-            width: 16px;
-            height: 16px;
+        .tc-item { display: flex; flex-direction: column; gap: 4px; }
+        .tc-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; }
+        .tc-val { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 0.9rem; }
+
+        .new-trade-btn {
             background: var(--gold);
-            border-radius: 50%;
-            transform: translateX(-50%);
-            box-shadow: 0 0 10px var(--gold);
-        }
-        .tcp-labels {
-            display: flex;
-            justify-content: space-between;
-            font-size: 0.75rem;
-            color: var(--text-muted);
-        }
-
-        .edit-balance-btn {
-            background: none;
-            border: 1px solid var(--border-soft);
-            color: var(--text);
-            padding: 8px 16px;
+            color: var(--bg);
+            border: none;
+            padding: 10px 20px;
             border-radius: 100px;
-            font-size: 0.875rem;
+            font-weight: 600;
             cursor: pointer;
+            font-family: 'DM Sans', sans-serif;
             transition: var(--transition);
+            font-size: 0.9rem;
         }
-        .edit-balance-btn:hover { background: var(--surface); }
+        .new-trade-btn:hover { background: var(--gold-dark); transform: translateY(-1px); }
 
-        @media (max-width: 768px) {
+        @media (max-width: 992px) {
             .stats-strip { grid-template-columns: repeat(2, 1fr); }
+            .b-val { font-size: 1.75rem; }
+        }
+        @media (max-width: 600px) {
             .tc-grid { grid-template-columns: repeat(2, 1fr); }
-            .page-title { display: none; }
+            .balance-bar { padding: 20px; }
+            .balance-group { gap: 24px; }
+            .b-val { font-size: 1.5rem; }
         }
     </style>
 </head>
 <body>
 
-        <nav class="auth-nav">
+    <nav class="auth-nav">
         <div class="auth-nav-left">
             <button class="auth-hamburger" id="authHamburger">☰</button>
             <a href="index.html" class="logo">
@@ -229,128 +175,91 @@
         <div class="auth-nav-menu" id="authNavMenu">
             <a href="dashboard.html" class="auth-nav-link">Dashboard</a>
             <a href="analysis.html" class="auth-nav-link">Analysis</a>
-            <a href="live-signals.html" class="auth-nav-link">Paper Trading</a>
+            <a href="live-signals.html" class="auth-nav-link active">Paper Trading</a>
             <a href="signals.html" class="auth-nav-link">Signals</a>
             <a href="profile.html" class="auth-nav-link">Profile</a>
         </div>
         <div class="auth-nav-right">
-            <div class="user-chip" id="userChip" style="display: flex;">
+            <div class="user-chip" id="userChip">
                 <div class="user-avatar" id="userAvatar">U</div>
-                <div class="user-name" id="userName" style="display: block;">User</div>
+                <div class="user-name" id="userName">User</div>
             </div>
             <button id="logoutBtn" class="btn btn-ghost" style="padding: 6px 12px; font-size: 0.875rem;">Logout</button>
         </div>
     </nav>
 
     <div class="dash-container">
+
+        <!-- Balance Overview -->
         <div class="balance-bar">
-            <div style="display: flex; gap: 40px; flex-wrap: wrap;">
+            <div class="balance-group">
                 <div class="balance-item">
                     <div class="b-label">Virtual Balance</div>
                     <div class="b-val" id="virtualBalance">$10,000.00</div>
                 </div>
                 <div class="balance-item">
                     <div class="b-label">Equity</div>
-                    <div class="b-val gold">$10,420.50</div>
+                    <div class="b-val gold" id="equityVal">$10,000.00</div>
                 </div>
                 <div class="balance-item">
                     <div class="b-label">Unrealized P&L</div>
-                    <div class="b-val green">+$420.50</div>
+                    <div class="b-val" id="unrealizedPL" style="color: var(--text-muted);">$0.00</div>
                 </div>
             </div>
             <div>
-                <button class="edit-balance-btn" onclick="alert('Balance editing available in next update')">Edit Balance</button>
+                <button class="new-trade-btn" id="resetBalanceBtn">Reset Balance</button>
             </div>
         </div>
 
+        <!-- Stats Strip -->
         <div class="stats-strip">
             <div class="ss-card">
                 <div class="ss-label">Total Trades</div>
-                <div class="ss-val">12</div>
+                <div class="ss-val" id="totalTrades">0</div>
             </div>
             <div class="ss-card">
                 <div class="ss-label">Open Trades</div>
-                <div class="ss-val">2</div>
+                <div class="ss-val" id="openTrades">0</div>
             </div>
             <div class="ss-card">
                 <div class="ss-label">Win Rate</div>
-                <div class="ss-val">78%</div>
+                <div class="ss-val" id="winRate" style="color: var(--text-muted);">—</div>
             </div>
             <div class="ss-card">
-                <div class="ss-label">Best Trade</div>
-                <div class="ss-val" style="color: var(--green);">+$340.00</div>
+                <div class="ss-label">Total P&L</div>
+                <div class="ss-val" id="totalPL" style="color: var(--text-muted);">$0.00</div>
             </div>
         </div>
 
+        <!-- Tabs -->
         <div class="tabs">
-            <button class="tab-btn active">Open Trades</button>
-            <button class="tab-btn">Pending Orders</button>
-            <button class="tab-btn">Trade History</button>
+            <button class="tab-btn active" data-tab="open">Open Trades</button>
+            <button class="tab-btn" data-tab="history">Trade History</button>
         </div>
 
-        <div class="trades-list">
-            <!-- Trade 1 -->
-            <div class="trade-card">
-                <div class="tc-header">
-                    <div class="tc-pair">
-                        BTCUSDT 
-                        <span class="badge badge-green">LONG</span>
-                    </div>
-                    <div class="tc-val" style="color: var(--green); font-size: 1.25rem;">+$310.20</div>
-                </div>
-                <div class="tc-grid">
-                    <div class="tc-item"><div class="tc-label">Entry Price</div><div class="tc-val">$67,432</div></div>
-                    <div class="tc-item"><div class="tc-label">Current Price</div><div class="tc-val">$68,200</div></div>
-                    <div class="tc-item"><div class="tc-label">Amount (USDT)</div><div class="tc-val">$1,000</div></div>
-                    <div class="tc-item"><div class="tc-label">Leverage</div><div class="tc-val">10x</div></div>
-                </div>
-                <div class="tc-progress">
-                    <div class="tcp-bar">
-                        <div class="tcp-entry" style="left: 20%;"></div>
-                        <div class="tcp-current" style="left: 60%;"></div>
-                    </div>
-                    <div class="tcp-labels">
-                        <span style="color: var(--red);">SL: $65,900</span>
-                        <span>Entry: $67,432</span>
-                        <span style="color: var(--green);">TP: $69,800</span>
-                    </div>
-                </div>
+        <!-- Open Trades Tab -->
+        <div class="tab-panel active" id="tab-open">
+            <div class="empty-state-panel">
+                <div class="empty-icon">📋</div>
+                <h3>No Open Trades</h3>
+                <p>You have no open paper trades. Use the Analysis page to identify setups and track them here.</p>
             </div>
-
-            <!-- Trade 2 -->
-            <div class="trade-card">
-                <div class="tc-header">
-                    <div class="tc-pair">
-                        ETHUSDT 
-                        <span class="badge badge-red">SHORT</span>
-                    </div>
-                    <div class="tc-val" style="color: var(--green); font-size: 1.25rem;">+$110.30</div>
-                </div>
-                <div class="tc-grid">
-                    <div class="tc-item"><div class="tc-label">Entry Price</div><div class="tc-val">$3,540</div></div>
-                    <div class="tc-item"><div class="tc-label">Current Price</div><div class="tc-val">$3,480</div></div>
-                    <div class="tc-item"><div class="tc-label">Amount (USDT)</div><div class="tc-val">$500</div></div>
-                    <div class="tc-item"><div class="tc-label">Leverage</div><div class="tc-val">5x</div></div>
-                </div>
-                <div class="tc-progress">
-                    <div class="tcp-bar">
-                        <div class="tcp-entry" style="left: 80%;"></div>
-                        <div class="tcp-current" style="left: 40%;"></div>
-                    </div>
-                    <div class="tcp-labels">
-                        <span style="color: var(--green);">TP: $3,380</span>
-                        <span>Entry: $3,540</span>
-                        <span style="color: var(--red);">SL: $3,650</span>
-                    </div>
-                </div>
-            </div>
-
         </div>
+
+        <!-- History Tab -->
+        <div class="tab-panel" id="tab-history">
+            <div class="empty-state-panel">
+                <div class="empty-icon">🕐</div>
+                <h3>No Trade History</h3>
+                <p>Closed trades will appear here once you start recording paper trades.</p>
+            </div>
+        </div>
+
     </div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+        import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk",
@@ -368,17 +277,58 @@
             if (!user) {
                 window.location.href = 'login.html';
             } else {
-                document.getElementById('userChip').style.display = 'flex';
                 const name = user.displayName || user.email.split('@')[0];
+                document.getElementById('userName').textContent = name;
                 document.getElementById('userAvatar').textContent = name.charAt(0).toUpperCase();
+                loadPaperData(user.uid);
             }
         });
 
-        // LocalStorage logic for paper trading will be fully implemented here
-        if(!localStorage.getItem('paperBalance')) {
-            localStorage.setItem('paperBalance', '10000');
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+            signOut(auth).then(() => {
+                sessionStorage.removeItem('user');
+                window.location.href = 'index.html';
+            });
+        });
+
+        function loadPaperData(uid) {
+            const key = `paperBalance_${uid}`;
+            const balance = parseFloat(localStorage.getItem(key) || '10000');
+            document.getElementById('virtualBalance').textContent = '$' + balance.toLocaleString('en-US', { minimumFractionDigits: 2 });
+            document.getElementById('equityVal').textContent = '$' + balance.toLocaleString('en-US', { minimumFractionDigits: 2 });
         }
-        document.getElementById('virtualBalance').textContent = '$' + parseFloat(localStorage.getItem('paperBalance')).toLocaleString('en-US', {minimumFractionDigits: 2});
+
+        document.getElementById('resetBalanceBtn').addEventListener('click', () => {
+            if (confirm('Reset your virtual balance to $10,000? This cannot be undone.')) {
+                auth.currentUser && localStorage.setItem(`paperBalance_${auth.currentUser.uid}`, '10000');
+                location.reload();
+            }
+        });
     </script>
+
+    <script>
+        // Tabs
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+            });
+        });
+
+        // Hamburger menu
+        const authHamburger = document.getElementById('authHamburger');
+        const authNavMenu = document.getElementById('authNavMenu');
+        if (authHamburger) {
+            authHamburger.addEventListener('click', () => {
+                authNavMenu.classList.toggle('open');
+            });
+        }
+        document.querySelectorAll('.auth-nav-link').forEach(link => {
+            link.addEventListener('click', () => authNavMenu.classList.remove('open'));
+        });
+    </script>
+
 </body>
 </html>
