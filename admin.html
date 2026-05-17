@@ -253,20 +253,7 @@
 </head>
 <body>
 
-    <!-- Login Overlay -->
-    <div class="login-overlay" id="loginOverlay">
-        <div class="admin-login-card fade-up visible">
-            <h2 style="font-family: 'Syne', sans-serif; margin-bottom: 8px;">Admin Login</h2>
-            <p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: 24px;">Contact the developer for access.</p>
-            
-            <form id="adminLoginForm">
-                <input type="text" id="adminUser" placeholder="Username" required>
-                <input type="password" id="adminPw" placeholder="Password" required>
-                <div id="adminError" style="color: var(--red); font-size: 0.875rem; margin-bottom: 16px; display: none;">Invalid credentials</div>
-                <button type="submit" class="btn btn-gold" style="width: 100%;">Enter Dashboard</button>
-            </form>
-        </div>
-    </div>
+    <!-- Admin auth is handled by Firebase below -->
 
     <!-- Sidebar -->
     <div class="admin-sidebar" id="adminSidebar">
@@ -551,37 +538,37 @@
         </div>
     </div>
 
-    <script>
-        // Auth Logic
-        const loginOverlay = document.getElementById('loginOverlay');
-        const loginForm = document.getElementById('adminLoginForm');
-        const errorMsg = document.getElementById('adminError');
-        const logoutBtn = document.getElementById('logoutBtn');
-        
-        // Check session
-        if (localStorage.getItem('adminAuth') === 'true') {
-            loginOverlay.style.display = 'none';
-        }
-        
-        loginForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const u = document.getElementById('adminUser').value;
-            const p = document.getElementById('adminPw').value;
-            
-            // Dummy auth
-            if (u === 'admin' && p === 'admin') {
-                localStorage.setItem('adminAuth', 'true');
-                loginOverlay.style.display = 'none';
-                errorMsg.style.display = 'none';
-            } else {
-                errorMsg.style.display = 'block';
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk",
+            authDomain: "investysignals-890ba.firebaseapp.com",
+            projectId: "investysignals-890ba",
+            storageBucket: "investysignals-890ba.firebasestorage.app",
+            messagingSenderId: "1045281522975",
+            appId: "1:1045281522975:web:534501aab2ceeb887bdc2a"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+
+        onAuthStateChanged(auth, (user) => {
+            if (!user) {
+                window.location.href = 'login.html';
+            } else if (user.email !== 'cdilrukshi52@gmail.com') {
+                // Not an admin, send back to user dashboard
+                window.location.href = 'dashboard.html';
             }
         });
-        
+
+        const logoutBtn = document.getElementById('logoutBtn');
         logoutBtn.addEventListener('click', () => {
-            localStorage.removeItem('adminAuth');
-            loginOverlay.style.display = 'flex';
-            document.getElementById('adminLoginForm').reset();
+            signOut(auth).then(() => {
+                sessionStorage.removeItem('user');
+                window.location.href = 'index.html';
+            });
         });
 
         // Navigation Logic

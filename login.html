@@ -309,7 +309,12 @@
             try {
                 const userCredential = await signInWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
                 sessionStorage.setItem('user', JSON.stringify(userCredential.user));
-                window.location.href = 'dashboard.html';
+                
+                if (userCredential.user.email === 'cdilrukshi52@gmail.com') {
+                    window.location.href = 'admin.html';
+                } else {
+                    window.location.href = 'dashboard.html';
+                }
             } catch (error) {
                 errorMsg.textContent = 'Invalid email or password.';
                 errorMsg.style.display = 'block';

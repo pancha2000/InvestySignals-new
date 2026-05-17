@@ -479,6 +479,14 @@
             });
         }, { threshold: 0.1 });
         document.querySelectorAll('.fade-up').forEach(el => io.observe(el));
+    
+        const authHamburger = document.getElementById('authHamburger');
+        const authNavMenu = document.getElementById('authNavMenu');
+        if (authHamburger) {
+            authHamburger.addEventListener('click', () => {
+                authNavMenu.classList.toggle('open');
+            });
+        }
     </script>
 </body>
 </html>

@@ -219,16 +219,26 @@
 </head>
 <body>
 
-    <nav class="auth-nav">
-        <a href="index.html" class="logo">
-            <span class="logo-icon">◈</span> <span style="display: none;">INVESTYSIGNALS</span>
-        </a>
-        <div class="page-title">Paper Trading</div>
-        <div style="display: flex; align-items: center; gap: 16px;">
-            <a href="dashboard.html" class="btn btn-ghost" style="padding: 6px 12px; font-size: 0.875rem;">← Dashboard</a>
-            <div class="user-chip" id="userChip" style="display: none;">
+        <nav class="auth-nav">
+        <div class="auth-nav-left">
+            <button class="auth-hamburger" id="authHamburger">☰</button>
+            <a href="index.html" class="logo">
+                <span class="logo-icon">◈</span> INVESTY<span class="logo-accent">SIGNALS</span>
+            </a>
+        </div>
+        <div class="auth-nav-menu" id="authNavMenu">
+            <a href="dashboard.html" class="auth-nav-link">Dashboard</a>
+            <a href="analysis.html" class="auth-nav-link">Analysis</a>
+            <a href="live-signals.html" class="auth-nav-link">Paper Trading</a>
+            <a href="signals.html" class="auth-nav-link">Signals</a>
+            <a href="profile.html" class="auth-nav-link">Profile</a>
+        </div>
+        <div class="auth-nav-right">
+            <div class="user-chip" id="userChip" style="display: flex;">
                 <div class="user-avatar" id="userAvatar">U</div>
+                <div class="user-name" id="userName" style="display: block;">User</div>
             </div>
+            <button id="logoutBtn" class="btn btn-ghost" style="padding: 6px 12px; font-size: 0.875rem;">Logout</button>
         </div>
     </nav>
 

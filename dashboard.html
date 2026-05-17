@@ -215,11 +215,20 @@
 <body>
 
     <nav class="auth-nav">
-        <a href="index.html" class="logo">
-            <span class="logo-icon">◈</span> INVESTY<span class="logo-accent">SIGNALS</span>
-        </a>
-        <div class="page-title">Dashboard</div>
-        <div style="display: flex; align-items: center; gap: 16px;">
+        <div class="auth-nav-left">
+            <button class="auth-hamburger" id="authHamburger">☰</button>
+            <a href="index.html" class="logo">
+                <span class="logo-icon">◈</span> INVESTY<span class="logo-accent">SIGNALS</span>
+            </a>
+        </div>
+        <div class="auth-nav-menu" id="authNavMenu">
+            <a href="dashboard.html" class="auth-nav-link active">Dashboard</a>
+            <a href="analysis.html" class="auth-nav-link">Analysis</a>
+            <a href="live-signals.html" class="auth-nav-link">Paper Trading</a>
+            <a href="signals.html" class="auth-nav-link">Signals</a>
+            <a href="profile.html" class="auth-nav-link">Profile</a>
+        </div>
+        <div class="auth-nav-right">
             <div class="user-chip" id="userChip">
                 <div class="user-avatar" id="userAvatar">U</div>
                 <div class="user-name" id="userName">User</div>
@@ -452,6 +461,14 @@
                 window.location.href = 'index.html';
             });
         });
+
+        const authHamburger = document.getElementById('authHamburger');
+        const authNavMenu = document.getElementById('authNavMenu');
+        if (authHamburger) {
+            authHamburger.addEventListener('click', () => {
+                authNavMenu.classList.toggle('open');
+            });
+        }
     </script>
 </body>
 </html>
