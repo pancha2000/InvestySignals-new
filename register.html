@@ -1,416 +1,370 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sign Up — InvestySignals</title>
-  <link rel="stylesheet" href="style.css">
-  <style>
-    body { display: flex; flex-direction: column; min-height: 100vh; }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>Register | InvestySignals</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .split-layout {
+            display: flex;
+            min-height: 100vh;
+        }
 
-    .auth-page {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 5.5rem 1.5rem 3rem;
-      position: relative;
-      overflow: hidden;
-    }
+        .split-right {
+            width: 40%;
+            background: linear-gradient(135deg, var(--bg) 0%, var(--bg2) 100%);
+            border-left: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 40px;
+            position: relative;
+            overflow: hidden;
+        }
 
-    .auth-orb-1 {
-      width: 450px; height: 450px;
-      background: radial-gradient(circle, rgba(245,200,66,0.1) 0%, transparent 65%);
-      top: -80px; left: -100px;
-    }
-    .auth-orb-2 {
-      width: 350px; height: 350px;
-      background: radial-gradient(circle, rgba(34,217,122,0.06) 0%, transparent 65%);
-      bottom: 50px; right: -80px;
-    }
+        .split-right::before {
+            content: '';
+            position: absolute;
+            bottom: 20%;
+            right: -20%;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(77, 159, 255, 0.1) 0%, transparent 70%);
+            pointer-events: none;
+        }
 
-    .auth-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 2.5rem 2.25rem;
-      width: 100%;
-      max-width: 460px;
-      position: relative;
-      z-index: 1;
-      animation: fadeUp 0.5s ease both;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
-    }
+        .split-left {
+            width: 60%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            background: var(--bg);
+        }
 
-    .auth-top {
-      text-align: center;
-      margin-bottom: 1.75rem;
-    }
+        .auth-card {
+            width: 100%;
+            max-width: 480px;
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 40px;
+            backdrop-filter: blur(12px);
+        }
 
-    .auth-logo {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      font-family: 'Syne', sans-serif;
-      font-weight: 800;
-      font-size: 1.25rem;
-      color: var(--text);
-      margin-bottom: 1.25rem;
-    }
-    .auth-logo .logo-icon {
-      width: 30px; height: 30px;
-      background: var(--gold);
-      border-radius: 7px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 0.875rem;
-    }
-    .auth-logo span { color: var(--gold); }
+        .auth-header {
+            margin-bottom: 32px;
+            text-align: center;
+        }
 
-    .auth-top h1 {
-      font-family: 'Syne', sans-serif;
-      font-size: 1.6rem;
-      font-weight: 800;
-      letter-spacing: -0.03em;
-      margin-bottom: 0.35rem;
-    }
+        .auth-header h1 {
+            font-size: 2rem;
+            margin-bottom: 8px;
+        }
 
-    .auth-top p { font-size: 0.875rem; color: var(--text-muted); }
+        .auth-header p {
+            color: var(--text-muted);
+        }
 
-    .plan-toggle {
-      display: flex;
-      gap: 0.75rem;
-      margin-bottom: 1.5rem;
-    }
+        .input-group {
+            margin-bottom: 20px;
+        }
 
-    .plan-option {
-      flex: 1;
-      padding: 0.85rem;
-      background: var(--bg2);
-      border: 1.5px solid var(--border);
-      border-radius: 10px;
-      text-align: center;
-      cursor: pointer;
-      transition: var(--transition);
-    }
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
 
-    .plan-option.selected {
-      border-color: var(--gold);
-      background: rgba(245,200,66,0.07);
-    }
+        .input-control {
+            width: 100%;
+            background: var(--surface);
+            border: 1px solid var(--border-soft);
+            color: var(--text);
+            padding: 14px 16px;
+            border-radius: var(--radius-sm);
+            font-family: 'DM Sans', sans-serif;
+            transition: var(--transition);
+            outline: none;
+        }
 
-    .plan-option .plan-name {
-      font-family: 'Syne', sans-serif;
-      font-size: 0.9rem;
-      font-weight: 700;
-      color: var(--text);
-      margin-bottom: 0.15rem;
-    }
-    .plan-option.selected .plan-name { color: var(--gold); }
+        .input-control:focus {
+            border-color: var(--gold);
+            box-shadow: 0 0 0 2px var(--gold-glow);
+        }
 
-    .plan-option .plan-price {
-      font-size: 0.75rem;
-      color: var(--text-dim);
-    }
+        .checkbox-group {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
 
-    .submit-btn {
-      width: 100%;
-      padding: 0.9rem;
-      background: var(--gold);
-      border: none;
-      border-radius: 10px;
-      font-family: 'Syne', sans-serif;
-      font-size: 1rem;
-      font-weight: 700;
-      color: #0A0B0F;
-      cursor: pointer;
-      transition: var(--transition);
-      margin-top: 0.25rem;
-      box-shadow: 0 4px 20px rgba(245,200,66,0.25);
-    }
+        .checkbox-group input {
+            accent-color: var(--gold);
+            width: 18px;
+            height: 18px;
+            margin-top: 2px;
+        }
 
-    .submit-btn:hover { background: var(--gold-light); transform: translateY(-2px); box-shadow: 0 8px 28px rgba(245,200,66,0.35); }
-    .submit-btn:active { transform: translateY(0); }
+        .checkbox-group label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 0;
+            line-height: 1.4;
+        }
 
-    .submit-btn.loading { pointer-events: none; opacity: 0.8; }
-    .submit-btn .spinner {
-      display: none;
-      width: 18px; height: 18px;
-      border: 2px solid rgba(10,11,15,0.3);
-      border-top-color: #0A0B0F;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-      margin: 0 auto;
-    }
-    .submit-btn.loading .btn-text { display: none; }
-    .submit-btn.loading .spinner { display: block; }
+        .checkbox-group a {
+            color: var(--gold);
+        }
 
-    .strength-bar {
-      height: 3px;
-      border-radius: 2px;
-      background: var(--bg3);
-      margin-top: 6px;
-      overflow: hidden;
-    }
-    .strength-fill {
-      height: 100%;
-      border-radius: 2px;
-      width: 0%;
-      transition: width 0.35s, background 0.35s;
-    }
+        .btn-full {
+            width: 100%;
+            border-radius: 100px;
+        }
 
-    .strength-label {
-      font-size: 0.72rem;
-      margin-top: 4px;
-      color: var(--text-dim);
-      text-align: right;
-    }
+        .auth-footer {
+            text-align: center;
+            margin-top: 24px;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
 
-    .terms-note {
-      font-size: 0.75rem;
-      color: var(--text-dim);
-      text-align: center;
-      margin-top: 1rem;
-      line-height: 1.5;
-    }
-    .terms-note a { color: var(--text-muted); text-decoration: underline; text-underline-offset: 2px; }
+        .auth-footer a {
+            color: var(--gold);
+            font-weight: 600;
+        }
 
-    .auth-footer {
-      text-align: center;
-      margin-top: 1.25rem;
-      font-size: 0.875rem;
-      color: var(--text-muted);
-    }
-    .auth-footer a { color: var(--gold); font-weight: 600; }
+        .error-message {
+            color: var(--red);
+            font-size: 0.875rem;
+            margin-bottom: 16px;
+            text-align: center;
+            display: none;
+            padding: 8px;
+            background: rgba(255, 77, 109, 0.1);
+            border: 1px solid rgba(255, 77, 109, 0.2);
+            border-radius: var(--radius-xs);
+        }
 
-    .toast {
-      position: fixed;
-      bottom: 2rem; left: 50%;
-      transform: translateX(-50%) translateY(100px);
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 0.85rem 1.5rem;
-      font-size: 0.875rem;
-      display: flex; align-items: center; gap: 0.6rem;
-      z-index: 9999;
-      transition: transform 0.35s cubic-bezier(0.34,1.56,0.64,1);
-      box-shadow: var(--shadow);
-    }
-    .toast.show { transform: translateX(-50%) translateY(0); }
-    .toast.error { border-color: rgba(255,77,109,0.3); color: var(--red); }
-    .toast.success { border-color: rgba(34,217,122,0.3); color: var(--green); }
+        .pw-wrapper {
+            position: relative;
+        }
 
-    .input-wrap { position: relative; }
-    .toggle-pw {
-      position: absolute;
-      right: 12px; top: 50%; transform: translateY(-50%);
-      background: none; border: none; cursor: pointer;
-      color: var(--text-dim); transition: var(--transition); padding: 4px;
-    }
-    .toggle-pw:hover { color: var(--text-muted); }
-  </style>
+        .pw-strength {
+            height: 4px;
+            background: var(--surface);
+            border-radius: 2px;
+            margin-top: 8px;
+            overflow: hidden;
+            display: flex;
+        }
+
+        .pw-strength-bar {
+            height: 100%;
+            width: 0;
+            transition: all 0.3s ease;
+        }
+
+        .pw-strength-text {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+            text-align: right;
+            display: block;
+        }
+
+        .weak {
+            background: var(--red);
+            width: 33.33%;
+        }
+
+        .medium {
+            background: var(--gold);
+            width: 66.66%;
+        }
+
+        .strong {
+            background: var(--green);
+            width: 100%;
+        }
+
+        @media (max-width: 992px) {
+            .split-layout {
+                flex-direction: column-reverse;
+            }
+
+            .split-right {
+                width: 100%;
+                padding: 40px 24px;
+                text-align: center;
+            }
+
+            .split-left {
+                width: 100%;
+                padding: 40px 24px;
+            }
+        }
+    </style>
 </head>
+
 <body>
 
-  <nav class="navbar" id="navbar">
-    <a href="index.html" class="nav-logo">
-      <div class="logo-icon">📈</div>
-      Investy<span>Signals</span>
-    </a>
-    <ul class="nav-links">
-      <li><a href="index.html">Home</a></li>
-      <li><a href="pricing.html">Pricing</a></li>
-      <li><a href="about.html">About</a></li>
-      <li><a href="contact.html">Contact</a></li>
-    </ul>
-    <div class="nav-actions">
-      <a href="login.html" class="btn-outline">Login</a>
+    <div class="split-layout">
+        <!-- Left Panel (Form) -->
+        <div class="split-left">
+            <div class="auth-card fade-up visible">
+                <div class="auth-header">
+                    <h1>Create Account</h1>
+                    <p>Start your data-driven trading journey</p>
+                </div>
+
+                <div id="errorMsg" class="error-message"></div>
+
+                <form id="registerForm">
+                    <div class="input-group">
+                        <label for="displayName">Display Name</label>
+                        <input type="text" id="displayName" class="input-control" placeholder="How should we call you?"
+                            required>
+                    </div>
+
+                    <div class="input-group">
+                        <label for="email">Email Address</label>
+                        <input type="email" id="email" class="input-control" placeholder="Enter your email" required>
+                    </div>
+
+                    <div class="input-group">
+                        <label for="password">Password</label>
+                        <div class="pw-wrapper">
+                            <input type="password" id="password" class="input-control"
+                                placeholder="Create a strong password" required>
+                        </div>
+                        <div class="pw-strength">
+                            <div id="pwBar" class="pw-strength-bar"></div>
+                        </div>
+                        <span id="pwText" class="pw-strength-text">Password strength</span>
+                    </div>
+
+                    <div class="input-group">
+                        <label for="confirmPassword">Confirm Password</label>
+                        <input type="password" id="confirmPassword" class="input-control"
+                            placeholder="Confirm your password" required>
+                    </div>
+
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="terms" required>
+                        <label for="terms">I agree to the <a href="terms.html">Terms of Service</a> and <a
+                                href="privacy.html">Privacy Policy</a>.</label>
+                    </div>
+
+                    <button type="submit" class="btn btn-gold btn-full">Register Account</button>
+                </form>
+
+                <div class="auth-footer">
+                    Already have an account? <a href="login.html">Log In</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel -->
+        <div class="split-right">
+            <div style="text-align: right;">
+                <a href="index.html" class="logo" style="justify-content: flex-end;">
+                    <span class="logo-icon">◈</span>
+                    INVESTY<span class="logo-accent">SIGNALS</span>
+                </a>
+            </div>
+
+            <div style="text-align: right;">
+                <h2 style="font-size: 2rem; margin-bottom: 16px;">Join the elite tier of retail traders.</h2>
+                <p style="color: var(--text-muted);">Get instant access to our real-time signals, 8-factor confluence
+                    analysis, and built-in paper trading simulator.</p>
+            </div>
+
+            <div></div> <!-- Spacer -->
+        </div>
     </div>
-    <button class="hamburger" id="hamburger"><span></span><span></span><span></span></button>
-  </nav>
 
-  <div class="mobile-menu" id="mobileMenu">
-    <a href="index.html">Home</a>
-    <a href="pricing.html">Pricing</a>
-    <a href="about.html">About</a>
-    <a href="contact.html">Contact</a>
-    <a href="login.html" style="color:var(--gold)">Login</a>
-  </div>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { getAuth, createUserWithEmailAndPassword, updateProfile } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
-  <div class="page-wrapper auth-page">
-    <div class="glow-orb auth-orb-1"></div>
-    <div class="glow-orb auth-orb-2"></div>
-
-    <div class="auth-card">
-      <div class="auth-top">
-        <a href="index.html" class="auth-logo">
-          <div class="logo-icon">📈</div>
-          Investy<span>Signals</span>
-        </a>
-        <h1>Create Account</h1>
-        <p>Free account එකක් හදා trading start කරන්න</p>
-      </div>
-
-      <div class="plan-toggle">
-        <div class="plan-option selected" data-plan="free" onclick="selectPlan('free')">
-          <div class="plan-name">Free</div>
-          <div class="plan-price">$0/month</div>
-        </div>
-        <div class="plan-option" data-plan="vip" onclick="selectPlan('vip')">
-          <div class="plan-name">⚡ VIP</div>
-          <div class="plan-price">$29/month</div>
-        </div>
-      </div>
-
-      <form id="registerForm" novalidate>
-        <div class="form-group">
-          <label class="form-label">Full Name</label>
-          <input type="text" id="regName" class="form-input" placeholder="Your name" required autocomplete="name">
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Email Address</label>
-          <input type="email" id="regEmail" class="form-input" placeholder="your@email.com" required autocomplete="email">
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Password</label>
-          <div class="input-wrap">
-            <input type="password" id="regPassword" class="form-input" placeholder="Min 6 characters" required style="padding-right:2.75rem" autocomplete="new-password">
-            <button type="button" class="toggle-pw" onclick="toggleField('regPassword')">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-            </button>
-          </div>
-          <div class="strength-bar"><div class="strength-fill" id="strengthFill"></div></div>
-          <div class="strength-label" id="strengthLabel">Password ඇතුලත් කරන්න</div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Confirm Password</label>
-          <div class="input-wrap">
-            <input type="password" id="regConfirmPassword" class="form-input" placeholder="Repeat password" required style="padding-right:2.75rem" autocomplete="new-password">
-            <button type="button" class="toggle-pw" onclick="toggleField('regConfirmPassword')">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-            </button>
-          </div>
-        </div>
-
-        <button type="submit" class="submit-btn" id="regBtn">
-          <span class="btn-text">Create My Account →</span>
-          <div class="spinner"></div>
-        </button>
-      </form>
-
-      <p class="terms-note">
-        Sign up කිරීමෙන් ඔබ අපගේ <a href="#">Terms of Service</a> සහ <a href="#">Privacy Policy</a> සමඟ එකඟ වෙනවා.
-      </p>
-
-      <div class="auth-footer">
-        Already have an account? <a href="login.html">Log in here</a>
-      </div>
-    </div>
-  </div>
-
-  <div class="toast" id="toast"></div>
-
-  <script>
-    let selectedPlan = 'free';
-    function selectPlan(plan) {
-      selectedPlan = plan;
-      document.querySelectorAll('.plan-option').forEach(el => {
-        el.classList.toggle('selected', el.dataset.plan === plan);
-      });
-    }
-
-    function toggleField(id) {
-      const el = document.getElementById(id);
-      el.type = el.type === 'password' ? 'text' : 'password';
-    }
-
-    // Password strength
-    const pwInput = document.getElementById('regPassword');
-    const fill = document.getElementById('strengthFill');
-    const label = document.getElementById('strengthLabel');
-    pwInput.addEventListener('input', () => {
-      const v = pwInput.value;
-      let score = 0;
-      if(v.length >= 6) score++;
-      if(v.length >= 10) score++;
-      if(/[A-Z]/.test(v)) score++;
-      if(/[0-9]/.test(v)) score++;
-      if(/[^a-zA-Z0-9]/.test(v)) score++;
-      const pct = (score/5)*100;
-      fill.style.width = pct + '%';
-      if(score <= 1) { fill.style.background='var(--red)'; label.textContent='Weak'; }
-      else if(score <= 3) { fill.style.background='var(--gold)'; label.textContent='Medium'; }
-      else { fill.style.background='var(--green)'; label.textContent='Strong'; }
-      if(!v) { fill.style.width='0'; label.textContent='Password ඇතුලත් කරන්න'; }
-    });
-
-    function showToast(msg, type='error') {
-      const t = document.getElementById('toast');
-      t.textContent = (type==='error'?'⚠️ ':'✅ ') + msg;
-      t.className = `toast ${type} show`;
-      setTimeout(() => t.classList.remove('show'), 3500);
-    }
-
-    // Navbar
-    const navbar = document.getElementById('navbar');
-    window.addEventListener('scroll', () => navbar.classList.toggle('scrolled', window.scrollY > 40));
-    const hamburger = document.getElementById('hamburger');
-    const mobileMenu = document.getElementById('mobileMenu');
-    hamburger.addEventListener('click', () => {
-      hamburger.classList.toggle('open');
-      mobileMenu.classList.toggle('open');
-    });
-  </script>
-
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-    import { getAuth, createUserWithEmailAndPassword, updateProfile } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-
-    const firebaseConfig = {
-      apiKey: "AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk",
-      authDomain: "investysignals-890ba.firebaseapp.com",
-      projectId: "investysignals-890ba",
-      storageBucket: "investysignals-890ba.firebasestorage.app",
-      messagingSenderId: "1045281522975",
-      appId: "1:1045281522975:web:534501aab2ceeb887bdc2a",
-      measurementId: "G-M1083J7SP6"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const regBtn = document.getElementById('regBtn');
-
-    document.getElementById('registerForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const name = document.getElementById('regName').value.trim();
-      const email = document.getElementById('regEmail').value.trim();
-      const pw = document.getElementById('regPassword').value;
-      const pw2 = document.getElementById('regConfirmPassword').value;
-
-      if(!name) { showToast('නම ඇතුලත් කරන්න.'); return; }
-      if(!email) { showToast('Email ඇතුලත් කරන්න.'); return; }
-      if(pw.length < 6) { showToast('Password අවම වශයෙන් characters 6ක් තිබිය යුතුයි.'); return; }
-      if(pw !== pw2) { showToast('Passwords දෙක match වෙන්නේ නෑ.'); return; }
-
-      regBtn.classList.add('loading');
-      try {
-        const cred = await createUserWithEmailAndPassword(auth, email, pw);
-        await updateProfile(cred.user, { displayName: name });
-        showToast(`ස්වාගතයි, ${name}! Account සාර්ථකව සෑදුවා.`, 'success');
-        setTimeout(() => window.location.href = 'login.html', 1200);
-      } catch(err) {
-        regBtn.classList.remove('loading');
-        const msgs = {
-          'auth/email-already-in-use': 'Email දැනටමත් registered. Login කරන්න.',
-          'auth/invalid-email': 'Valid email address එකක් ඇතුලත් කරන්න.',
-          'auth/weak-password': 'Password ශක්තිමත් නෑ. Characters 6+ ඕනෑ.',
+        const firebaseConfig = {
+            apiKey: "AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk",
+            authDomain: "investysignals-890ba.firebaseapp.com",
+            projectId: "investysignals-890ba",
+            storageBucket: "investysignals-890ba.firebasestorage.app",
+            messagingSenderId: "1045281522975",
+            appId: "1:1045281522975:web:534501aab2ceeb887bdc2a"
         };
-        showToast(msgs[err.code] || 'Error: ' + err.message);
-      }
-    });
-  </script>
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+
+        const form = document.getElementById('registerForm');
+        const nameInput = document.getElementById('displayName');
+        const emailInput = document.getElementById('email');
+        const passwordInput = document.getElementById('password');
+        const confirmPasswordInput = document.getElementById('confirmPassword');
+        const errorMsg = document.getElementById('errorMsg');
+        const pwBar = document.getElementById('pwBar');
+        const pwText = document.getElementById('pwText');
+
+        // Password strength checker
+        passwordInput.addEventListener('input', () => {
+            const val = passwordInput.value;
+            let strength = 0;
+            if (val.length > 5) strength++;
+            if (val.length > 7 && /[A-Z]/.test(val) && /[0-9]/.test(val)) strength++;
+            if (val.length > 9 && /[^A-Za-z0-9]/.test(val)) strength++;
+
+            pwBar.className = 'pw-strength-bar';
+            if (val.length === 0) {
+                pwText.textContent = '';
+            } else if (strength === 1) {
+                pwBar.classList.add('weak');
+                pwText.textContent = 'Weak';
+            } else if (strength === 2) {
+                pwBar.classList.add('medium');
+                pwText.textContent = 'Medium';
+            } else if (strength === 3) {
+                pwBar.classList.add('strong');
+                pwText.textContent = 'Strong';
+            }
+        });
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errorMsg.style.display = 'none';
+
+            if (passwordInput.value !== confirmPasswordInput.value) {
+                errorMsg.textContent = 'Passwords do not match.';
+                errorMsg.style.display = 'block';
+                return;
+            }
+
+            const btn = form.querySelector('button[type="submit"]');
+            const originalText = btn.textContent;
+            btn.textContent = 'Creating account...';
+            btn.disabled = true;
+
+            try {
+                const userCredential = await createUserWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
+                await updateProfile(userCredential.user, { displayName: nameInput.value });
+                sessionStorage.setItem('user', JSON.stringify(userCredential.user));
+                window.location.href = 'dashboard.html';
+            } catch (error) {
+                errorMsg.textContent = error.message.replace('Firebase: ', '');
+                errorMsg.style.display = 'block';
+                btn.textContent = originalText;
+                btn.disabled = false;
+            }
+        });
+    </script>
 </body>
+
 </html>

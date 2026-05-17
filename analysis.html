@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>Analysis Engine | InvestySignals</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .auth-nav {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            height: 64px;
+            background: var(--bg2);
+            border-bottom: 1px solid var(--border-soft);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            z-index: 100;
+        }
+        .page-title {
+            font-family: 'Syne', sans-serif;
+            font-weight: 700;
+            color: var(--text);
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .last-refresh {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-weight: 400;
+            font-family: 'DM Sans', sans-serif;
+            background: var(--surface);
+            padding: 2px 8px;
+            border-radius: 100px;
+        }
+        .user-chip {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: var(--surface);
+            padding: 6px 12px 6px 6px;
+            border-radius: 100px;
+            border: 1px solid var(--border-soft);
+        }
+        .user-avatar {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--gold), #FFF);
+            color: var(--bg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.8rem;
+        }
+        .user-name {
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+        .dash-container {
+            padding: 100px 24px 40px;
+            max-width: 1000px;
+            margin: 0 auto;
+            width: 100%;
+        }
+        .controls-panel {
+            background: var(--bg2);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--radius);
+            padding: 24px;
+            margin-bottom: 24px;
+            display: flex;
+            gap: 16px;
+            align-items: flex-end;
+        }
+        .control-group {
+            flex: 1;
+        }
+        .control-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 0.875rem;
+            color: var(--text-muted);
+        }
+        .control-select {
+            width: 100%;
+            background: var(--surface);
+            border: 1px solid var(--border-soft);
+            color: var(--text);
+            padding: 12px 16px;
+            border-radius: var(--radius-sm);
+            outline: none;
+            font-family: 'DM Sans', sans-serif;
+            appearance: none;
+        }
+        .results-panel {
+            background: var(--bg2);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--radius);
+            padding: 40px;
+            min-height: 400px;
+            display: flex;
+            flex-direction: column;
+        }
+        .empty-state {
+            margin: auto;
+            text-align: center;
+            color: var(--text-muted);
+        }
+        .empty-icon {
+            font-size: 3rem;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+        .results-content {
+            display: none;
+            animation: fadeIn 0.5s ease;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .score-card {
+            background: linear-gradient(135deg, var(--surface) 0%, rgba(245, 200, 66, 0.05) 100%);
+            border: 1px solid var(--gold);
+            border-radius: var(--radius-sm);
+            padding: 24px;
+            margin-bottom: 32px;
+            text-align: center;
+            box-shadow: var(--shadow-gold);
+        }
+        .score-title {
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--gold);
+            margin-bottom: 16px;
+        }
+        .score-bar-bg {
+            height: 12px;
+            background: var(--bg);
+            border-radius: 100px;
+            overflow: hidden;
+            margin-bottom: 12px;
+        }
+        .score-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--gold), #FFF);
+            width: 82%;
+        }
+        .score-value {
+            font-family: 'Syne', sans-serif;
+            font-size: 2rem;
+            font-weight: 800;
+        }
+        .indicator-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+        .indicator-card {
+            background: var(--surface);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--radius-xs);
+            padding: 16px;
+            text-align: center;
+        }
+        .ind-name {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+        .ind-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            color: var(--text);
+        }
+        .levels-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .level-card {
+            background: var(--surface);
+            border: 1px dashed var(--border-soft);
+            border-radius: var(--radius-sm);
+            padding: 16px;
+            text-align: center;
+        }
+        .level-title {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+        .level-price {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+        .disclaimer {
+            text-align: center;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            padding-top: 24px;
+            border-top: 1px solid var(--border-soft);
+        }
+
+        @media (max-width: 992px) {
+            .indicator-grid { grid-template-columns: repeat(3, 1fr); }
+            .page-title span { display: none; }
+        }
+        @media (max-width: 768px) {
+            .controls-panel { flex-direction: column; align-items: stretch; }
+            .indicator-grid { grid-template-columns: repeat(2, 1fr); }
+            .levels-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+    <nav class="auth-nav">
+        <a href="index.html" class="logo">
+            <span class="logo-icon">◈</span> <span style="display: none;">INVESTYSIGNALS</span>
+        </a>
+        <div class="page-title">
+            Analysis Engine
+            <div class="last-refresh" id="refreshTime">Ready</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 16px;">
+            <a href="dashboard.html" class="btn btn-ghost" style="padding: 6px 12px; font-size: 0.875rem;">← Dashboard</a>
+            <div class="user-chip" id="userChip" style="display: none;">
+                <div class="user-avatar" id="userAvatar">U</div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="dash-container">
+        <div class="controls-panel">
+            <div class="control-group">
+                <label>Trading Pair</label>
+                <select class="control-select" id="pairSelect">
+                    <option value="BTCUSDT">BTC/USDT</option>
+                    <option value="ETHUSDT">ETH/USDT</option>
+                    <option value="SOLUSDT">SOL/USDT</option>
+                    <option value="BNBUSDT">BNB/USDT</option>
+                    <option value="XRPUSDT">XRP/USDT</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>Timeframe</label>
+                <select class="control-select" id="tfSelect">
+                    <option value="15m">15 Minutes</option>
+                    <option value="1h" selected>1 Hour</option>
+                    <option value="4h">4 Hours</option>
+                    <option value="1d">1 Day</option>
+                </select>
+            </div>
+            <button class="btn btn-gold" id="runBtn" style="padding: 12px 32px; height: 45px;">Run Analysis</button>
+        </div>
+
+        <div class="results-panel">
+            <div class="empty-state" id="emptyState">
+                <div class="empty-icon">⚙️</div>
+                <h2>Ready for Analysis</h2>
+                <p>Select a pair and timeframe, then click Run Analysis.</p>
+            </div>
+
+            <div class="results-content" id="resultsContent">
+                <div class="score-card">
+                    <div class="score-title">Confluence Score</div>
+                    <div class="score-bar-bg">
+                        <div class="score-bar-fill"></div>
+                    </div>
+                    <div class="score-value">82% <span style="font-size: 1rem; color: var(--green); font-family: 'DM Sans', sans-serif;">LONG</span></div>
+                </div>
+
+                <div class="indicator-grid">
+                    <div class="indicator-card"><div class="ind-name">RSI (14)</div><div class="ind-val">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">MACD</div><div class="ind-val">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">EMA (20/50)</div><div class="ind-val">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">Bollinger</div><div class="ind-val">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">StochRSI</div><div class="ind-val">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">ADX</div><div class="ind-val">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">OBV</div><div class="ind-val">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">Volume</div><div class="ind-val">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">Funding</div><div class="ind-val">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">VWAP</div><div class="ind-val">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">Supertrend</div><div class="ind-val">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">FVG</div><div class="ind-val">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">ATR</div><div class="ind-val">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">Open Int.</div><div class="ind-val">—</div></div>
+                    <div class="indicator-card"><div class="ind-name">BOS/CHoCH</div><div class="ind-val">—</div></div>
+                </div>
+
+                <div class="levels-grid">
+                    <div class="level-card" style="border-color: var(--red);">
+                        <div class="level-title">Stop Loss</div>
+                        <div class="level-price" style="color: var(--red);">—</div>
+                    </div>
+                    <div class="level-card" style="border-color: var(--text-muted);">
+                        <div class="level-title">Entry Target</div>
+                        <div class="level-price">—</div>
+                    </div>
+                    <div class="level-card" style="border-color: var(--green);">
+                        <div class="level-title">Take Profit</div>
+                        <div class="level-price" style="color: var(--green);">—</div>
+                    </div>
+                </div>
+
+                <div class="disclaimer">
+                    ⚠️ Analysis results shown here are placeholders for educational purposes only. Not financial advice.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk",
+            authDomain: "investysignals-890ba.firebaseapp.com",
+            projectId: "investysignals-890ba",
+            storageBucket: "investysignals-890ba.firebasestorage.app",
+            messagingSenderId: "1045281522975",
+            appId: "1:1045281522975:web:534501aab2ceeb887bdc2a"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+
+        onAuthStateChanged(auth, (user) => {
+            if (!user) {
+                window.location.href = 'login.html';
+            } else {
+                document.getElementById('userChip').style.display = 'flex';
+                const name = user.displayName || user.email.split('@')[0];
+                document.getElementById('userAvatar').textContent = name.charAt(0).toUpperCase();
+            }
+        });
+
+        const runBtn = document.getElementById('runBtn');
+        const emptyState = document.getElementById('emptyState');
+        const resultsContent = document.getElementById('resultsContent');
+        const refreshTime = document.getElementById('refreshTime');
+
+        runBtn.addEventListener('click', () => {
+            const originalText = runBtn.textContent;
+            runBtn.textContent = 'Analyzing...';
+            runBtn.disabled = true;
+            emptyState.style.display = 'none';
+            resultsContent.style.display = 'none';
+
+            // Simulate API call delay
+            setTimeout(() => {
+                runBtn.textContent = originalText;
+                runBtn.disabled = false;
+                resultsContent.style.display = 'block';
+                
+                const now = new Date();
+                refreshTime.textContent = `Updated: ${now.toLocaleTimeString()}`;
+                
+                // Demo values setup
+                const prices = {
+                    'BTCUSDT': { entry: '67,432', tp: '69,800', sl: '65,900' },
+                    'ETHUSDT': { entry: '3,540', tp: '3,700', sl: '3,420' },
+                    'SOLUSDT': { entry: '178.50', tp: '192.00', sl: '168.00' },
+                    'BNBUSDT': { entry: '598.00', tp: '625.00', sl: '575.00' },
+                    'XRPUSDT': { entry: '0.618', tp: '0.675', sl: '0.578' }
+                };
+                
+                const pair = document.getElementById('pairSelect').value;
+                const data = prices[pair];
+                
+                const elements = document.querySelectorAll('.level-price');
+                elements[0].textContent = '$' + data.sl;
+                elements[1].textContent = '$' + data.entry;
+                elements[2].textContent = '$' + data.tp;
+                
+            }, 1500);
+        });
+    </script>
+</body>
+</html>

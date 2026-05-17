@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>Live Crypto Signals | InvestySignals</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .page-hero {
+            padding: 160px 24px 80px;
+            text-align: center;
+            background: linear-gradient(180deg, var(--bg2) 0%, var(--bg) 100%);
+            border-bottom: 1px solid var(--border-soft);
+        }
+        .page-hero h1 {
+            font-size: 3rem;
+            margin-bottom: 16px;
+        }
+        .page-hero p {
+            color: var(--text-muted);
+            font-size: 1.125rem;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .signals-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 24px;
+        }
+        .filter-bar {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+            overflow-x: auto;
+            padding-bottom: 8px;
+        }
+        .filter-btn {
+            background: var(--surface);
+            border: 1px solid var(--border-soft);
+            color: var(--text);
+            padding: 8px 16px;
+            border-radius: 100px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: var(--transition);
+        }
+        .filter-btn:hover { border-color: var(--gold); }
+        .filter-btn.active { background: var(--gold); color: var(--bg); border-color: var(--gold); }
+        
+        .summary-bar {
+            background: var(--surface2);
+            border-radius: var(--radius-sm);
+            padding: 16px 24px;
+            display: flex;
+            gap: 32px;
+            margin-bottom: 32px;
+        }
+        .summary-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .summary-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+        .summary-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+        
+        .signals-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 24px;
+        }
+        .signal-card {
+            background: var(--bg2);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--radius);
+            padding: 24px;
+            transition: var(--transition);
+        }
+        .signal-card:hover {
+            border-color: rgba(245, 200, 66, 0.3);
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-gold);
+        }
+        .sc-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border-soft);
+        }
+        .sc-pair {
+            font-family: 'Syne', sans-serif;
+            font-size: 1.25rem;
+            font-weight: 800;
+        }
+        .sc-badges {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .sc-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border-soft);
+        }
+        .sc-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .sc-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        .sc-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+        
+        .sc-progress-wrap {
+            margin-bottom: 16px;
+        }
+        .sc-progress-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.875rem;
+            margin-bottom: 8px;
+        }
+        .sc-progress-bg {
+            height: 6px;
+            background: var(--surface);
+            border-radius: 100px;
+            overflow: hidden;
+        }
+        .sc-progress-fill {
+            height: 100%;
+            background: var(--gold);
+        }
+        
+        .sc-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        @media (max-width: 768px) {
+            .signals-grid { grid-template-columns: 1fr; }
+            .summary-bar { flex-wrap: wrap; gap: 16px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="nav-inner">
+            <a href="index.html" class="logo">
+                <span class="logo-icon">◈</span>
+                INVESTY<span class="logo-accent">SIGNALS</span>
+            </a>
+            <div class="nav-links">
+                <a href="signals.html" class="active">Signals</a>
+                <a href="about.html">About</a>
+                <a href="pricing.html">Pricing</a>
+                <a href="contact.html">Contact</a>
+            </div>
+            <div class="nav-actions">
+                <a href="login.html" class="btn btn-ghost">Log In</a>
+                <a href="register.html" class="btn btn-gold">Get Started →</a>
+            </div>
+            <button class="hamburger" id="hamburger">☰</button>
+        </div>
+    </nav>
+    <div class="mobile-drawer" id="mobileDrawer">
+        <button class="drawer-close" id="drawerClose">×</button>
+        <div class="drawer-nav">
+            <a href="signals.html">Signals</a>
+            <a href="about.html">About</a>
+            <a href="pricing.html">Pricing</a>
+            <a href="contact.html">Contact</a>
+        </div>
+        <div class="drawer-actions">
+            <a href="login.html" class="btn btn-ghost" style="width: 100%;">Log In</a>
+            <a href="register.html" class="btn btn-gold" style="width: 100%;">Get Started →</a>
+        </div>
+    </div>
+    <div class="drawer-overlay" id="drawerOverlay"></div>
+
+    <div class="page-hero">
+        <h1>Live Crypto Signals</h1>
+        <p>Institutional-grade trading signals for Binance Futures, updated in real-time by our 8-factor confluence engine.</p>
+    </div>
+
+    <div class="signals-container">
+        <div class="filter-bar">
+            <button class="filter-btn active">All</button>
+            <button class="filter-btn">Long</button>
+            <button class="filter-btn">Short</button>
+            <button class="filter-btn">Active</button>
+            <button class="filter-btn">Waiting</button>
+            <button class="filter-btn">Grade A+/A</button>
+        </div>
+
+        <div class="summary-bar">
+            <div class="summary-item">
+                <div class="summary-label">Total Signals</div>
+                <div class="summary-value">6</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-label">Long / Short</div>
+                <div class="summary-value">4 / 2</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-label">Active</div>
+                <div class="summary-value">3</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-label">Avg Grade</div>
+                <div class="summary-value" style="color: var(--gold);">A-</div>
+            </div>
+        </div>
+
+        <div class="signals-grid">
+            <!-- Signal 1 -->
+            <div class="signal-card fade-up">
+                <div class="sc-header">
+                    <div class="sc-pair">BTCUSDT</div>
+                    <div class="sc-badges">
+                        <span class="badge badge-green">LONG</span>
+                        <span class="badge badge-gold">A+</span>
+                        <span class="badge badge-outline">ACTIVE</span>
+                    </div>
+                </div>
+                <div class="sc-grid">
+                    <div class="sc-item"><div class="sc-label">Entry</div><div class="sc-val">$67,432</div></div>
+                    <div class="sc-item"><div class="sc-label">TP1</div><div class="sc-val" style="color: var(--green);">$69,800</div></div>
+                    <div class="sc-item"><div class="sc-label">SL</div><div class="sc-val" style="color: var(--red);">$65,900</div></div>
+                    <div class="sc-item"><div class="sc-label">TP2</div><div class="sc-val" style="color: var(--green);">$72,100</div></div>
+                </div>
+                <div class="sc-progress-wrap">
+                    <div class="sc-progress-header">
+                        <span>Confluence</span>
+                        <span style="color: var(--gold); font-weight: 600;">82%</span>
+                    </div>
+                    <div class="sc-progress-bg"><div class="sc-progress-fill" style="width: 82%;"></div></div>
+                </div>
+                <div class="sc-footer">
+                    <span>R:R 2.4</span>
+                    <span>1H · Binance Futures</span>
+                </div>
+            </div>
+
+            <!-- Signal 2 -->
+            <div class="signal-card fade-up">
+                <div class="sc-header">
+                    <div class="sc-pair">ETHUSDT</div>
+                    <div class="sc-badges">
+                        <span class="badge badge-red">SHORT</span>
+                        <span class="badge badge-outline">A</span>
+                        <span class="badge badge-outline" style="color: var(--text-muted);">WAITING</span>
+                    </div>
+                </div>
+                <div class="sc-grid">
+                    <div class="sc-item"><div class="sc-label">Entry</div><div class="sc-val">$3,540</div></div>
+                    <div class="sc-item"><div class="sc-label">TP1</div><div class="sc-val" style="color: var(--green);">$3,380</div></div>
+                    <div class="sc-item"><div class="sc-label">SL</div><div class="sc-val" style="color: var(--red);">$3,650</div></div>
+                    <div class="sc-item"><div class="sc-label">TP2</div><div class="sc-val" style="color: var(--green);">$3,200</div></div>
+                </div>
+                <div class="sc-progress-wrap">
+                    <div class="sc-progress-header">
+                        <span>Confluence</span>
+                        <span style="color: var(--gold); font-weight: 600;">74%</span>
+                    </div>
+                    <div class="sc-progress-bg"><div class="sc-progress-fill" style="width: 74%;"></div></div>
+                </div>
+                <div class="sc-footer">
+                    <span>R:R 1.9</span>
+                    <span>4H · Binance Futures</span>
+                </div>
+            </div>
+
+            <!-- Signal 3 -->
+            <div class="signal-card fade-up">
+                <div class="sc-header">
+                    <div class="sc-pair">SOLUSDT</div>
+                    <div class="sc-badges">
+                        <span class="badge badge-green">LONG</span>
+                        <span class="badge badge-outline">A</span>
+                        <span class="badge badge-outline">ACTIVE</span>
+                    </div>
+                </div>
+                <div class="sc-grid">
+                    <div class="sc-item"><div class="sc-label">Entry</div><div class="sc-val">$178.50</div></div>
+                    <div class="sc-item"><div class="sc-label">TP1</div><div class="sc-val" style="color: var(--green);">$192.00</div></div>
+                    <div class="sc-item"><div class="sc-label">SL</div><div class="sc-val" style="color: var(--red);">$168.00</div></div>
+                    <div class="sc-item"><div class="sc-label">TP2</div><div class="sc-val" style="color: var(--green);">$205.00</div></div>
+                </div>
+                <div class="sc-progress-wrap">
+                    <div class="sc-progress-header">
+                        <span>Confluence</span>
+                        <span style="color: var(--gold); font-weight: 600;">71%</span>
+                    </div>
+                    <div class="sc-progress-bg"><div class="sc-progress-fill" style="width: 71%;"></div></div>
+                </div>
+                <div class="sc-footer">
+                    <span>R:R 2.1</span>
+                    <span>1H · Binance Futures</span>
+                </div>
+            </div>
+
+            <!-- Signal 4 -->
+            <div class="signal-card fade-up">
+                <div class="sc-header">
+                    <div class="sc-pair">BNBUSDT</div>
+                    <div class="sc-badges">
+                        <span class="badge badge-red">SHORT</span>
+                        <span class="badge badge-outline">B+</span>
+                        <span class="badge badge-outline" style="color: var(--text-muted);">WAITING</span>
+                    </div>
+                </div>
+                <div class="sc-grid">
+                    <div class="sc-item"><div class="sc-label">Entry</div><div class="sc-val">$598</div></div>
+                    <div class="sc-item"><div class="sc-label">TP1</div><div class="sc-val" style="color: var(--green);">$572</div></div>
+                    <div class="sc-item"><div class="sc-label">SL</div><div class="sc-val" style="color: var(--red);">$618</div></div>
+                    <div class="sc-item"><div class="sc-label">TP2</div><div class="sc-val" style="color: var(--green);">$548</div></div>
+                </div>
+                <div class="sc-progress-wrap">
+                    <div class="sc-progress-header">
+                        <span>Confluence</span>
+                        <span style="color: var(--gold); font-weight: 600;">65%</span>
+                    </div>
+                    <div class="sc-progress-bg"><div class="sc-progress-fill" style="width: 65%;"></div></div>
+                </div>
+                <div class="sc-footer">
+                    <span>R:R 1.7</span>
+                    <span>1D · Binance Futures</span>
+                </div>
+            </div>
+
+            <!-- Signal 5 -->
+            <div class="signal-card fade-up">
+                <div class="sc-header">
+                    <div class="sc-pair">XRPUSDT</div>
+                    <div class="sc-badges">
+                        <span class="badge badge-green">LONG</span>
+                        <span class="badge badge-gold">A+</span>
+                        <span class="badge badge-outline">ACTIVE</span>
+                    </div>
+                </div>
+                <div class="sc-grid">
+                    <div class="sc-item"><div class="sc-label">Entry</div><div class="sc-val">$0.618</div></div>
+                    <div class="sc-item"><div class="sc-label">TP1</div><div class="sc-val" style="color: var(--green);">$0.675</div></div>
+                    <div class="sc-item"><div class="sc-label">SL</div><div class="sc-val" style="color: var(--red);">$0.578</div></div>
+                    <div class="sc-item"><div class="sc-label">TP2</div><div class="sc-val" style="color: var(--green);">$0.730</div></div>
+                </div>
+                <div class="sc-progress-wrap">
+                    <div class="sc-progress-header">
+                        <span>Confluence</span>
+                        <span style="color: var(--gold); font-weight: 600;">79%</span>
+                    </div>
+                    <div class="sc-progress-bg"><div class="sc-progress-fill" style="width: 79%;"></div></div>
+                </div>
+                <div class="sc-footer">
+                    <span>R:R 2.3</span>
+                    <span>1H · Binance Futures</span>
+                </div>
+            </div>
+
+            <!-- Signal 6 -->
+            <div class="signal-card fade-up">
+                <div class="sc-header">
+                    <div class="sc-pair">LTCUSDT</div>
+                    <div class="sc-badges">
+                        <span class="badge badge-green">LONG</span>
+                        <span class="badge badge-outline">B</span>
+                        <span class="badge badge-outline" style="color: var(--text-muted);">WAITING</span>
+                    </div>
+                </div>
+                <div class="sc-grid">
+                    <div class="sc-item"><div class="sc-label">Entry</div><div class="sc-val">$92.40</div></div>
+                    <div class="sc-item"><div class="sc-label">TP1</div><div class="sc-val" style="color: var(--green);">$98.50</div></div>
+                    <div class="sc-item"><div class="sc-label">SL</div><div class="sc-val" style="color: var(--red);">$86.00</div></div>
+                    <div class="sc-item"><div class="sc-label">TP2</div><div class="sc-val" style="color: var(--green);">$104.00</div></div>
+                </div>
+                <div class="sc-progress-wrap">
+                    <div class="sc-progress-header">
+                        <span>Confluence</span>
+                        <span style="color: var(--gold); font-weight: 600;">61%</span>
+                    </div>
+                    <div class="sc-progress-bg"><div class="sc-progress-fill" style="width: 61%;"></div></div>
+                </div>
+                <div class="sc-footer">
+                    <span>R:R 1.5</span>
+                    <span>4H · Binance Futures</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-grid">
+                <div class="footer-col" style="grid-column: span 1;">
+                    <a href="index.html" class="logo mb-2">
+                        <span class="logo-icon">◈</span> INVESTY<span class="logo-accent">SIGNALS</span>
+                    </a>
+                    <p style="color: var(--text-muted); font-size: 0.875rem;">Sri Lanka's leading crypto signal platform. Empowering retail traders with institutional-grade tools.</p>
+                </div>
+                <div class="footer-col">
+                    <h4>Platform</h4>
+                    <ul class="footer-links">
+                        <li><a href="signals.html">Live Signals</a></li>
+                        <li><a href="login.html">Analysis Engine</a></li>
+                        <li><a href="login.html">Paper Trading</a></li>
+                        <li><a href="login.html">Dashboard</a></li>
+                    </ul>
+                </div>
+                <div class="footer-col">
+                    <h4>Company</h4>
+                    <ul class="footer-links">
+                        <li><a href="about.html">About Us</a></li>
+                        <li><a href="pricing.html">Pricing</a></li>
+                        <li><a href="contact.html">Contact</a></li>
+                    </ul>
+                </div>
+                <div class="footer-col">
+                    <h4>Legal</h4>
+                    <ul class="footer-links">
+                        <li><a href="terms.html">Terms of Service</a></li>
+                        <li><a href="privacy.html">Privacy Policy</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <div>© 2026 InvestySignals. All rights reserved.</div>
+                <div>Educational purposes only. Not financial advice.</div>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        const hamburger = document.getElementById('hamburger');
+        const drawerClose = document.getElementById('drawerClose');
+        const mobileDrawer = document.getElementById('mobileDrawer');
+        const drawerOverlay = document.getElementById('drawerOverlay');
+
+        function toggleDrawer() {
+            mobileDrawer.classList.toggle('open');
+            drawerOverlay.classList.toggle('open');
+        }
+
+        hamburger.addEventListener('click', toggleDrawer);
+        drawerClose.addEventListener('click', toggleDrawer);
+        drawerOverlay.addEventListener('click', toggleDrawer);
+
+        // Scroll reveal
+        const io = new IntersectionObserver(entries => {
+            entries.forEach(e => {
+                if(e.isIntersecting){
+                    e.target.classList.add('visible');
+                    io.unobserve(e.target);
+                }
+            });
+        }, { threshold: 0.1 });
+        document.querySelectorAll('.fade-up').forEach(el => io.observe(el));
+    </script>
+</body>
+</html>

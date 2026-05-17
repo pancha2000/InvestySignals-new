@@ -1,524 +1,303 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pricing — InvestySignals</title>
-  <link rel="stylesheet" href="style.css">
-  <style>
-    .pricing-page {
-      padding: 5.5rem 1.5rem 4rem;
-      min-height: 100vh;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .pricing-orb {
-      width: 600px; height: 600px;
-      background: radial-gradient(circle, rgba(245,200,66,0.07) 0%, transparent 65%);
-      top: -100px; left: 50%;
-      transform: translateX(-50%);
-    }
-
-    .pricing-header {
-      text-align: center;
-      max-width: 600px;
-      margin: 0 auto 3.5rem;
-      position: relative;
-      z-index: 1;
-      animation: fadeUp 0.5s ease both;
-    }
-
-    .pricing-header .section-label { margin-bottom: 0.75rem; }
-
-    .pricing-header h1 {
-      font-family: 'Syne', sans-serif;
-      font-size: clamp(2rem, 4vw, 3.2rem);
-      font-weight: 800;
-      letter-spacing: -0.03em;
-      margin-bottom: 0.75rem;
-    }
-
-    .pricing-header p { font-size: 1.05rem; color: var(--text-muted); line-height: 1.65; }
-
-    /* Toggle */
-    .billing-toggle {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 1rem;
-      margin-bottom: 3rem;
-      animation: fadeUp 0.5s 0.1s ease both;
-    }
-
-    .billing-label { font-size: 0.875rem; font-weight: 600; color: var(--text-muted); }
-    .billing-label.active { color: var(--text); }
-
-    .toggle-pill {
-      width: 44px; height: 24px;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 100px;
-      cursor: pointer;
-      position: relative;
-      transition: var(--transition);
-    }
-    .toggle-pill.on { background: var(--gold); border-color: var(--gold); }
-    .toggle-pill::after {
-      content: '';
-      position: absolute;
-      top: 3px; left: 3px;
-      width: 16px; height: 16px;
-      background: white;
-      border-radius: 50%;
-      transition: var(--transition);
-    }
-    .toggle-pill.on::after { left: calc(100% - 19px); }
-
-    .save-badge {
-      font-size: 0.72rem;
-      font-weight: 700;
-      color: var(--green);
-      background: rgba(34,217,122,0.1);
-      border: 1px solid rgba(34,217,122,0.2);
-      border-radius: 100px;
-      padding: 0.2rem 0.6rem;
-    }
-
-    /* Plans */
-    .plans-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 1.5rem;
-      max-width: 1000px;
-      margin: 0 auto 4rem;
-      position: relative;
-      z-index: 1;
-    }
-
-    .plan-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 2rem;
-      position: relative;
-      overflow: hidden;
-      transition: var(--transition);
-      animation: fadeUp 0.5s ease both;
-    }
-    .plan-card:nth-child(2) { animation-delay: 0.1s; }
-    .plan-card:nth-child(3) { animation-delay: 0.2s; }
-
-    .plan-card:hover { transform: translateY(-5px); box-shadow: var(--shadow-gold); }
-
-    .plan-card.featured {
-      background: linear-gradient(160deg, var(--surface2) 0%, var(--bg3) 100%);
-      border-color: var(--gold);
-      box-shadow: var(--shadow-gold);
-    }
-
-    .plan-card.featured::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: radial-gradient(ellipse at top, rgba(245,200,66,0.08) 0%, transparent 60%);
-      pointer-events: none;
-    }
-
-    .popular-tag {
-      position: absolute;
-      top: 1.25rem; right: 1.25rem;
-      font-size: 0.7rem;
-      font-weight: 700;
-      color: #0A0B0F;
-      background: var(--gold);
-      padding: 0.3rem 0.75rem;
-      border-radius: 100px;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-    }
-
-    .plan-icon {
-      width: 48px; height: 48px;
-      border-radius: 12px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 1.4rem;
-      margin-bottom: 1rem;
-    }
-
-    .plan-name {
-      font-family: 'Syne', sans-serif;
-      font-size: 1rem;
-      font-weight: 700;
-      color: var(--text-muted);
-      margin-bottom: 0.5rem;
-    }
-    .plan-card.featured .plan-name { color: var(--gold); }
-
-    .plan-price {
-      font-family: 'Syne', sans-serif;
-      font-size: 2.8rem;
-      font-weight: 800;
-      letter-spacing: -0.04em;
-      color: var(--text);
-      line-height: 1;
-      margin-bottom: 0.25rem;
-    }
-
-    .plan-price .currency { font-size: 1.3rem; vertical-align: super; }
-    .plan-price .period { font-size: 0.9rem; font-weight: 400; color: var(--text-dim); }
-
-    .plan-desc {
-      font-size: 0.82rem;
-      color: var(--text-muted);
-      margin-bottom: 1.5rem;
-      line-height: 1.5;
-    }
-
-    .plan-divider { height: 1px; background: var(--border); margin: 1.25rem 0; }
-
-    .plan-features { list-style: none; margin-bottom: 1.75rem; }
-    .plan-features li {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.6rem;
-      font-size: 0.875rem;
-      color: var(--text-muted);
-      margin-bottom: 0.65rem;
-      line-height: 1.45;
-    }
-    .plan-features li .check { color: var(--green); font-size: 0.9rem; margin-top: 1px; flex-shrink: 0; }
-    .plan-features li .cross { color: var(--text-dim); flex-shrink: 0; }
-    .plan-features li.disabled { opacity: 0.4; }
-
-    .plan-cta {
-      display: block;
-      width: 100%;
-      padding: 0.85rem;
-      text-align: center;
-      border-radius: 10px;
-      font-family: 'Syne', sans-serif;
-      font-size: 0.95rem;
-      font-weight: 700;
-      cursor: pointer;
-      transition: var(--transition);
-      border: none;
-    }
-
-    .plan-cta.outline {
-      background: transparent;
-      border: 1.5px solid var(--border);
-      color: var(--text-muted);
-    }
-    .plan-cta.outline:hover { border-color: rgba(245,200,66,0.4); color: var(--text); }
-
-    .plan-cta.gold {
-      background: var(--gold);
-      color: #0A0B0F;
-      box-shadow: 0 4px 20px rgba(245,200,66,0.3);
-    }
-    .plan-cta.gold:hover { background: var(--gold-light); transform: translateY(-2px); box-shadow: 0 8px 28px rgba(245,200,66,0.4); }
-
-    .plan-cta.dark {
-      background: var(--bg);
-      color: var(--text-muted);
-      border: 1px solid var(--border);
-    }
-    .plan-cta.dark:hover { color: var(--text); border-color: rgba(245,200,66,0.3); }
-
-    /* FAQ */
-    .faq-section {
-      max-width: 700px;
-      margin: 0 auto;
-      position: relative;
-      z-index: 1;
-      animation: fadeUp 0.5s 0.3s ease both;
-    }
-
-    .faq-section h2 {
-      font-family: 'Syne', sans-serif;
-      font-size: 1.6rem;
-      font-weight: 800;
-      text-align: center;
-      letter-spacing: -0.02em;
-      margin-bottom: 2rem;
-    }
-
-    .faq-item {
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      margin-bottom: 0.75rem;
-      overflow: hidden;
-      transition: var(--transition);
-    }
-    .faq-item:hover { border-color: rgba(245,200,66,0.25); }
-
-    .faq-q {
-      width: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 1rem 1.25rem;
-      background: var(--surface);
-      border: none;
-      cursor: pointer;
-      font-family: 'Syne', sans-serif;
-      font-size: 0.9rem;
-      font-weight: 700;
-      color: var(--text);
-      text-align: left;
-      gap: 1rem;
-    }
-
-    .faq-arrow {
-      width: 20px; height: 20px;
-      color: var(--text-dim);
-      transition: transform 0.3s;
-      flex-shrink: 0;
-    }
-    .faq-item.open .faq-arrow { transform: rotate(180deg); }
-
-    .faq-a {
-      max-height: 0;
-      overflow: hidden;
-      transition: max-height 0.35s cubic-bezier(0.4,0,0.2,1);
-      background: var(--bg2);
-    }
-    .faq-a p {
-      padding: 0 1.25rem 1.1rem;
-      font-size: 0.875rem;
-      color: var(--text-muted);
-      line-height: 1.65;
-    }
-    .faq-item.open .faq-a { max-height: 200px; }
-
-    @media (max-width: 768px) {
-      .plans-grid { grid-template-columns: 1fr; max-width: 420px; }
-      .plan-card { padding: 1.5rem; }
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>Pricing | InvestySignals</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .page-hero {
+            padding: 160px 24px 80px;
+            text-align: center;
+            background: linear-gradient(180deg, var(--bg2) 0%, var(--bg) 100%);
+            border-bottom: 1px solid var(--border-soft);
+        }
+        .page-hero h1 {
+            font-size: 3rem;
+            margin-bottom: 16px;
+        }
+        .page-hero p {
+            color: var(--text-muted);
+            font-size: 1.125rem;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        .toggle-wrap {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 16px;
+            margin: 40px 0;
+        }
+        .toggle-label {
+            font-size: 1rem;
+            font-weight: 500;
+        }
+        .toggle-switch {
+            width: 60px;
+            height: 32px;
+            background: var(--surface);
+            border-radius: 100px;
+            position: relative;
+            cursor: pointer;
+            border: 1px solid var(--border-soft);
+        }
+        .toggle-thumb {
+            width: 24px;
+            height: 24px;
+            background: var(--gold);
+            border-radius: 50%;
+            position: absolute;
+            top: 3px;
+            left: 4px;
+            transition: var(--transition);
+        }
+        .toggle-switch.active .toggle-thumb {
+            transform: translateX(26px);
+        }
+        
+        .pricing-section {
+            padding: 40px 24px 100px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .faq-section {
+            max-width: 800px;
+            margin: 0 auto 100px;
+            padding: 0 24px;
+        }
+        .faq-title {
+            text-align: center;
+            font-size: 2rem;
+            margin-bottom: 40px;
+        }
+        .faq-item {
+            background: var(--bg2);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--radius-sm);
+            margin-bottom: 16px;
+            padding: 24px;
+        }
+        .faq-q {
+            font-weight: 600;
+            font-size: 1.125rem;
+            margin-bottom: 8px;
+        }
+        .faq-a {
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+        .guarantee {
+            text-align: center;
+            padding: 40px;
+            background: rgba(245, 200, 66, 0.05);
+            border: 1px solid rgba(245, 200, 66, 0.2);
+            border-radius: var(--radius);
+            max-width: 800px;
+            margin: 0 auto;
+        }
+    </style>
 </head>
 <body>
 
-  <nav class="navbar" id="navbar">
-    <a href="index.html" class="nav-logo">
-      <div class="logo-icon">📈</div>
-      Investy<span>Signals</span>
-    </a>
-    <ul class="nav-links">
-      <li><a href="index.html">Home</a></li>
-      <li><a href="pricing.html" class="active">Pricing</a></li>
-      <li><a href="about.html">About</a></li>
-      <li><a href="contact.html">Contact</a></li>
-    </ul>
-    <div class="nav-actions">
-      <a href="login.html" class="btn-outline">Login</a>
-      <a href="register.html" class="btn-primary">Get Started →</a>
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="nav-inner">
+            <a href="index.html" class="logo">
+                <span class="logo-icon">◈</span>
+                INVESTY<span class="logo-accent">SIGNALS</span>
+            </a>
+            <div class="nav-links">
+                <a href="signals.html">Signals</a>
+                <a href="about.html">About</a>
+                <a href="pricing.html" class="active">Pricing</a>
+                <a href="contact.html">Contact</a>
+            </div>
+            <div class="nav-actions">
+                <a href="login.html" class="btn btn-ghost">Log In</a>
+                <a href="register.html" class="btn btn-gold">Get Started →</a>
+            </div>
+            <button class="hamburger" id="hamburger">☰</button>
+        </div>
+    </nav>
+    <div class="mobile-drawer" id="mobileDrawer">
+        <button class="drawer-close" id="drawerClose">×</button>
+        <div class="drawer-nav">
+            <a href="signals.html">Signals</a>
+            <a href="about.html">About</a>
+            <a href="pricing.html">Pricing</a>
+            <a href="contact.html">Contact</a>
+        </div>
+        <div class="drawer-actions">
+            <a href="login.html" class="btn btn-ghost" style="width: 100%;">Log In</a>
+            <a href="register.html" class="btn btn-gold" style="width: 100%;">Get Started →</a>
+        </div>
     </div>
-    <button class="hamburger" id="hamburger"><span></span><span></span><span></span></button>
-  </nav>
+    <div class="drawer-overlay" id="drawerOverlay"></div>
 
-  <div class="mobile-menu" id="mobileMenu">
-    <a href="index.html">Home</a>
-    <a href="pricing.html">Pricing</a>
-    <a href="about.html">About</a>
-    <a href="contact.html">Contact</a>
-    <a href="login.html" style="color:var(--gold)">Login</a>
-    <a href="register.html" style="color:var(--gold);font-weight:700">Get Started →</a>
-  </div>
-
-  <div class="page-wrapper pricing-page">
-    <div class="glow-orb pricing-orb"></div>
-
-    <div class="pricing-header">
-      <div class="section-label">Pricing Plans</div>
-      <h1>Simple, Transparent Pricing</h1>
-      <p>Free plan නොමිලේ ලබා ගන්න, VIP upgrade කළ විට unlimited signals!</p>
-    </div>
-
-    <div class="billing-toggle">
-      <span class="billing-label active" id="monthlyLabel">Monthly</span>
-      <div class="toggle-pill" id="billingToggle" onclick="toggleBilling()"></div>
-      <span class="billing-label" id="annualLabel">Annual</span>
-      <span class="save-badge">Save 25%</span>
-    </div>
-
-    <div class="plans-grid">
-
-      <!-- Free -->
-      <div class="plan-card">
-        <div class="plan-icon" style="background:rgba(122,130,160,0.1)">🆓</div>
-        <div class="plan-name">Free</div>
-        <div class="plan-price"><span class="currency">$</span>0<span class="period">/mo</span></div>
-        <p class="plan-desc">Crypto trading ගැන ඉගෙනගන්න perfect starting point.</p>
-        <div class="plan-divider"></div>
-        <ul class="plan-features">
-          <li><span class="check">✓</span> දිනකට analyses 3ක්</li>
-          <li><span class="check">✓</span> Major coins (BTC, ETH, SOL)</li>
-          <li><span class="check">✓</span> Basic RSI signal</li>
-          <li><span class="check">✓</span> Community access</li>
-          <li class="disabled"><span class="cross">✕</span> Real-time signals</li>
-          <li class="disabled"><span class="cross">✕</span> Admin VIP signals</li>
-          <li class="disabled"><span class="cross">✕</span> Priority support</li>
-        </ul>
-        <a href="register.html" class="plan-cta outline">Start Free</a>
-      </div>
-
-      <!-- VIP -->
-      <div class="plan-card featured">
-        <div class="popular-tag">Most Popular</div>
-        <div class="plan-icon" style="background:rgba(245,200,66,0.1)">⚡</div>
-        <div class="plan-name">VIP Premium</div>
-        <div class="plan-price" id="vipPrice"><span class="currency">$</span>29<span class="period">/mo</span></div>
-        <p class="plan-desc">Serious traders සඳහා. Unlimited signals, real-time analysis.</p>
-        <div class="plan-divider"></div>
-        <ul class="plan-features">
-          <li><span class="check">✓</span> <strong>Unlimited</strong> analyses</li>
-          <li><span class="check">✓</span> සියලු 500+ coins & pairs</li>
-          <li><span class="check">✓</span> RSI + MACD + EMA signals</li>
-          <li><span class="check">✓</span> Admin manual VIP signals</li>
-          <li><span class="check">✓</span> Real-time market alerts</li>
-          <li><span class="check">✓</span> Stop-loss & take-profit levels</li>
-          <li><span class="check">✓</span> 24/7 Telegram VIP support</li>
-        </ul>
-        <a href="register.html" class="plan-cta gold">Upgrade to VIP →</a>
-      </div>
-
-      <!-- Enterprise -->
-      <div class="plan-card">
-        <div class="plan-icon" style="background:rgba(77,159,255,0.1)">🏢</div>
-        <div class="plan-name">Enterprise</div>
-        <div class="plan-price"><span style="font-size:1.4rem">Custom</span></div>
-        <p class="plan-desc">Teams සහ institutions සඳහා custom solutions.</p>
-        <div class="plan-divider"></div>
-        <ul class="plan-features">
-          <li><span class="check">✓</span> Everything in VIP</li>
-          <li><span class="check">✓</span> Custom API access</li>
-          <li><span class="check">✓</span> Multi-user accounts</li>
-          <li><span class="check">✓</span> White-label option</li>
-          <li><span class="check">✓</span> Dedicated account manager</li>
-          <li><span class="check">✓</span> SLA guarantee</li>
-          <li><span class="check">✓</span> Custom signal algorithms</li>
-        </ul>
-        <a href="contact.html" class="plan-cta dark">Contact Sales →</a>
-      </div>
-
+    <div class="page-hero">
+        <h1>Simple, Transparent Pricing</h1>
+        <p>Start for free. Upgrade to Pro when you're ready to take your trading to the next level.</p>
+        
+        <div class="toggle-wrap">
+            <span class="toggle-label">Monthly</span>
+            <div class="toggle-switch" id="billingToggle">
+                <div class="toggle-thumb"></div>
+            </div>
+            <span class="toggle-label" style="color: var(--gold);">Annual <span style="font-size: 0.75rem;">(Save 20%)</span></span>
+        </div>
     </div>
 
-    <!-- FAQ -->
+    <div class="pricing-section">
+        <div class="pricing-grid">
+            <!-- Free Plan -->
+            <div class="plan-card">
+                <h3 class="plan-name">Free</h3>
+                <div class="plan-price">$0<span>/month</span></div>
+                <ul class="plan-features">
+                    <li class="included">✅ All basic signals</li>
+                    <li class="included">✅ 8-factor analysis</li>
+                    <li class="included">✅ Paper trading</li>
+                    <li class="included">✅ Signal history (7 days)</li>
+                    <li>❌ Priority signals</li>
+                    <li>❌ AI market outlook</li>
+                    <li>❌ Advanced filters</li>
+                </ul>
+                <a href="register.html" class="btn btn-ghost" style="text-align: center;">Start Free →</a>
+            </div>
+            
+            <!-- Pro Plan -->
+            <div class="plan-card highlight">
+                <div class="plan-popular">MOST POPULAR</div>
+                <h3 class="plan-name">Pro</h3>
+                <div class="plan-price"><span id="pricePro">$9.99</span><span>/month</span></div>
+                <ul class="plan-features">
+                    <li class="included">✅ Everything in Free</li>
+                    <li class="included">✅ Priority signals (first access)</li>
+                    <li class="included">✅ AI market outlook reports</li>
+                    <li class="included">✅ Signal history (30 days)</li>
+                    <li class="included">✅ Advanced filters</li>
+                    <li class="included">✅ Export signals CSV</li>
+                    <li>❌ Private Telegram group</li>
+                </ul>
+                <a href="register.html" class="btn btn-gold" style="text-align: center;">Get Pro →</a>
+            </div>
+            
+            <!-- Elite Plan -->
+            <div class="plan-card">
+                <h3 class="plan-name">Elite</h3>
+                <div class="plan-price"><span id="priceElite">$24.99</span><span>/month</span></div>
+                <ul class="plan-features">
+                    <li class="included">✅ Everything in Pro</li>
+                    <li class="included">✅ Private Telegram group</li>
+                    <li class="included">✅ 1-on-1 onboarding call</li>
+                    <li class="included">✅ Signal history (unlimited)</li>
+                    <li class="included">✅ Early access to new features</li>
+                    <li class="included">✅ Priority support</li>
+                </ul>
+                <a href="register.html" class="btn btn-ghost" style="text-align: center;">Get Elite →</a>
+            </div>
+        </div>
+    </div>
+
     <div class="faq-section">
-      <h2>Frequently Asked Questions</h2>
-
-      <div class="faq-item">
-        <button class="faq-q" onclick="toggleFaq(this)">
-          Free plan cancel කරන්නේ කොහොමද?
-          <svg class="faq-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-        </button>
-        <div class="faq-a"><p>Free plan ට cancel කිරීමේ අවශ්‍යතාවක් නැ — ඕනෑම වෙලාවක් නොමිලේ භාවිතා කළ හැකිය. Credit card ද අවශ්‍ය නැ.</p></div>
-      </div>
-
-      <div class="faq-item">
-        <button class="faq-q" onclick="toggleFaq(this)">
-          VIP plan refund policy එක කුමක්ද?
-          <svg class="faq-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-        </button>
-        <div class="faq-a"><p>Payment කළ දින 7 ඇතුළත ඔබ satisfied නොවේ නම් full refund ලබා ගත හැකිය. Contact us at support@investysignals.com.</p></div>
-      </div>
-
-      <div class="faq-item">
-        <button class="faq-q" onclick="toggleFaq(this)">
-          Signals accurate ද? Guarantee තිබේද?
-          <svg class="faq-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-        </button>
-        <div class="faq-a"><p>Historical data based ව 94% accuracy track record තිබේ. නමුත් crypto trading financial risk ඇත. Signals educational purposes සඳහා ද, investment advice නොවේ.</p></div>
-      </div>
-
-      <div class="faq-item">
-        <button class="faq-q" onclick="toggleFaq(this)">
-          Payment methods මොනවාද?
-          <svg class="faq-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-        </button>
-        <div class="faq-a"><p>Visa, MasterCard, PayPal, USDT (TRC20/ERC20), සහ Bank Transfer accept කරනවා. Crypto payment 5% discount ලබා දෙනවා.</p></div>
-      </div>
-
-      <div class="faq-item">
-        <button class="faq-q" onclick="toggleFaq(this)">
-          Free plan Free to VIP upgrade කරන්නේ කොහොමද?
-          <svg class="faq-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-        </button>
-        <div class="faq-a"><p>Dashboard → Upgrade Plan ක්ලික් කර payment complete කරන්න. Instant activation. ඔබගේ data සහ history preserve වෙනවා.</p></div>
-      </div>
+        <h2 class="faq-title">Frequently Asked Questions</h2>
+        <div class="faq-item">
+            <div class="faq-q">Can I use the free plan forever?</div>
+            <div class="faq-a">Yes! Our core signals and analysis engine will always remain free. The paid plans are for traders who want priority access, deeper historical data, and advanced features.</div>
+        </div>
+        <div class="faq-item">
+            <div class="faq-q">How do priority signals work?</div>
+            <div class="faq-a">Pro and Elite members receive new signal alerts 5 minutes before they are published to the free tier, allowing for better entry prices.</div>
+        </div>
+        <div class="faq-item">
+            <div class="faq-q">Can I cancel my subscription anytime?</div>
+            <div class="faq-a">Absolutely. You can manage your subscription from your profile settings and cancel at any time. You'll retain access until the end of your billing cycle.</div>
+        </div>
+        
+        <div class="guarantee" style="margin-top: 60px;">
+            <div style="font-size: 3rem; margin-bottom: 16px;">🛡️</div>
+            <h3 style="margin-bottom: 16px; font-family: 'Syne', sans-serif;">7-Day Money-Back Guarantee</h3>
+            <p style="color: var(--text-muted);">Try Pro or Elite risk-free. If you're not satisfied within the first 7 days, let us know and we'll issue a full refund, no questions asked.</p>
+        </div>
     </div>
 
-  </div>
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-grid">
+                <div class="footer-col" style="grid-column: span 1;">
+                    <a href="index.html" class="logo mb-2">
+                        <span class="logo-icon">◈</span> INVESTY<span class="logo-accent">SIGNALS</span>
+                    </a>
+                    <p style="color: var(--text-muted); font-size: 0.875rem;">Sri Lanka's leading crypto signal platform. Empowering retail traders with institutional-grade tools.</p>
+                </div>
+                <div class="footer-col">
+                    <h4>Platform</h4>
+                    <ul class="footer-links">
+                        <li><a href="signals.html">Live Signals</a></li>
+                        <li><a href="login.html">Analysis Engine</a></li>
+                        <li><a href="login.html">Paper Trading</a></li>
+                        <li><a href="login.html">Dashboard</a></li>
+                    </ul>
+                </div>
+                <div class="footer-col">
+                    <h4>Company</h4>
+                    <ul class="footer-links">
+                        <li><a href="about.html">About Us</a></li>
+                        <li><a href="pricing.html">Pricing</a></li>
+                        <li><a href="contact.html">Contact</a></li>
+                    </ul>
+                </div>
+                <div class="footer-col">
+                    <h4>Legal</h4>
+                    <ul class="footer-links">
+                        <li><a href="terms.html">Terms of Service</a></li>
+                        <li><a href="privacy.html">Privacy Policy</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <div>© 2026 InvestySignals. All rights reserved.</div>
+                <div>Educational purposes only. Not financial advice.</div>
+            </div>
+        </div>
+    </footer>
 
-  <footer class="footer">
-    <div class="footer-grid">
-      <div class="footer-brand">
-        <a href="index.html" class="nav-logo" style="display:inline-flex">
-          <div class="logo-icon">📈</div>
-          Investy<span>Signals</span>
-        </a>
-        <p>Professional crypto trading signals platform for modern traders.</p>
-      </div>
-      <div class="footer-col">
-        <h4>Platform</h4>
-        <ul>
-          <li><a href="dashboard.html">Dashboard</a></li>
-          <li><a href="pricing.html">Pricing</a></li>
-          <li><a href="register.html">Sign Up</a></li>
-        </ul>
-      </div>
-      <div class="footer-col">
-        <h4>Company</h4>
-        <ul>
-          <li><a href="about.html">About Us</a></li>
-          <li><a href="contact.html">Contact</a></li>
-        </ul>
-      </div>
-      <div class="footer-col">
-        <h4>Legal</h4>
-        <ul>
-          <li><a href="#">Privacy Policy</a></li>
-          <li><a href="#">Terms of Service</a></li>
-          <li><a href="#">Risk Disclaimer</a></li>
-        </ul>
-      </div>
-    </div>
-    <div class="footer-bottom">
-      <p>© 2025 InvestySignals. All rights reserved.</p>
-      <p style="color:var(--text-dim); font-size:0.75rem;">Trading involves risk.</p>
-    </div>
-  </footer>
+    <script>
+        const hamburger = document.getElementById('hamburger');
+        const drawerClose = document.getElementById('drawerClose');
+        const mobileDrawer = document.getElementById('mobileDrawer');
+        const drawerOverlay = document.getElementById('drawerOverlay');
 
-  <script>
-    const navbar = document.getElementById('navbar');
-    window.addEventListener('scroll', () => navbar.classList.toggle('scrolled', window.scrollY > 40));
+        function toggleDrawer() {
+            mobileDrawer.classList.toggle('open');
+            drawerOverlay.classList.toggle('open');
+        }
 
-    const hamburger = document.getElementById('hamburger');
-    const mobileMenu = document.getElementById('mobileMenu');
-    hamburger.addEventListener('click', () => {
-      hamburger.classList.toggle('open');
-      mobileMenu.classList.toggle('open');
-    });
-
-    let annual = false;
-    function toggleBilling() {
-      annual = !annual;
-      document.getElementById('billingToggle').classList.toggle('on', annual);
-      document.getElementById('monthlyLabel').classList.toggle('active', !annual);
-      document.getElementById('annualLabel').classList.toggle('active', annual);
-      const price = annual ? '<span class="currency">$</span>22<span class="period">/mo</span><div style="font-size:0.72rem;color:var(--green);margin-top:0.25rem">Billed annually ($264/yr)</div>' :
-        '<span class="currency">$</span>29<span class="period">/mo</span>';
-      document.getElementById('vipPrice').innerHTML = price;
-    }
-
-    function toggleFaq(btn) {
-      const item = btn.closest('.faq-item');
-      const isOpen = item.classList.contains('open');
-      document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('open'));
-      if(!isOpen) item.classList.add('open');
-    }
-  </script>
+        hamburger.addEventListener('click', toggleDrawer);
+        drawerClose.addEventListener('click', toggleDrawer);
+        drawerOverlay.addEventListener('click', toggleDrawer);
+        
+        // Billing Toggle
+        const toggle = document.getElementById('billingToggle');
+        const pricePro = document.getElementById('pricePro');
+        const priceElite = document.getElementById('priceElite');
+        let isAnnual = false;
+        
+        toggle.addEventListener('click', () => {
+            isAnnual = !isAnnual;
+            toggle.classList.toggle('active');
+            
+            if (isAnnual) {
+                pricePro.textContent = '$7.99';
+                priceElite.textContent = '$19.99';
+            } else {
+                pricePro.textContent = '$9.99';
+                priceElite.textContent = '$24.99';
+            }
+        });
+    </script>
 </body>
 </html>

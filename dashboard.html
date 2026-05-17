@@ -1,696 +1,457 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dashboard — InvestySignals</title>
-  <link rel="stylesheet" href="style.css">
-  <style>
-    body { display: flex; flex-direction: column; min-height: 100vh; }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>Dashboard | InvestySignals</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .auth-nav {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            height: 64px;
+            background: var(--bg2);
+            border-bottom: 1px solid var(--border-soft);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            z-index: 100;
+        }
+        .page-title {
+            font-family: 'Syne', sans-serif;
+            font-weight: 700;
+            color: var(--text);
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        .user-chip {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: var(--surface);
+            padding: 6px 12px 6px 6px;
+            border-radius: 100px;
+            border: 1px solid var(--border-soft);
+        }
+        .user-avatar {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--gold), #FFF);
+            color: var(--bg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.8rem;
+        }
+        .user-name {
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+        .dash-container {
+            padding: 100px 24px 40px;
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+        }
+        .welcome-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 32px;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        .welcome-text h1 {
+            font-size: 1.75rem;
+            margin-bottom: 4px;
+        }
+        .welcome-text p {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 24px;
+            margin-bottom: 40px;
+        }
+        .stat-card {
+            background: var(--bg2);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--radius);
+            padding: 24px;
+        }
+        .stat-card-title {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            margin-bottom: 8px;
+        }
+        .stat-card-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: var(--gold);
+        }
+        .main-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 24px;
+        }
+        .panel {
+            background: var(--bg2);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--radius);
+            padding: 24px;
+        }
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        .panel-title {
+            font-family: 'Syne', sans-serif;
+            font-size: 1.25rem;
+        }
+        .quick-links {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+        }
+        .quick-link-card {
+            background: var(--surface);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--radius-sm);
+            padding: 16px;
+            transition: var(--transition);
+            display: block;
+        }
+        .quick-link-card:hover {
+            border-color: var(--gold);
+            transform: translateY(-2px);
+        }
+        .ql-icon {
+            font-size: 1.5rem;
+            margin-bottom: 12px;
+        }
+        .ql-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        .ql-desc {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+        .table-wrapper {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            min-width: 600px;
+        }
+        .data-table th {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-soft);
+        }
+        .data-table td {
+            padding: 16px;
+            border-bottom: 1px solid var(--border-soft);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+        }
+        .data-table tr:last-child td {
+            border-bottom: none;
+        }
+        .market-card {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border-soft);
+        }
+        .market-card:last-child {
+            border-bottom: none;
+        }
+        .mc-pair { font-weight: 600; }
+        .mc-price { font-family: 'JetBrains Mono', monospace; }
+        .mc-change { font-size: 0.875rem; }
+        .mc-change.up { color: var(--green); }
+        .mc-change.down { color: var(--red); }
+        
+        .analysis-note {
+            background: rgba(245, 200, 66, 0.1);
+            border: 1px solid rgba(245, 200, 66, 0.2);
+            border-radius: var(--radius-sm);
+            padding: 16px;
+            margin-bottom: 24px;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
 
-    .dash-layout {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      padding-top: 70px;
-    }
-
-    /* Top bar */
-    .dash-topbar {
-      background: var(--bg2);
-      border-bottom: 1px solid var(--border);
-      padding: 1rem 2rem;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      position: sticky;
-      top: 70px;
-      z-index: 100;
-    }
-
-    .dash-topbar-left h2 {
-      font-family: 'Syne', sans-serif;
-      font-size: 1.1rem;
-      font-weight: 700;
-      color: var(--text);
-    }
-
-    .dash-topbar-left p {
-      font-size: 0.78rem;
-      color: var(--text-muted);
-      margin-top: 1px;
-    }
-
-    .dash-topbar-right {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-    }
-
-    .user-chip {
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
-      padding: 0.4rem 0.9rem 0.4rem 0.4rem;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 100px;
-      cursor: pointer;
-      transition: var(--transition);
-    }
-    .user-chip:hover { border-color: rgba(245,200,66,0.3); }
-
-    .user-avatar {
-      width: 28px; height: 28px;
-      background: linear-gradient(135deg, var(--gold) 0%, #FF9500 100%);
-      border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 0.75rem;
-      font-weight: 700;
-      color: #0A0B0F;
-    }
-
-    .user-chip span {
-      font-size: 0.82rem;
-      font-weight: 600;
-      color: var(--text);
-    }
-
-    .logout-btn {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 0.45rem 0.9rem;
-      background: transparent;
-      border: 1.5px solid rgba(255,77,109,0.2);
-      border-radius: 8px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      color: var(--red);
-      cursor: pointer;
-      transition: var(--transition);
-    }
-    .logout-btn:hover { background: rgba(255,77,109,0.08); border-color: rgba(255,77,109,0.4); }
-
-    /* Dashboard body */
-    .dash-body {
-      flex: 1;
-      padding: 2rem;
-      max-width: 1100px;
-      width: 100%;
-      margin: 0 auto;
-    }
-
-    /* Welcome banner */
-    .welcome-banner {
-      background: linear-gradient(135deg, var(--surface) 0%, var(--bg3) 100%);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 1.75rem 2rem;
-      margin-bottom: 2rem;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1rem;
-      position: relative;
-      overflow: hidden;
-      animation: fadeUp 0.5s ease both;
-    }
-
-    .welcome-banner::before {
-      content: '';
-      position: absolute;
-      top: -40px; right: -40px;
-      width: 200px; height: 200px;
-      background: radial-gradient(circle, rgba(245,200,66,0.08) 0%, transparent 70%);
-    }
-
-    .welcome-text h3 {
-      font-family: 'Syne', sans-serif;
-      font-size: 1.3rem;
-      font-weight: 800;
-      letter-spacing: -0.02em;
-      margin-bottom: 0.3rem;
-    }
-
-    .welcome-text p { font-size: 0.875rem; color: var(--text-muted); }
-
-    .plan-badge {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 0.5rem 1.1rem;
-      border-radius: 100px;
-      font-size: 0.8rem;
-      font-weight: 700;
-      background: rgba(245,200,66,0.1);
-      border: 1px solid rgba(245,200,66,0.25);
-      color: var(--gold);
-      white-space: nowrap;
-    }
-
-    /* Quick stats */
-    .quick-stats {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 1rem;
-      margin-bottom: 2rem;
-      animation: fadeUp 0.5s 0.1s ease both;
-    }
-
-    .qs-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1.25rem 1.5rem;
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-      transition: var(--transition);
-    }
-    .qs-card:hover { border-color: rgba(245,200,66,0.25); transform: translateY(-2px); }
-
-    .qs-icon {
-      width: 44px; height: 44px;
-      border-radius: 10px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 1.2rem;
-      flex-shrink: 0;
-    }
-    .qs-icon.gold { background: rgba(245,200,66,0.1); }
-    .qs-icon.green { background: rgba(34,217,122,0.1); }
-    .qs-icon.blue  { background: rgba(77,159,255,0.1); }
-
-    .qs-info .qs-val {
-      font-family: 'Syne', sans-serif;
-      font-size: 1.4rem;
-      font-weight: 800;
-      letter-spacing: -0.02em;
-      color: var(--text);
-    }
-    .qs-info .qs-label { font-size: 0.78rem; color: var(--text-muted); margin-top: 1px; }
-
-    /* Analysis section */
-    .analysis-section {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1.5rem;
-      animation: fadeUp 0.5s 0.2s ease both;
-    }
-
-    .analysis-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 1.75rem;
-    }
-
-    .analysis-card h3 {
-      font-family: 'Syne', sans-serif;
-      font-size: 1rem;
-      font-weight: 700;
-      margin-bottom: 1.25rem;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-
-    .search-row {
-      display: flex;
-      gap: 0.75rem;
-      margin-bottom: 1.25rem;
-    }
-
-    .search-row .form-input {
-      flex: 1;
-      text-transform: uppercase;
-    }
-
-    .analyze-btn {
-      padding: 0 1.25rem;
-      background: var(--gold);
-      border: none;
-      border-radius: var(--radius-sm);
-      font-family: 'Syne', sans-serif;
-      font-size: 0.9rem;
-      font-weight: 700;
-      color: #0A0B0F;
-      cursor: pointer;
-      transition: var(--transition);
-      white-space: nowrap;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .analyze-btn:hover { background: var(--gold-light); }
-    .analyze-btn:disabled { opacity: 0.6; pointer-events: none; }
-
-    .result-area {
-      min-height: 180px;
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 1.5rem;
-      text-align: center;
-      transition: var(--transition);
-    }
-
-    .result-area.has-result {
-      align-items: stretch;
-      text-align: left;
-    }
-
-    .empty-state {
-      color: var(--text-dim);
-      font-size: 0.875rem;
-    }
-    .empty-state .empty-icon { font-size: 2rem; margin-bottom: 0.5rem; }
-
-    .result-coin {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 1rem;
-    }
-
-    .result-coin .coin-name {
-      font-family: 'Syne', sans-serif;
-      font-size: 1.2rem;
-      font-weight: 800;
-    }
-
-    .signal-pill {
-      padding: 0.4rem 1rem;
-      border-radius: 100px;
-      font-size: 0.82rem;
-      font-weight: 700;
-      letter-spacing: 0.04em;
-    }
-    .signal-pill.buy { background: rgba(34,217,122,0.15); color: var(--green); border: 1px solid rgba(34,217,122,0.3); }
-    .signal-pill.sell { background: rgba(255,77,109,0.15); color: var(--red); border: 1px solid rgba(255,77,109,0.3); }
-    .signal-pill.hold { background: rgba(245,200,66,0.1); color: var(--gold); border: 1px solid rgba(245,200,66,0.25); }
-
-    .result-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
-
-    .metric-box {
-      background: var(--surface2);
-      border-radius: 8px;
-      padding: 0.75rem;
-    }
-    .metric-box .m-label { font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.3rem; }
-    .metric-box .m-value { font-family: 'Syne', sans-serif; font-size: 0.95rem; font-weight: 700; color: var(--text); }
-
-    /* Signals feed */
-    .signals-card {
-      grid-column: 1 / -1;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 1.75rem;
-      margin-top: 1.5rem;
-      animation: fadeUp 0.5s 0.3s ease both;
-    }
-
-    .signals-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 1.25rem;
-    }
-
-    .signals-header h3 {
-      font-family: 'Syne', sans-serif;
-      font-size: 1rem;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-
-    .live-dot {
-      width: 8px; height: 8px;
-      background: var(--green);
-      border-radius: 50%;
-      animation: pulse-dot 1.5s infinite;
-    }
-    @keyframes pulse-dot {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(34,217,122,0.5); }
-      50%       { box-shadow: 0 0 0 5px rgba(34,217,122,0); }
-    }
-
-    .signal-row {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-      padding: 0.85rem 0;
-      border-bottom: 1px solid var(--border);
-      transition: var(--transition);
-    }
-    .signal-row:last-child { border-bottom: none; }
-    .signal-row:hover { background: var(--bg2); margin: 0 -1rem; padding: 0.85rem 1rem; border-radius: 8px; }
-
-    .signal-row .sr-coin {
-      font-family: 'Syne', sans-serif;
-      font-weight: 700;
-      font-size: 0.95rem;
-      min-width: 90px;
-      color: var(--text);
-    }
-    .signal-row .sr-price { font-size: 0.875rem; color: var(--text-muted); flex: 1; font-family: 'Syne', sans-serif; }
-    .signal-row .sr-time { font-size: 0.75rem; color: var(--text-dim); }
-
-    .loading-spinner {
-      display: flex; align-items: center; justify-content: center;
-      gap: 0.75rem; padding: 2rem; color: var(--text-muted); font-size: 0.875rem;
-    }
-    .loading-spinner::before {
-      content: '';
-      width: 20px; height: 20px;
-      border: 2px solid var(--border);
-      border-top-color: var(--gold);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      flex-shrink: 0;
-    }
-
-    @media (max-width: 768px) {
-      .dash-body { padding: 1rem; }
-      .quick-stats { grid-template-columns: 1fr; }
-      .analysis-section { grid-template-columns: 1fr; }
-      .dash-topbar { padding: 0.75rem 1rem; }
-      .logout-btn span { display: none; }
-      .welcome-banner { flex-direction: column; align-items: flex-start; }
-    }
-  </style>
+        @media (max-width: 992px) {
+            .main-grid { grid-template-columns: 1fr; }
+            .stats-row { grid-template-columns: repeat(2, 1fr); }
+            .page-title { display: none; }
+        }
+        @media (max-width: 768px) {
+            .quick-links { grid-template-columns: 1fr; }
+            .stats-row { grid-template-columns: 1fr; }
+        }
+    </style>
 </head>
 <body>
 
-  <!-- NAVBAR -->
-  <nav class="navbar" id="navbar">
-    <a href="index.html" class="nav-logo">
-      <div class="logo-icon">📈</div>
-      Investy<span>Signals</span>
-    </a>
-    <ul class="nav-links">
-      <li><a href="dashboard.html" class="active">Dashboard</a></li>
-      <li><a href="pricing.html">Upgrade</a></li>
-    </ul>
-    <div class="nav-actions">
-      <button class="btn-outline" id="logoutBtnNav" style="color:var(--red); border-color:rgba(255,77,109,0.25)">Logout</button>
+    <nav class="auth-nav">
+        <a href="index.html" class="logo">
+            <span class="logo-icon">◈</span> INVESTY<span class="logo-accent">SIGNALS</span>
+        </a>
+        <div class="page-title">Dashboard</div>
+        <div style="display: flex; align-items: center; gap: 16px;">
+            <div class="user-chip" id="userChip">
+                <div class="user-avatar" id="userAvatar">U</div>
+                <div class="user-name" id="userName">User</div>
+            </div>
+            <button id="logoutBtn" class="btn btn-ghost" style="padding: 6px 12px; font-size: 0.875rem;">Logout</button>
+        </div>
+    </nav>
+
+    <div class="dash-container">
+        <div class="welcome-bar">
+            <div class="welcome-text">
+                <h1 id="welcomeText">Good morning, Trader 👋</h1>
+                <p id="dateText">Loading date...</p>
+            </div>
+            <a href="analysis.html" class="btn btn-gold">Go to Analysis →</a>
+        </div>
+
+        <div class="stats-row">
+            <div class="stat-card">
+                <div class="stat-card-title">Total Signals Tracked</div>
+                <div class="stat-card-val">1,254</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-card-title">Active Trades</div>
+                <div class="stat-card-val">8</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-card-title">Win Rate</div>
+                <div class="stat-card-val">78.4%</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-card-title">Paper P&L</div>
+                <div class="stat-card-val" style="color: var(--green);">+$1,420</div>
+            </div>
+        </div>
+
+        <div class="main-grid">
+            <div class="left-col">
+                <div class="panel" style="margin-bottom: 24px;">
+                    <div class="analysis-note">
+                        <span style="font-size: 1.25rem;">💡</span>
+                        <div>
+                            <strong>Full analysis engine runs on a separate page.</strong><br>
+                            <span style="color: var(--text-muted);">This dashboard is your high-level overview. Click below to run a full market scan.</span>
+                        </div>
+                    </div>
+                    
+                    <div class="panel-header">
+                        <h2 class="panel-title">Quick Links</h2>
+                    </div>
+                    <div class="quick-links">
+                        <a href="analysis.html" class="quick-link-card">
+                            <div class="ql-icon">📊</div>
+                            <div class="ql-title">Analysis</div>
+                            <div class="ql-desc">Run full market scan</div>
+                        </a>
+                        <a href="live-signals.html" class="quick-link-card">
+                            <div class="ql-icon">📝</div>
+                            <div class="ql-title">Paper Trading</div>
+                            <div class="ql-desc">Track your trades</div>
+                        </a>
+                        <a href="signals.html" class="quick-link-card">
+                            <div class="ql-icon">📈</div>
+                            <div class="ql-title">Signals</div>
+                            <div class="ql-desc">Browse all signals</div>
+                        </a>
+                        <a href="profile.html" class="quick-link-card">
+                            <div class="ql-icon">👤</div>
+                            <div class="ql-title">Profile</div>
+                            <div class="ql-desc">Manage account</div>
+                        </a>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2 class="panel-title">Recent Signals</h2>
+                        <a href="signals.html" style="font-size: 0.875rem; color: var(--gold);">View All →</a>
+                    </div>
+                    <div class="table-wrapper">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Pair</th>
+                                    <th>Direction</th>
+                                    <th>Entry</th>
+                                    <th>TP1</th>
+                                    <th>SL</th>
+                                    <th>Grade</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>BTCUSDT</td>
+                                    <td><span class="badge badge-green">LONG</span></td>
+                                    <td>$67,432</td>
+                                    <td>$69,800</td>
+                                    <td>$65,900</td>
+                                    <td><span class="badge badge-gold">A+</span></td>
+                                    <td><span class="badge badge-outline">ACTIVE</span></td>
+                                </tr>
+                                <tr>
+                                    <td>ETHUSDT</td>
+                                    <td><span class="badge badge-red">SHORT</span></td>
+                                    <td>$3,540</td>
+                                    <td>$3,380</td>
+                                    <td>$3,650</td>
+                                    <td><span class="badge badge-outline">A</span></td>
+                                    <td><span class="badge badge-outline">WAITING</span></td>
+                                </tr>
+                                <tr>
+                                    <td>SOLUSDT</td>
+                                    <td><span class="badge badge-green">LONG</span></td>
+                                    <td>$178.50</td>
+                                    <td>$192.00</td>
+                                    <td>$168.00</td>
+                                    <td><span class="badge badge-outline">A</span></td>
+                                    <td><span class="badge badge-outline">ACTIVE</span></td>
+                                </tr>
+                                <tr>
+                                    <td>BNBUSDT</td>
+                                    <td><span class="badge badge-red">SHORT</span></td>
+                                    <td>$598.00</td>
+                                    <td>$572.00</td>
+                                    <td>$618.00</td>
+                                    <td><span class="badge badge-outline">B+</span></td>
+                                    <td><span class="badge badge-outline">WAITING</span></td>
+                                </tr>
+                                <tr>
+                                    <td>XRPUSDT</td>
+                                    <td><span class="badge badge-green">LONG</span></td>
+                                    <td>$0.618</td>
+                                    <td>$0.675</td>
+                                    <td>$0.578</td>
+                                    <td><span class="badge badge-gold">A+</span></td>
+                                    <td><span class="badge badge-outline">ACTIVE</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="right-col">
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2 class="panel-title">Market Overview</h2>
+                    </div>
+                    <div>
+                        <div class="market-card">
+                            <div>
+                                <div class="mc-pair">BTC</div>
+                                <div class="mc-change up">+2.4%</div>
+                            </div>
+                            <div class="mc-price">$67,432.00</div>
+                        </div>
+                        <div class="market-card">
+                            <div>
+                                <div class="mc-pair">ETH</div>
+                                <div class="mc-change up">+1.8%</div>
+                            </div>
+                            <div class="mc-price">$3,541.00</div>
+                        </div>
+                        <div class="market-card">
+                            <div>
+                                <div class="mc-pair">BNB</div>
+                                <div class="mc-change down">-0.6%</div>
+                            </div>
+                            <div class="mc-price">$598.00</div>
+                        </div>
+                        <div class="market-card">
+                            <div>
+                                <div class="mc-pair">SOL</div>
+                                <div class="mc-change up">+4.2%</div>
+                            </div>
+                            <div class="mc-price">$178.50</div>
+                        </div>
+                        <div class="market-card">
+                            <div>
+                                <div class="mc-pair">XRP</div>
+                                <div class="mc-change up">+3.1%</div>
+                            </div>
+                            <div class="mc-price">$0.618</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
-    <button class="hamburger" id="hamburger"><span></span><span></span><span></span></button>
-  </nav>
 
-  <div class="mobile-menu" id="mobileMenu">
-    <a href="dashboard.html">Dashboard</a>
-    <a href="pricing.html">Upgrade</a>
-    <a href="#" id="mobileLogout" style="color:var(--red)">Logout</a>
-  </div>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
-  <div class="dash-layout">
+        const firebaseConfig = {
+            apiKey: "AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk",
+            authDomain: "investysignals-890ba.firebaseapp.com",
+            projectId: "investysignals-890ba",
+            storageBucket: "investysignals-890ba.firebasestorage.app",
+            messagingSenderId: "1045281522975",
+            appId: "1:1045281522975:web:534501aab2ceeb887bdc2a"
+        };
 
-    <!-- TOP BAR -->
-    <div class="dash-topbar">
-      <div class="dash-topbar-left">
-        <h2>Trading Dashboard</h2>
-        <p id="currentDate">Loading...</p>
-      </div>
-      <div class="dash-topbar-right">
-        <div class="user-chip">
-          <div class="user-avatar" id="userInitials">?</div>
-          <span id="userName">Loading...</span>
-        </div>
-        <button class="logout-btn" id="logoutBtn">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
-          <span>Logout</span>
-        </button>
-      </div>
-    </div>
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
 
-    <!-- BODY -->
-    <div class="dash-body">
+        // Date update
+        const dateElement = document.getElementById('dateText');
+        const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+        dateElement.textContent = new Date().toLocaleDateString('en-US', options);
 
-      <!-- Welcome -->
-      <div class="welcome-banner">
-        <div class="welcome-text">
-          <h3>🙌 ස්වාගතයි, <span id="welcomeName">Trader</span>!</h3>
-          <p>ඔබගේ crypto analysis dashboard. Coin symbol ඇතුලත් කර market analyze කරන්න.</p>
-        </div>
-        <div class="plan-badge">⭐ Free Plan</div>
-      </div>
+        onAuthStateChanged(auth, (user) => {
+            if (!user) {
+                window.location.href = 'login.html';
+            } else {
+                const name = user.displayName || user.email.split('@')[0];
+                document.getElementById('userName').textContent = name;
+                document.getElementById('userAvatar').textContent = name.charAt(0).toUpperCase();
+                
+                const hour = new Date().getHours();
+                const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+                document.getElementById('welcomeText').textContent = `${greeting}, ${name} 👋`;
+            }
+        });
 
-      <!-- Quick Stats -->
-      <div class="quick-stats">
-        <div class="qs-card">
-          <div class="qs-icon gold">📊</div>
-          <div class="qs-info">
-            <div class="qs-val" id="analysisCount">0</div>
-            <div class="qs-label">Today's Analyses</div>
-          </div>
-        </div>
-        <div class="qs-card">
-          <div class="qs-icon green">🎯</div>
-          <div class="qs-info">
-            <div class="qs-val">94%</div>
-            <div class="qs-label">Signal Accuracy</div>
-          </div>
-        </div>
-        <div class="qs-card">
-          <div class="qs-icon blue">⚡</div>
-          <div class="qs-info">
-            <div class="qs-val" id="signalCount">12</div>
-            <div class="qs-label">Live Signals Today</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Analysis -->
-      <div class="analysis-section">
-        <!-- Analyze Card -->
-        <div class="analysis-card">
-          <h3>🔍 Coin Analyze කරන්න</h3>
-          <div class="search-row">
-            <input type="text" id="coinInput" class="form-input" placeholder="BTC, ETH, SOL..." maxlength="10">
-            <button class="analyze-btn" id="analyzeBtn">
-              Analyze
-            </button>
-          </div>
-          <div class="result-area" id="resultArea">
-            <div class="empty-state">
-              <div class="empty-icon">🔮</div>
-              Coin symbol ඇතුලත් කර Analyze click කරන්න
-            </div>
-          </div>
-        </div>
-
-        <!-- Popular Coins -->
-        <div class="analysis-card">
-          <h3>🔥 Popular Coins</h3>
-          <div style="display:flex; flex-direction:column; gap:0.6rem;" id="popularList">
-            <!-- JS fill -->
-          </div>
-        </div>
-      </div>
-
-      <!-- Admin Signals Feed -->
-      <div class="signals-card">
-        <div class="signals-header">
-          <h3>
-            <div class="live-dot"></div>
-            Admin Signals
-          </h3>
-          <span class="badge badge-green">Live</span>
-        </div>
-        <div id="signalsFeed">
-          <div class="loading-spinner">Signals load කරනවා...</div>
-        </div>
-      </div>
-
-    </div><!-- /dash-body -->
-  </div><!-- /dash-layout -->
-
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-    import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-
-    const firebaseConfig = {
-      apiKey: "AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk",
-      authDomain: "investysignals-890ba.firebaseapp.com",
-      projectId: "investysignals-890ba",
-      storageBucket: "investysignals-890ba.firebasestorage.app",
-      messagingSenderId: "1045281522975",
-      appId: "1:1045281522975:web:534501aab2ceeb887bdc2a"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-
-    // Auth guard
-    onAuthStateChanged(auth, (user) => {
-      if (!user) {
-        window.location.href = 'login.html';
-        return;
-      }
-      const name = user.displayName || user.email.split('@')[0];
-      document.getElementById('userName').textContent = name;
-      document.getElementById('welcomeName').textContent = name;
-      document.getElementById('userInitials').textContent = name.charAt(0).toUpperCase();
-    });
-
-    // Logout
-    async function doLogout() {
-      await signOut(auth);
-      window.location.href = 'index.html';
-    }
-    document.getElementById('logoutBtn').addEventListener('click', doLogout);
-    document.getElementById('logoutBtnNav').addEventListener('click', doLogout);
-    document.getElementById('mobileLogout')?.addEventListener('click', doLogout);
-
-    // Navbar
-    const navbar = document.getElementById('navbar');
-    window.addEventListener('scroll', () => navbar.classList.toggle('scrolled', window.scrollY > 40));
-    const hamburger = document.getElementById('hamburger');
-    const mobileMenu = document.getElementById('mobileMenu');
-    hamburger.addEventListener('click', () => {
-      hamburger.classList.toggle('open');
-      mobileMenu.classList.toggle('open');
-    });
-  </script>
-
-  <script>
-    // Date
-    const now = new Date();
-    document.getElementById('currentDate').textContent = now.toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
-
-    // Analysis count
-    let analysisToday = parseInt(sessionStorage.getItem('analysisCount') || '0');
-    document.getElementById('analysisCount').textContent = analysisToday;
-
-    // Popular coins quick list
-    const popular = [
-      { coin:'BTC', name:'Bitcoin',  price:'$67,420', change:'+2.3%', up:true },
-      { coin:'ETH', name:'Ethereum', price:'$3,521',  change:'+1.8%', up:true },
-      { coin:'SOL', name:'Solana',   price:'$178.4',  change:'-0.5%', up:false },
-      { coin:'BNB', name:'BNB',      price:'$598',    change:'+0.9%', up:true },
-      { coin:'XRP', name:'Ripple',   price:'$0.614',  change:'+3.2%', up:true },
-    ];
-
-    const popList = document.getElementById('popularList');
-    popular.forEach(c => {
-      const el = document.createElement('div');
-      el.style.cssText = 'display:flex; align-items:center; gap:0.75rem; padding:0.65rem 0.85rem; background:var(--bg2); border:1px solid var(--border); border-radius:8px; cursor:pointer; transition:all 0.2s;';
-      el.innerHTML = `
-        <div style="width:36px;height:36px;background:rgba(245,200,66,0.1);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:800;color:var(--gold);font-family:'Syne',sans-serif;">${c.coin.slice(0,2)}</div>
-        <div style="flex:1">
-          <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:0.85rem;color:var(--text)">${c.coin}</div>
-          <div style="font-size:0.72rem;color:var(--text-dim)">${c.name}</div>
-        </div>
-        <div style="text-align:right">
-          <div style="font-family:'Syne',sans-serif;font-size:0.82rem;font-weight:700;color:var(--text)">${c.price}</div>
-          <div style="font-size:0.72rem;color:${c.up ? 'var(--green)':'var(--red)'}">${c.change}</div>
-        </div>`;
-      el.addEventListener('mouseenter', () => el.style.borderColor='rgba(245,200,66,0.3)');
-      el.addEventListener('mouseleave', () => el.style.borderColor='var(--border)');
-      el.addEventListener('click', () => {
-        document.getElementById('coinInput').value = c.coin;
-        doAnalyze();
-      });
-      popList.appendChild(el);
-    });
-
-    // Analyze
-    const analyzeBtn = document.getElementById('analyzeBtn');
-    const coinInput  = document.getElementById('coinInput');
-    const resultArea = document.getElementById('resultArea');
-
-    function doAnalyze() {
-      const coin = coinInput.value.trim().toUpperCase();
-      if (!coin) { coinInput.focus(); return; }
-
-      analyzeBtn.disabled = true;
-      analyzeBtn.textContent = '...';
-      resultArea.innerHTML = '<div class="loading-spinner">Analyzing ' + coin + '...</div>';
-      resultArea.className = 'result-area';
-
-      setTimeout(() => {
-        // Simulated analysis result (placeholder until real API integrated)
-        const signals = ['BUY', 'SELL', 'HOLD'];
-        const signal = signals[Math.floor(Math.random() * signals.length)];
-        const rsi = (30 + Math.random() * 40).toFixed(1);
-        const price = (Math.random() * 50000 + 500).toFixed(2);
-        const confidence = (70 + Math.random() * 25).toFixed(0);
-        const sl  = (parseFloat(price) * 0.97).toFixed(2);
-        const tp  = (parseFloat(price) * 1.05).toFixed(2);
-
-        const cls = signal === 'BUY' ? 'buy' : signal === 'SELL' ? 'sell' : 'hold';
-        const emoji = signal === 'BUY' ? '🟢' : signal === 'SELL' ? '🔴' : '🟡';
-
-        resultArea.className = 'result-area has-result';
-        resultArea.innerHTML = `
-          <div class="result-coin">
-            <div class="coin-name">${emoji} ${coin}/USDT</div>
-            <div class="signal-pill ${cls}">${signal}</div>
-          </div>
-          <div class="result-metrics">
-            <div class="metric-box">
-              <div class="m-label">Price</div>
-              <div class="m-value">$${parseFloat(price).toLocaleString()}</div>
-            </div>
-            <div class="metric-box">
-              <div class="m-label">RSI</div>
-              <div class="m-value" style="color:${rsi<40?'var(--green)':rsi>65?'var(--red)':'var(--gold)'}">${rsi}</div>
-            </div>
-            <div class="metric-box">
-              <div class="m-label">Stop Loss</div>
-              <div class="m-value" style="color:var(--red)">$${parseFloat(sl).toLocaleString()}</div>
-            </div>
-            <div class="metric-box">
-              <div class="m-label">Take Profit</div>
-              <div class="m-value" style="color:var(--green)">$${parseFloat(tp).toLocaleString()}</div>
-            </div>
-          </div>
-          <div style="margin-top:0.75rem; padding:0.65rem; background:var(--surface2); border-radius:8px; font-size:0.78rem; color:var(--text-muted); display:flex; align-items:center; gap:6px;">
-            <span>🔒</span> Real-time analysis coming soon. දැනට demo data.
-          </div>`;
-
-        analysisToday++;
-        sessionStorage.setItem('analysisCount', analysisToday);
-        document.getElementById('analysisCount').textContent = analysisToday;
-
-        analyzeBtn.disabled = false;
-        analyzeBtn.textContent = 'Analyze';
-      }, 1200);
-    }
-
-    analyzeBtn.addEventListener('click', doAnalyze);
-    coinInput.addEventListener('keydown', e => { if(e.key === 'Enter') doAnalyze(); });
-
-    // Mock signals feed
-    const mockSignals = [
-      { coin:'BTC/USDT', signal:'BUY',  price:'$67,420', time:'5 min ago' },
-      { coin:'ETH/USDT', signal:'SELL', price:'$3,521',  time:'12 min ago' },
-      { coin:'SOL/USDT', signal:'BUY',  price:'$178.4',  time:'28 min ago' },
-      { coin:'BNB/USDT', signal:'HOLD', price:'$598.1',  time:'45 min ago' },
-      { coin:'ADA/USDT', signal:'BUY',  price:'$0.482',  time:'1 hr ago' },
-    ];
-
-    const feed = document.getElementById('signalsFeed');
-    setTimeout(() => {
-      feed.innerHTML = mockSignals.map(s => {
-        const cls = s.signal==='BUY' ? 'buy' : s.signal==='SELL' ? 'sell' : 'hold';
-        return `
-        <div class="signal-row">
-          <div class="sr-coin">${s.coin}</div>
-          <div class="sr-price">${s.price}</div>
-          <div class="signal-pill ${cls}" style="font-size:0.75rem; padding:0.3rem 0.7rem;">${s.signal}</div>
-          <div class="sr-time">${s.time}</div>
-        </div>`;
-      }).join('');
-    }, 800);
-  </script>
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+            signOut(auth).then(() => {
+                sessionStorage.removeItem('user');
+                window.location.href = 'index.html';
+            });
+        });
+    </script>
 </body>
 </html>

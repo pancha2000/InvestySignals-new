@@ -1,733 +1,621 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin Panel — InvestySignals</title>
-  <link rel="stylesheet" href="style.css">
-  <style>
-    body { display: flex; flex-direction: column; min-height: 100vh; }
-
-    .admin-layout {
-      flex: 1;
-      display: flex;
-      padding-top: 70px;
-    }
-
-    /* Sidebar */
-    .sidebar {
-      width: 240px;
-      min-height: calc(100vh - 70px);
-      background: var(--bg2);
-      border-right: 1px solid var(--border);
-      padding: 1.5rem 1rem;
-      flex-shrink: 0;
-      position: sticky;
-      top: 70px;
-      height: calc(100vh - 70px);
-      overflow-y: auto;
-    }
-
-    .sidebar-section {
-      font-size: 0.68rem;
-      font-weight: 700;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      color: var(--text-dim);
-      padding: 0 0.75rem;
-      margin-bottom: 0.5rem;
-    }
-
-    .sidebar-section:not(:first-child) { margin-top: 1.5rem; }
-
-    .sidebar-link {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      padding: 0.65rem 0.75rem;
-      border-radius: 8px;
-      font-size: 0.875rem;
-      font-weight: 500;
-      color: var(--text-muted);
-      cursor: pointer;
-      transition: var(--transition);
-      margin-bottom: 2px;
-      border: none;
-      background: none;
-      width: 100%;
-      text-align: left;
-    }
-
-    .sidebar-link:hover { background: var(--surface); color: var(--text); }
-    .sidebar-link.active { background: rgba(245,200,66,0.1); color: var(--gold); font-weight: 600; }
-    .sidebar-link .sl-icon { font-size: 1rem; width: 20px; text-align: center; }
-
-    .sidebar-link.danger { color: var(--red); }
-    .sidebar-link.danger:hover { background: rgba(255,77,109,0.08); }
-
-    /* Main */
-    .admin-main {
-      flex: 1;
-      padding: 2rem;
-      overflow-x: hidden;
-    }
-
-    .panel-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 2rem;
-      flex-wrap: wrap;
-      gap: 1rem;
-    }
-
-    .panel-header h1 {
-      font-family: 'Syne', sans-serif;
-      font-size: 1.5rem;
-      font-weight: 800;
-      letter-spacing: -0.02em;
-    }
-
-    .panel-header p { font-size: 0.82rem; color: var(--text-muted); margin-top: 2px; }
-
-    /* Stats row */
-    .admin-stats {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 1rem;
-      margin-bottom: 2rem;
-    }
-
-    .as-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1.25rem;
-      position: relative;
-      overflow: hidden;
-      transition: var(--transition);
-    }
-    .as-card:hover { transform: translateY(-2px); border-color: rgba(245,200,66,0.2); }
-
-    .as-card::before {
-      content: '';
-      position: absolute;
-      bottom: 0; right: 0;
-      width: 80px; height: 80px;
-      border-radius: 50%;
-      opacity: 0.05;
-      transform: translate(20px, 20px);
-    }
-
-    .as-card.c1::before { background: var(--gold); }
-    .as-card.c2::before { background: var(--green); }
-    .as-card.c3::before { background: var(--blue); }
-    .as-card.c4::before { background: var(--red); }
-
-    .as-icon { font-size: 1.3rem; margin-bottom: 0.75rem; }
-    .as-label { font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.3rem; }
-    .as-val {
-      font-family: 'Syne', sans-serif;
-      font-size: 1.6rem;
-      font-weight: 800;
-      letter-spacing: -0.02em;
-    }
-    .as-change { font-size: 0.75rem; margin-top: 0.25rem; }
-
-    /* Tabs */
-    .tabs {
-      display: flex;
-      gap: 0.25rem;
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 4px;
-      margin-bottom: 1.5rem;
-      width: fit-content;
-    }
-
-    .tab-btn {
-      padding: 0.5rem 1.1rem;
-      border-radius: 7px;
-      border: none;
-      background: transparent;
-      font-family: 'Syne', sans-serif;
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: var(--text-muted);
-      cursor: pointer;
-      transition: var(--transition);
-    }
-
-    .tab-btn.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,0.3); }
-
-    /* Panel sections */
-    .panel-section { display: none; }
-    .panel-section.active { display: block; animation: fadeUp 0.3s ease both; }
-
-    /* Publish signal */
-    .signal-form-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 1.75rem;
-      margin-bottom: 1.5rem;
-    }
-
-    .signal-form-card h3 {
-      font-family: 'Syne', sans-serif;
-      font-size: 1rem;
-      font-weight: 700;
-      margin-bottom: 1.25rem;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-
-    .sig-form-grid {
-      display: grid;
-      grid-template-columns: 2fr 1fr 1fr 1fr auto;
-      gap: 0.75rem;
-      align-items: end;
-    }
-
-    .publish-btn {
-      padding: 0.85rem 1.5rem;
-      background: var(--gold);
-      border: none;
-      border-radius: var(--radius-sm);
-      font-family: 'Syne', sans-serif;
-      font-size: 0.9rem;
-      font-weight: 700;
-      color: #0A0B0F;
-      cursor: pointer;
-      transition: var(--transition);
-      white-space: nowrap;
-    }
-    .publish-btn:hover { background: var(--gold-light); transform: translateY(-1px); }
-
-    /* Signals history table */
-    .table-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      overflow: hidden;
-    }
-
-    .table-header {
-      padding: 1.25rem 1.5rem;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1rem;
-      flex-wrap: wrap;
-    }
-
-    .table-header h3 {
-      font-family: 'Syne', sans-serif;
-      font-size: 0.95rem;
-      font-weight: 700;
-    }
-
-    .search-input {
-      padding: 0.5rem 0.9rem;
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      font-size: 0.82rem;
-      color: var(--text);
-      outline: none;
-      transition: var(--transition);
-      width: 200px;
-    }
-    .search-input:focus { border-color: var(--gold); }
-    .search-input::placeholder { color: var(--text-dim); }
-
-    table { width: 100%; border-collapse: collapse; }
-    thead th {
-      padding: 0.75rem 1.5rem;
-      font-size: 0.72rem;
-      font-weight: 700;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      color: var(--text-dim);
-      text-align: left;
-      background: var(--bg2);
-      border-bottom: 1px solid var(--border);
-    }
-    tbody tr {
-      border-bottom: 1px solid var(--border);
-      transition: var(--transition);
-    }
-    tbody tr:last-child { border-bottom: none; }
-    tbody tr:hover { background: var(--bg3); }
-    tbody td {
-      padding: 0.85rem 1.5rem;
-      font-size: 0.875rem;
-      color: var(--text-muted);
-    }
-    tbody td:first-child { font-family:'Syne',sans-serif; font-weight:700; color:var(--text); }
-
-    .action-btn {
-      padding: 0.35rem 0.75rem;
-      border-radius: 6px;
-      border: none;
-      font-size: 0.75rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: var(--transition);
-    }
-    .action-btn.del { background: rgba(255,77,109,0.1); color: var(--red); }
-    .action-btn.del:hover { background: rgba(255,77,109,0.2); }
-
-    /* Users table */
-    .user-avatar-sm {
-      width: 30px; height: 30px;
-      background: linear-gradient(135deg, var(--gold) 0%, #FF9500 100%);
-      border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 0.7rem; font-weight: 700; color: #0A0B0F;
-    }
-
-    .user-info { display: flex; align-items: center; gap: 0.6rem; }
-
-    .toggle-switch {
-      width: 36px; height: 20px;
-      background: var(--bg3);
-      border: 1px solid var(--border);
-      border-radius: 100px;
-      position: relative;
-      cursor: pointer;
-      transition: var(--transition);
-    }
-    .toggle-switch.on { background: var(--green); border-color: var(--green); }
-    .toggle-switch::after {
-      content: '';
-      position: absolute;
-      top: 2px; left: 2px;
-      width: 14px; height: 14px;
-      background: var(--text);
-      border-radius: 50%;
-      transition: var(--transition);
-    }
-    .toggle-switch.on::after { left: calc(100% - 16px); }
-
-    /* API status */
-    .api-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 1rem;
-      margin-bottom: 1.5rem;
-    }
-
-    .api-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1.25rem;
-      transition: var(--transition);
-    }
-    .api-card:hover { border-color: rgba(245,200,66,0.2); }
-
-    .api-card-top {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 0.75rem;
-    }
-
-    .api-name { font-family:'Syne',sans-serif; font-weight:700; font-size:0.9rem; }
-    .api-status-dot { width:10px; height:10px; border-radius:50%; background:var(--green); animation:pulse-dot 2s infinite; }
-    .api-status-dot.warn { background:var(--gold); }
-    .api-status-dot.error { background:var(--red); animation:none; }
-    @keyframes pulse-dot {
-      0%,100% { box-shadow:0 0 0 0 rgba(34,217,122,0.5); }
-      50%      { box-shadow:0 0 0 5px rgba(34,217,122,0); }
-    }
-    .api-stat { font-size:0.75rem; color:var(--text-dim); }
-    .api-stat span { color:var(--text-muted); font-weight:600; }
-
-    /* Toast */
-    .toast {
-      position: fixed;
-      bottom: 2rem; left: 50%;
-      transform: translateX(-50%) translateY(100px);
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 0.85rem 1.5rem;
-      font-size: 0.875rem;
-      display: flex; align-items: center; gap: 0.6rem;
-      z-index: 9999;
-      transition: transform 0.35s cubic-bezier(0.34,1.56,0.64,1);
-      box-shadow: var(--shadow);
-    }
-    .toast.show { transform: translateX(-50%) translateY(0); }
-    .toast.success { border-color: rgba(34,217,122,0.3); color: var(--green); }
-    .toast.error { border-color: rgba(255,77,109,0.3); color: var(--red); }
-
-    @media (max-width: 900px) {
-      .sidebar { display: none; }
-      .admin-stats { grid-template-columns: repeat(2,1fr); }
-      .sig-form-grid { grid-template-columns: 1fr 1fr; }
-    }
-    @media (max-width: 560px) {
-      .admin-stats { grid-template-columns: 1fr; }
-      .admin-main { padding: 1rem; }
-      .sig-form-grid { grid-template-columns: 1fr; }
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>Admin Panel | InvestySignals</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body { margin: 0; background: var(--bg); display: flex; height: 100vh; overflow: hidden; }
+        
+        .admin-sidebar {
+            width: 260px;
+            background: var(--bg2);
+            border-right: 1px solid var(--border-soft);
+            display: flex;
+            flex-direction: column;
+            z-index: 100;
+        }
+        .admin-logo {
+            height: 64px;
+            display: flex;
+            align-items: center;
+            padding: 0 24px;
+            border-bottom: 1px solid var(--border-soft);
+        }
+        .admin-menu {
+            padding: 24px 16px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .menu-section {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin: 24px 0 8px 8px;
+            letter-spacing: 0.05em;
+        }
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+            color: var(--text);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: var(--transition);
+            margin-bottom: 4px;
+        }
+        .menu-item:hover {
+            background: var(--surface);
+        }
+        .menu-item.active {
+            background: rgba(245, 200, 66, 0.1);
+            color: var(--gold);
+        }
+        .menu-item.danger:hover {
+            background: rgba(255, 77, 109, 0.1);
+            color: var(--red);
+        }
+        
+        .admin-main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+        
+        .admin-topbar {
+            height: 64px;
+            background: var(--bg2);
+            border-bottom: 1px solid var(--border-soft);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+        }
+        
+        .admin-content {
+            flex: 1;
+            padding: 32px;
+            overflow-y: auto;
+        }
+        .content-section {
+            display: none;
+        }
+        .content-section.active {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+        
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        .section-title {
+            font-family: 'Syne', sans-serif;
+            font-size: 1.5rem;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+        .stat-card {
+            background: var(--surface);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--radius-sm);
+            padding: 20px;
+        }
+        .stat-card-title {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            margin-bottom: 8px;
+        }
+        .stat-card-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.75rem;
+            font-weight: 700;
+        }
+        
+        .data-panel {
+            background: var(--bg2);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--radius);
+            padding: 24px;
+        }
+        
+        .table-controls {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            gap: 16px;
+        }
+        .search-input {
+            background: var(--surface);
+            border: 1px solid var(--border-soft);
+            color: var(--text);
+            padding: 8px 16px;
+            border-radius: 100px;
+            outline: none;
+            width: 300px;
+        }
+        .search-input:focus {
+            border-color: var(--gold);
+        }
+        .filter-select {
+            background: var(--surface);
+            border: 1px solid var(--border-soft);
+            color: var(--text);
+            padding: 8px 16px;
+            border-radius: 100px;
+            outline: none;
+        }
+        
+        .admin-table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            min-width: 800px;
+        }
+        .admin-table th {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            padding: 12px;
+            border-bottom: 1px solid var(--border-soft);
+        }
+        .admin-table td {
+            padding: 16px 12px;
+            border-bottom: 1px solid var(--border-soft);
+            font-size: 0.9rem;
+        }
+        
+        .user-row-avatar {
+            width: 32px; height: 32px;
+            border-radius: 50%;
+            background: var(--surface2);
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 600; font-size: 0.8rem;
+            margin-right: 12px;
+        }
+        
+        .action-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 4px 8px;
+            font-size: 1rem;
+            border-radius: 4px;
+        }
+        .action-btn:hover { background: var(--surface); color: var(--text); }
+        .action-btn.delete:hover { color: var(--red); background: rgba(255, 77, 109, 0.1); }
+        
+        .danger-zone {
+            border: 1px solid rgba(255, 77, 109, 0.3);
+            border-radius: var(--radius);
+            padding: 24px;
+            background: rgba(255, 77, 109, 0.05);
+        }
+        .danger-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 0;
+            border-bottom: 1px solid rgba(255, 77, 109, 0.1);
+        }
+        .danger-item:last-child { border-bottom: none; }
+        
+        .login-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--bg);
+            z-index: 1000;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .admin-login-card {
+            background: var(--bg2);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--radius);
+            padding: 40px;
+            width: 100%; max-width: 400px;
+            text-align: center;
+        }
+        .admin-login-card input {
+            width: 100%;
+            background: var(--surface);
+            border: 1px solid var(--border-soft);
+            color: var(--text);
+            padding: 12px;
+            border-radius: var(--radius-sm);
+            margin-bottom: 16px;
+            outline: none;
+        }
+        
+        .hamburger-admin { display: none; background: none; border: none; color: var(--text); font-size: 1.5rem; cursor: pointer; }
+        
+        @media (max-width: 992px) {
+            .admin-sidebar { position: fixed; transform: translateX(-100%); transition: var(--transition); height: 100%; }
+            .admin-sidebar.open { transform: translateX(0); }
+            .hamburger-admin { display: block; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 768px) {
+            .stats-grid { grid-template-columns: 1fr; }
+            .table-controls { flex-direction: column; }
+            .search-input { width: 100%; }
+        }
+    </style>
 </head>
 <body>
 
-  <nav class="navbar" id="navbar">
-    <a href="index.html" class="nav-logo">
-      <div class="logo-icon">📈</div>
-      Investy<span>Signals</span>
-    </a>
-    <div style="display:flex;align-items:center;gap:0.75rem">
-      <span class="badge badge-gold">Admin</span>
-      <button onclick="doLogout()" style="padding:0.45rem 0.9rem; background:transparent; border:1.5px solid rgba(255,77,109,0.25); border-radius:8px; font-size:0.8rem; font-weight:600; color:var(--red); cursor:pointer;">Logout</button>
+    <!-- Login Overlay -->
+    <div class="login-overlay" id="loginOverlay">
+        <div class="admin-login-card fade-up visible">
+            <h2 style="font-family: 'Syne', sans-serif; margin-bottom: 8px;">Admin Login</h2>
+            <p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: 24px;">Contact the developer for access.</p>
+            
+            <form id="adminLoginForm">
+                <input type="text" id="adminUser" placeholder="Username" required>
+                <input type="password" id="adminPw" placeholder="Password" required>
+                <div id="adminError" style="color: var(--red); font-size: 0.875rem; margin-bottom: 16px; display: none;">Invalid credentials</div>
+                <button type="submit" class="btn btn-gold" style="width: 100%;">Enter Dashboard</button>
+            </form>
+        </div>
     </div>
-  </nav>
 
-  <div class="admin-layout">
-
-    <!-- SIDEBAR -->
-    <aside class="sidebar">
-      <div class="sidebar-section">Main</div>
-      <button class="sidebar-link active" onclick="showTab('overview', this)"><span class="sl-icon">🏠</span> Overview</button>
-      <button class="sidebar-link" onclick="showTab('signals', this)"><span class="sl-icon">📡</span> Signals</button>
-      <button class="sidebar-link" onclick="showTab('users', this)"><span class="sl-icon">👥</span> Users</button>
-      <button class="sidebar-link" onclick="showTab('api', this)"><span class="sl-icon">⚙️</span> API Status</button>
-
-      <div class="sidebar-section">System</div>
-      <button class="sidebar-link" onclick="showTab('settings', this)"><span class="sl-icon">🔧</span> Settings</button>
-      <button class="sidebar-link danger" onclick="doLogout()"><span class="sl-icon">🚪</span> Logout</button>
-    </aside>
-
-    <!-- MAIN -->
-    <main class="admin-main">
-
-      <!-- OVERVIEW TAB -->
-      <section class="panel-section active" id="tab-overview">
-        <div class="panel-header">
-          <div>
-            <h1>System Overview</h1>
-            <p id="adminDate">Loading...</p>
-          </div>
-          <span class="badge badge-gold">Admin Access</span>
+    <!-- Sidebar -->
+    <div class="admin-sidebar" id="adminSidebar">
+        <div class="admin-logo">
+            <a href="index.html" class="logo">
+                <span class="logo-icon">◈</span>
+                INVESTY<span class="logo-accent">ADMIN</span>
+            </a>
         </div>
-
-        <div class="admin-stats">
-          <div class="as-card c1">
-            <div class="as-icon">👥</div>
-            <div class="as-label">Total Users</div>
-            <div class="as-val" data-target="1245">0</div>
-            <div class="as-change" style="color:var(--green)">↑ +23 this week</div>
-          </div>
-          <div class="as-card c2">
-            <div class="as-icon">📡</div>
-            <div class="as-label">Signals Published</div>
-            <div class="as-val" data-target="8430">0</div>
-            <div class="as-change" style="color:var(--green)">↑ +142 today</div>
-          </div>
-          <div class="as-card c3">
-            <div class="as-icon">⭐</div>
-            <div class="as-label">VIP Members</div>
-            <div class="as-val" data-target="312">0</div>
-            <div class="as-change" style="color:var(--green)">↑ +8 this week</div>
-          </div>
-          <div class="as-card c4">
-            <div class="as-icon">🌐</div>
-            <div class="as-label">API Uptime</div>
-            <div class="as-val" style="color:var(--green)">99.8%</div>
-            <div class="as-change" style="color:var(--text-dim)">Last 30 days</div>
-          </div>
+        <div class="admin-menu">
+            <div class="menu-section">Overview</div>
+            <div class="menu-item active" data-target="dashboard">📊 Dashboard</div>
+            
+            <div class="menu-section">Users</div>
+            <div class="menu-item" data-target="users">👥 All Users</div>
+            <div class="menu-item" data-target="banned">🚫 Banned Users</div>
+            
+            <div class="menu-section">Content</div>
+            <div class="menu-item" data-target="signals">📡 Signals</div>
+            
+            <div class="menu-section">Settings</div>
+            <div class="menu-item" data-target="settings">⚙️ Site Settings</div>
+            <div class="menu-item" data-target="announcements">📢 Announcements</div>
+            
+            <div class="menu-section">System</div>
+            <div class="menu-item danger" data-target="danger">🔴 Danger Zone</div>
         </div>
+    </div>
 
-        <div class="table-card">
-          <div class="table-header">
-            <h3>📊 Recent Activity</h3>
-          </div>
-          <table>
-            <thead><tr><th>Action</th><th>Detail</th><th>User</th><th>Time</th></tr></thead>
-            <tbody>
-              <tr><td>Signal Published</td><td><span class="signal-pill buy" style="font-size:0.72rem;padding:0.25rem 0.6rem">BUY</span> BTC/USDT</td><td style="color:var(--gold)">Admin</td><td>2 min ago</td></tr>
-              <tr><td>New Registration</td><td>john@gmail.com</td><td>System</td><td>15 min ago</td></tr>
-              <tr><td>VIP Upgrade</td><td>sara@email.com → VIP</td><td>System</td><td>42 min ago</td></tr>
-              <tr><td>Signal Published</td><td><span class="signal-pill sell" style="font-size:0.72rem;padding:0.25rem 0.6rem">SELL</span> ETH/USDT</td><td style="color:var(--gold)">Admin</td><td>1 hr ago</td></tr>
-              <tr><td>New Registration</td><td>mike@yahoo.com</td><td>System</td><td>2 hr ago</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- SIGNALS TAB -->
-      <section class="panel-section" id="tab-signals">
-        <div class="panel-header">
-          <div><h1>📡 Manage Signals</h1><p>Manual trading signals publish කරන්න</p></div>
-        </div>
-
-        <div class="signal-form-card">
-          <h3>🚀 New Signal Publish කරන්න</h3>
-          <div class="sig-form-grid">
-            <div class="form-group" style="margin:0">
-              <label class="form-label">Coin Pair</label>
-              <input type="text" id="sigCoin" class="form-input" placeholder="BTC/USDT" style="text-transform:uppercase">
+    <!-- Main Content -->
+    <div class="admin-main">
+        <div class="admin-topbar">
+            <div style="display: flex; align-items: center; gap: 16px;">
+                <button class="hamburger-admin" id="hamburgerAdmin">☰</button>
+                <div style="font-weight: 500;">Admin Shell</div>
             </div>
-            <div class="form-group" style="margin:0">
-              <label class="form-label">Signal</label>
-              <select id="sigType" class="form-input">
-                <option value="BUY">🟢 BUY (Long)</option>
-                <option value="SELL">🔴 SELL (Short)</option>
-                <option value="HOLD">🟡 HOLD</option>
-              </select>
+            <div style="display: flex; align-items: center; gap: 16px;">
+                <span class="badge badge-gold">Superadmin</span>
+                <button id="logoutBtn" class="btn btn-ghost" style="padding: 6px 12px; font-size: 0.875rem;">Logout</button>
             </div>
-            <div class="form-group" style="margin:0">
-              <label class="form-label">Entry Price</label>
-              <input type="number" id="sigEntry" class="form-input" placeholder="67420">
+        </div>
+        
+        <div class="admin-content">
+            
+            <!-- Dashboard Section -->
+            <div class="content-section active" id="dashboard">
+                <div class="section-header">
+                    <h1 class="section-title">Dashboard Overview</h1>
+                </div>
+                
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-card-title">Total Users</div>
+                        <div class="stat-card-val">15,420</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-card-title">Active Users</div>
+                        <div class="stat-card-val">8,214</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-card-title">Total Signals</div>
+                        <div class="stat-card-val">1,254</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-card-title">Pro/Elite Users</div>
+                        <div class="stat-card-val" style="color: var(--gold);">450</div>
+                    </div>
+                </div>
+                
+                <div class="data-panel">
+                    <h3 style="margin-bottom: 20px;">Recent Registrations</h3>
+                    <div style="overflow-x: auto;">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Email</th>
+                                    <th>Plan</th>
+                                    <th>Status</th>
+                                    <th>Joined</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td style="display: flex; align-items: center;"><div class="user-row-avatar">K</div> Kasun Perera</td>
+                                    <td>kasun@gmail.com</td>
+                                    <td><span class="badge badge-outline" style="color: #4D9FFF; border-color: #4D9FFF;">Pro</span></td>
+                                    <td><span class="badge badge-green">Active</span></td>
+                                    <td>Jan 15, 2026</td>
+                                </tr>
+                                <tr>
+                                    <td style="display: flex; align-items: center;"><div class="user-row-avatar">N</div> Nuwan Silva</td>
+                                    <td>nuwan@yahoo.com</td>
+                                    <td><span class="badge badge-outline">Free</span></td>
+                                    <td><span class="badge badge-green">Active</span></td>
+                                    <td>Feb 3, 2026</td>
+                                </tr>
+                                <tr>
+                                    <td style="display: flex; align-items: center;"><div class="user-row-avatar">A</div> Amali Jayawardena</td>
+                                    <td>amali@hotmail.com</td>
+                                    <td><span class="badge badge-gold">Elite</span></td>
+                                    <td><span class="badge badge-green">Active</span></td>
+                                    <td>Dec 20, 2025</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
-            <div class="form-group" style="margin:0">
-              <label class="form-label">Take Profit</label>
-              <input type="number" id="sigTP" class="form-input" placeholder="70000">
+            
+            <!-- Users Section -->
+            <div class="content-section" id="users">
+                <div class="section-header">
+                    <h1 class="section-title">All Users</h1>
+                </div>
+                <div class="data-panel">
+                    <div class="table-controls">
+                        <input type="text" class="search-input" placeholder="Search users by name or email...">
+                        <div style="display: flex; gap: 8px;">
+                            <select class="filter-select">
+                                <option>All Plans</option>
+                                <option>Free</option>
+                                <option>Pro</option>
+                                <option>Elite</option>
+                            </select>
+                            <select class="filter-select">
+                                <option>All Status</option>
+                                <option>Active</option>
+                                <option>Banned</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div style="overflow-x: auto;">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Email</th>
+                                    <th>Plan</th>
+                                    <th>Status</th>
+                                    <th>Joined</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td style="display: flex; align-items: center;"><div class="user-row-avatar">K</div> Kasun Perera</td>
+                                    <td>kasun@gmail.com</td>
+                                    <td><span class="badge badge-outline" style="color: #4D9FFF; border-color: #4D9FFF;">Pro</span></td>
+                                    <td><span class="badge badge-green">Active</span></td>
+                                    <td>Jan 15, 2026</td>
+                                    <td>
+                                        <button class="action-btn" title="View Profile">👁</button>
+                                        <button class="action-btn" title="Edit Plan">✏️</button>
+                                        <button class="action-btn delete" title="Ban User">🚫</button>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="display: flex; align-items: center;"><div class="user-row-avatar">N</div> Nuwan Silva</td>
+                                    <td>nuwan@yahoo.com</td>
+                                    <td><span class="badge badge-outline">Free</span></td>
+                                    <td><span class="badge badge-green">Active</span></td>
+                                    <td>Feb 3, 2026</td>
+                                    <td>
+                                        <button class="action-btn" title="View Profile">👁</button>
+                                        <button class="action-btn" title="Edit Plan">✏️</button>
+                                        <button class="action-btn delete" title="Ban User">🚫</button>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="display: flex; align-items: center;"><div class="user-row-avatar">A</div> Amali Jayawardena</td>
+                                    <td>amali@hotmail.com</td>
+                                    <td><span class="badge badge-gold">Elite</span></td>
+                                    <td><span class="badge badge-green">Active</span></td>
+                                    <td>Dec 20, 2025</td>
+                                    <td>
+                                        <button class="action-btn" title="View Profile">👁</button>
+                                        <button class="action-btn" title="Edit Plan">✏️</button>
+                                        <button class="action-btn delete" title="Ban User">🚫</button>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="display: flex; align-items: center;"><div class="user-row-avatar">R</div> Ruwan Fernando</td>
+                                    <td>ruwan@gmail.com</td>
+                                    <td><span class="badge badge-outline">Free</span></td>
+                                    <td><span class="badge badge-red">Banned</span></td>
+                                    <td>Mar 1, 2026</td>
+                                    <td>
+                                        <button class="action-btn" title="View Profile">👁</button>
+                                        <button class="action-btn" title="Edit Plan">✏️</button>
+                                        <button class="action-btn" title="Unban User">✅</button>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="display: flex; align-items: center;"><div class="user-row-avatar">D</div> Dilshan Rathnayake</td>
+                                    <td>dilshan@gmail.com</td>
+                                    <td><span class="badge badge-outline" style="color: #4D9FFF; border-color: #4D9FFF;">Pro</span></td>
+                                    <td><span class="badge badge-green">Active</span></td>
+                                    <td>Apr 10, 2026</td>
+                                    <td>
+                                        <button class="action-btn" title="View Profile">👁</button>
+                                        <button class="action-btn" title="Edit Plan">✏️</button>
+                                        <button class="action-btn delete" title="Ban User">🚫</button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
-            <div>
-              <label class="form-label" style="display:block; margin-bottom:0.5rem; font-size:0.8rem; font-weight:600; color:var(--text-muted); letter-spacing:0.03em; text-transform:uppercase">&nbsp;</label>
-              <button class="publish-btn" onclick="publishSignal()">📤 Publish</button>
+            
+            <!-- Other Sections (Placeholders) -->
+            <div class="content-section" id="banned">
+                <div class="section-header">
+                    <h1 class="section-title">Banned Users</h1>
+                </div>
+                <div class="data-panel">
+                    <p style="color: var(--text-muted);">Showing all banned users.</p>
+                </div>
             </div>
-          </div>
-        </div>
-
-        <div class="table-card">
-          <div class="table-header">
-            <h3>Signal History</h3>
-            <input class="search-input" placeholder="Search coin..." oninput="filterSignals(this.value)">
-          </div>
-          <table>
-            <thead><tr><th>Coin</th><th>Signal</th><th>Entry</th><th>Take Profit</th><th>Published</th><th>Action</th></tr></thead>
-            <tbody id="sigTable">
-              <tr><td>BTC/USDT</td><td><span class="signal-pill buy" style="font-size:0.72rem;padding:0.25rem 0.6rem">BUY</span></td><td>$67,420</td><td>$70,000</td><td>Today, 10:32</td><td><button class="action-btn del" onclick="delRow(this)">Delete</button></td></tr>
-              <tr><td>ETH/USDT</td><td><span class="signal-pill sell" style="font-size:0.72rem;padding:0.25rem 0.6rem">SELL</span></td><td>$3,521</td><td>$3,200</td><td>Today, 09:15</td><td><button class="action-btn del" onclick="delRow(this)">Delete</button></td></tr>
-              <tr><td>SOL/USDT</td><td><span class="signal-pill buy" style="font-size:0.72rem;padding:0.25rem 0.6rem">BUY</span></td><td>$178.4</td><td>$195.0</td><td>Yesterday</td><td><button class="action-btn del" onclick="delRow(this)">Delete</button></td></tr>
-              <tr><td>BNB/USDT</td><td><span class="signal-pill hold" style="font-size:0.72rem;padding:0.25rem 0.6rem">HOLD</span></td><td>$598</td><td>—</td><td>Yesterday</td><td><button class="action-btn del" onclick="delRow(this)">Delete</button></td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- USERS TAB -->
-      <section class="panel-section" id="tab-users">
-        <div class="panel-header">
-          <div><h1>👥 User Management</h1><p>Registered users manage කරන්න</p></div>
-        </div>
-
-        <div class="table-card">
-          <div class="table-header">
-            <h3>All Users <span style="color:var(--text-dim);font-weight:400">(1,245)</span></h3>
-            <input class="search-input" placeholder="Search email...">
-          </div>
-          <table>
-            <thead><tr><th>User</th><th>Plan</th><th>Joined</th><th>Status</th><th>Actions</th></tr></thead>
-            <tbody>
-              <tr>
-                <td><div class="user-info"><div class="user-avatar-sm">J</div><div><div style="font-size:0.85rem;color:var(--text);font-weight:600">John Silva</div><div style="font-size:0.72rem">john@gmail.com</div></div></div></td>
-                <td><span class="badge badge-gold" style="font-size:0.7rem">VIP</span></td>
-                <td>May 12, 2025</td>
-                <td><div class="toggle-switch on" onclick="this.classList.toggle('on')"></div></td>
-                <td><button class="action-btn del">Ban</button></td>
-              </tr>
-              <tr>
-                <td><div class="user-info"><div class="user-avatar-sm" style="background:linear-gradient(135deg,#4D9FFF,#22D97A)">S</div><div><div style="font-size:0.85rem;color:var(--text);font-weight:600">Sara Perera</div><div style="font-size:0.72rem">sara@email.com</div></div></div></td>
-                <td><span class="badge" style="font-size:0.7rem;background:rgba(122,130,160,0.1);color:var(--text-muted);border:1px solid var(--border)">Free</span></td>
-                <td>May 14, 2025</td>
-                <td><div class="toggle-switch on" onclick="this.classList.toggle('on')"></div></td>
-                <td><button class="action-btn del">Ban</button></td>
-              </tr>
-              <tr>
-                <td><div class="user-info"><div class="user-avatar-sm" style="background:linear-gradient(135deg,#FF4D6D,#FF9500)">M</div><div><div style="font-size:0.85rem;color:var(--text);font-weight:600">Mike Fernando</div><div style="font-size:0.72rem">mike@yahoo.com</div></div></div></td>
-                <td><span class="badge" style="font-size:0.7rem;background:rgba(122,130,160,0.1);color:var(--text-muted);border:1px solid var(--border)">Free</span></td>
-                <td>May 15, 2025</td>
-                <td><div class="toggle-switch" onclick="this.classList.toggle('on')"></div></td>
-                <td><button class="action-btn del">Unban</button></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- API TAB -->
-      <section class="panel-section" id="tab-api">
-        <div class="panel-header">
-          <div><h1>⚙️ API Status</h1><p>External services and API health</p></div>
-          <button onclick="refreshApi()" style="padding:0.5rem 1rem; background:var(--surface); border:1px solid var(--border); border-radius:8px; color:var(--text-muted); font-size:0.82rem; cursor:pointer; transition:all 0.2s;">🔄 Refresh</button>
-        </div>
-
-        <div class="api-grid">
-          <div class="api-card">
-            <div class="api-card-top">
-              <div class="api-name">🔶 Binance API</div>
-              <div class="api-status-dot"></div>
+            
+            <div class="content-section" id="signals">
+                <div class="section-header">
+                    <h1 class="section-title">Signal Management</h1>
+                </div>
+                <div class="data-panel">
+                    <p style="color: var(--text-muted);">Signals list will appear here.</p>
+                </div>
             </div>
-            <div class="api-stat">Status: <span style="color:var(--green)">Online</span></div>
-            <div class="api-stat">Latency: <span>42ms</span></div>
-            <div class="api-stat">Uptime: <span>99.9%</span></div>
-          </div>
-          <div class="api-card">
-            <div class="api-card-top">
-              <div class="api-name">🔥 Firebase Auth</div>
-              <div class="api-status-dot"></div>
+            
+            <div class="content-section" id="settings">
+                <div class="section-header">
+                    <h1 class="section-title">Site Settings</h1>
+                </div>
+                <div class="data-panel">
+                    <div style="max-width: 500px;">
+                        <div style="margin-bottom: 20px;">
+                            <label style="display: block; margin-bottom: 8px; color: var(--text-muted);">Site Name</label>
+                            <input type="text" value="InvestySignals" style="width: 100%; padding: 10px; background: var(--surface); border: 1px solid var(--border-soft); color: var(--text); border-radius: 4px;">
+                        </div>
+                        <div style="margin-bottom: 20px; display: flex; align-items: center; gap: 12px;">
+                            <input type="checkbox" id="maintMode">
+                            <label for="maintMode" style="color: var(--text-muted);">Maintenance Mode</label>
+                        </div>
+                        <button class="btn btn-gold">Save Settings</button>
+                    </div>
+                </div>
             </div>
-            <div class="api-stat">Status: <span style="color:var(--green)">Online</span></div>
-            <div class="api-stat">Active Users: <span>1,245</span></div>
-            <div class="api-stat">Uptime: <span>100%</span></div>
-          </div>
-          <div class="api-card">
-            <div class="api-card-top">
-              <div class="api-name">🗄️ MongoDB</div>
-              <div class="api-status-dot warn"></div>
+            
+            <div class="content-section" id="announcements">
+                <div class="section-header">
+                    <h1 class="section-title">Announcements</h1>
+                </div>
+                <div class="data-panel">
+                    <p style="color: var(--text-muted);">Manage site-wide banners.</p>
+                </div>
             </div>
-            <div class="api-stat">Status: <span style="color:var(--gold)">Degraded</span></div>
-            <div class="api-stat">Latency: <span>218ms</span></div>
-            <div class="api-stat">Uptime: <span>97.2%</span></div>
-          </div>
-          <div class="api-card">
-            <div class="api-card-top">
-              <div class="api-name">🤖 AI Engine</div>
-              <div class="api-status-dot"></div>
+            
+            <div class="content-section" id="danger">
+                <div class="section-header">
+                    <h1 class="section-title" style="color: var(--red);">Danger Zone</h1>
+                </div>
+                <div class="danger-zone">
+                    <div class="danger-item">
+                        <div>
+                            <div style="font-weight: 600; margin-bottom: 4px; color: var(--red);">Flush All Signals</div>
+                            <div style="font-size: 0.875rem; color: var(--text-muted);">Permanently delete all historical signals from the database.</div>
+                        </div>
+                        <button class="btn btn-ghost" style="border-color: var(--red); color: var(--red);">Flush Signals</button>
+                    </div>
+                    <div class="danger-item">
+                        <div>
+                            <div style="font-weight: 600; margin-bottom: 4px; color: var(--red);">Reset Paper Trades</div>
+                            <div style="font-size: 0.875rem; color: var(--text-muted);">Clear all user paper trading history and reset balances.</div>
+                        </div>
+                        <button class="btn btn-ghost" style="border-color: var(--red); color: var(--red);">Reset Data</button>
+                    </div>
+                </div>
             </div>
-            <div class="api-stat">Status: <span style="color:var(--green)">Online</span></div>
-            <div class="api-stat">Model: <span>Gemini 1.5</span></div>
-            <div class="api-stat">Requests today: <span>8,430</span></div>
-          </div>
+            
         </div>
-      </section>
+    </div>
 
-      <!-- SETTINGS TAB -->
-      <section class="panel-section" id="tab-settings">
-        <div class="panel-header">
-          <div><h1>🔧 Settings</h1><p>Platform configuration</p></div>
-        </div>
-        <div class="signal-form-card">
-          <h3>Platform Settings</h3>
-          <div class="form-group">
-            <label class="form-label">Site Name</label>
-            <input type="text" class="form-input" value="InvestySignals">
-          </div>
-          <div class="form-group">
-            <label class="form-label">VIP Monthly Price (USD)</label>
-            <input type="number" class="form-input" value="29">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Free Plan Daily Limit</label>
-            <input type="number" class="form-input" value="3">
-          </div>
-          <button class="publish-btn" onclick="showToast('Settings saved!', 'success')">💾 Save Settings</button>
-        </div>
-      </section>
-
-    </main>
-  </div>
-
-  <div class="toast" id="toast"></div>
-
-  <script>
-    // Date
-    document.getElementById('adminDate').textContent = new Date().toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
-
-    // Navbar
-    const navbar = document.getElementById('navbar');
-    window.addEventListener('scroll', () => navbar.classList.toggle('scrolled', window.scrollY > 40));
-
-    // Tab switching
-    function showTab(tab, btn) {
-      document.querySelectorAll('.panel-section').forEach(s => s.classList.remove('active'));
-      document.querySelectorAll('.sidebar-link').forEach(b => b.classList.remove('active'));
-      document.getElementById('tab-' + tab).classList.add('active');
-      if(btn) btn.classList.add('active');
-    }
-
-    // Logout
-    function doLogout() { window.location.href = 'index.html'; }
-
-    // Publish signal
-    function publishSignal() {
-      const coin = document.getElementById('sigCoin').value.trim().toUpperCase();
-      const type = document.getElementById('sigType').value;
-      const entry = document.getElementById('sigEntry').value;
-      const tp = document.getElementById('sigTP').value;
-      if(!coin) { showToast('Coin pair ඇතුලත් කරන්න.', 'error'); return; }
-
-      const cls = type === 'BUY' ? 'buy' : type === 'SELL' ? 'sell' : 'hold';
-      const now = new Date();
-      const timeStr = now.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
-
-      const row = document.createElement('tr');
-      row.innerHTML = `
-        <td>${coin}</td>
-        <td><span class="signal-pill ${cls}" style="font-size:0.72rem;padding:0.25rem 0.6rem">${type}</span></td>
-        <td>${entry ? '$' + parseFloat(entry).toLocaleString() : '—'}</td>
-        <td>${tp ? '$' + parseFloat(tp).toLocaleString() : '—'}</td>
-        <td>Today, ${timeStr}</td>
-        <td><button class="action-btn del" onclick="delRow(this)">Delete</button></td>`;
-
-      const table = document.getElementById('sigTable');
-      table.insertBefore(row, table.firstChild);
-
-      document.getElementById('sigCoin').value = '';
-      document.getElementById('sigEntry').value = '';
-      document.getElementById('sigTP').value = '';
-      showToast(`✅ ${coin} ${type} signal published!`, 'success');
-    }
-
-    function delRow(btn) {
-      btn.closest('tr').remove();
-      showToast('Signal deleted.', 'error');
-    }
-
-    function filterSignals(query) {
-      document.querySelectorAll('#sigTable tr').forEach(row => {
-        row.style.display = row.textContent.toLowerCase().includes(query.toLowerCase()) ? '' : 'none';
-      });
-    }
-
-    function refreshApi() { showToast('API status refreshed.', 'success'); }
-
-    function showToast(msg, type='success') {
-      const t = document.getElementById('toast');
-      t.textContent = msg;
-      t.className = `toast ${type} show`;
-      setTimeout(() => t.classList.remove('show'), 3000);
-    }
-
-    // Counter animation
-    function animateCounter(el, target) {
-      let start = 0, duration = 1500;
-      const step = ts => {
-        if(!start) start = ts;
-        const progress = Math.min((ts - start) / duration, 1);
-        el.textContent = Math.floor(progress * target).toLocaleString();
-        if(progress < 1) requestAnimationFrame(step);
-      };
-      requestAnimationFrame(step);
-    }
-
-    const io = new IntersectionObserver(entries => {
-      entries.forEach(e => {
-        if(e.isIntersecting && e.target.dataset.target) {
-          animateCounter(e.target, parseInt(e.target.dataset.target));
-          io.unobserve(e.target);
+    <script>
+        // Auth Logic
+        const loginOverlay = document.getElementById('loginOverlay');
+        const loginForm = document.getElementById('adminLoginForm');
+        const errorMsg = document.getElementById('adminError');
+        const logoutBtn = document.getElementById('logoutBtn');
+        
+        // Check session
+        if (localStorage.getItem('adminAuth') === 'true') {
+            loginOverlay.style.display = 'none';
         }
-      });
-    }, { threshold: 0.5 });
-    document.querySelectorAll('[data-target]').forEach(el => io.observe(el));
-  </script>
+        
+        loginForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const u = document.getElementById('adminUser').value;
+            const p = document.getElementById('adminPw').value;
+            
+            // Dummy auth
+            if (u === 'admin' && p === 'admin') {
+                localStorage.setItem('adminAuth', 'true');
+                loginOverlay.style.display = 'none';
+                errorMsg.style.display = 'none';
+            } else {
+                errorMsg.style.display = 'block';
+            }
+        });
+        
+        logoutBtn.addEventListener('click', () => {
+            localStorage.removeItem('adminAuth');
+            loginOverlay.style.display = 'flex';
+            document.getElementById('adminLoginForm').reset();
+        });
 
-  <script type="module">
-    // Optional: protect admin route with Firebase auth check
-    // import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-    // import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-  </script>
+        // Navigation Logic
+        const menuItems = document.querySelectorAll('.menu-item');
+        const contentSections = document.querySelectorAll('.content-section');
+        
+        menuItems.forEach(item => {
+            item.addEventListener('click', () => {
+                // Update active class in menu
+                menuItems.forEach(mi => mi.classList.remove('active'));
+                item.classList.add('active');
+                
+                // Show corresponding section
+                const targetId = item.getAttribute('data-target');
+                contentSections.forEach(section => {
+                    if (section.id === targetId) {
+                        section.classList.add('active');
+                    } else {
+                        section.classList.remove('active');
+                    }
+                });
+                
+                // Close sidebar on mobile
+                if (window.innerWidth <= 992) {
+                    document.getElementById('adminSidebar').classList.remove('open');
+                }
+            });
+        });
+        
+        // Mobile Sidebar Toggle
+        const hamburger = document.getElementById('hamburgerAdmin');
+        hamburger.addEventListener('click', () => {
+            document.getElementById('adminSidebar').classList.toggle('open');
+        });
+    </script>
 </body>
 </html>

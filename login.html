@@ -1,342 +1,322 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Login — InvestySignals</title>
-  <link rel="stylesheet" href="style.css">
-  <style>
-    body { display: flex; flex-direction: column; min-height: 100vh; }
-
-    .auth-page {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 5rem 1.5rem 3rem;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .auth-orb-1 {
-      width: 500px; height: 500px;
-      background: radial-gradient(circle, rgba(245,200,66,0.1) 0%, transparent 65%);
-      top: -100px; right: -150px;
-    }
-    .auth-orb-2 {
-      width: 350px; height: 350px;
-      background: radial-gradient(circle, rgba(77,159,255,0.07) 0%, transparent 65%);
-      bottom: 0; left: -80px;
-    }
-
-    .auth-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 2.75rem 2.5rem;
-      width: 100%;
-      max-width: 440px;
-      position: relative;
-      z-index: 1;
-      animation: fadeUp 0.5s ease both;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
-    }
-
-    .auth-top {
-      text-align: center;
-      margin-bottom: 2rem;
-    }
-
-    .auth-logo {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      font-family: 'Syne', sans-serif;
-      font-weight: 800;
-      font-size: 1.3rem;
-      color: var(--text);
-      margin-bottom: 1.5rem;
-    }
-    .auth-logo .logo-icon {
-      width: 30px; height: 30px;
-      background: var(--gold);
-      border-radius: 7px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 0.9rem;
-    }
-    .auth-logo span { color: var(--gold); }
-
-    .auth-top h1 {
-      font-family: 'Syne', sans-serif;
-      font-size: 1.7rem;
-      font-weight: 800;
-      letter-spacing: -0.03em;
-      color: var(--text);
-      margin-bottom: 0.4rem;
-    }
-
-    .auth-top p { font-size: 0.875rem; color: var(--text-muted); }
-
-    .divider {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-      margin: 1.25rem 0;
-    }
-    .divider::before, .divider::after {
-      content: '';
-      flex: 1;
-      height: 1px;
-      background: var(--border);
-    }
-    .divider span { font-size: 0.75rem; color: var(--text-dim); }
-
-    .submit-btn {
-      width: 100%;
-      padding: 0.9rem;
-      background: var(--gold);
-      border: none;
-      border-radius: 10px;
-      font-family: 'Syne', sans-serif;
-      font-size: 1rem;
-      font-weight: 700;
-      color: #0A0B0F;
-      cursor: pointer;
-      transition: var(--transition);
-      margin-top: 0.5rem;
-      box-shadow: 0 4px 20px rgba(245,200,66,0.25);
-      position: relative;
-      overflow: hidden;
-    }
-
-    .submit-btn::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, transparent 50%);
-      opacity: 0;
-      transition: opacity 0.3s;
-    }
-
-    .submit-btn:hover { background: var(--gold-light); transform: translateY(-2px); box-shadow: 0 8px 28px rgba(245,200,66,0.35); }
-    .submit-btn:hover::after { opacity: 1; }
-    .submit-btn:active { transform: translateY(0); }
-
-    .submit-btn.loading {
-      pointer-events: none;
-      opacity: 0.8;
-    }
-
-    .submit-btn .spinner {
-      display: none;
-      width: 18px; height: 18px;
-      border: 2px solid rgba(10,11,15,0.3);
-      border-top-color: #0A0B0F;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-      margin: 0 auto;
-    }
-
-    .submit-btn.loading .btn-text { display: none; }
-    .submit-btn.loading .spinner { display: block; }
-
-    .auth-footer {
-      text-align: center;
-      margin-top: 1.5rem;
-      font-size: 0.875rem;
-      color: var(--text-muted);
-    }
-
-    .auth-footer a { color: var(--gold); font-weight: 600; transition: var(--transition); }
-    .auth-footer a:hover { color: var(--gold-light); }
-
-    .forgot-link {
-      display: block;
-      text-align: right;
-      font-size: 0.78rem;
-      color: var(--text-muted);
-      margin-top: -0.5rem;
-      margin-bottom: 1.25rem;
-      transition: var(--transition);
-    }
-    .forgot-link:hover { color: var(--gold); }
-
-    .toast {
-      position: fixed;
-      bottom: 2rem;
-      left: 50%;
-      transform: translateX(-50%) translateY(100px);
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 0.85rem 1.5rem;
-      font-size: 0.875rem;
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
-      z-index: 9999;
-      transition: transform 0.35s cubic-bezier(0.34,1.56,0.64,1);
-      white-space: nowrap;
-      box-shadow: var(--shadow);
-    }
-    .toast.show { transform: translateX(-50%) translateY(0); }
-    .toast.error { border-color: rgba(255,77,109,0.3); color: var(--red); }
-    .toast.success { border-color: rgba(34,217,122,0.3); color: var(--green); }
-
-    .input-wrap { position: relative; }
-    .toggle-pw {
-      position: absolute;
-      right: 12px; top: 50%; transform: translateY(-50%);
-      background: none; border: none; cursor: pointer;
-      color: var(--text-dim); transition: var(--transition);
-      padding: 4px;
-    }
-    .toggle-pw:hover { color: var(--text-muted); }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>Login | InvestySignals</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .split-layout {
+            display: flex;
+            min-height: 100vh;
+        }
+        .split-left {
+            width: 40%;
+            background: linear-gradient(135deg, var(--bg) 0%, var(--bg2) 100%);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 40px;
+            position: relative;
+            overflow: hidden;
+        }
+        .split-left::before {
+            content: '';
+            position: absolute;
+            top: 20%; left: -20%;
+            width: 600px; height: 600px;
+            background: radial-gradient(circle, rgba(245,200,66,0.1) 0%, transparent 70%);
+            pointer-events: none;
+        }
+        .split-right {
+            width: 60%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            background: var(--bg);
+        }
+        .auth-card {
+            width: 100%;
+            max-width: 480px;
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 40px;
+            backdrop-filter: blur(12px);
+        }
+        .auth-header {
+            margin-bottom: 32px;
+            text-align: center;
+        }
+        .auth-header h1 {
+            font-size: 2rem;
+            margin-bottom: 8px;
+        }
+        .auth-header p {
+            color: var(--text-muted);
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+        .input-control {
+            width: 100%;
+            background: var(--surface);
+            border: 1px solid var(--border-soft);
+            color: var(--text);
+            padding: 14px 16px;
+            border-radius: var(--radius-sm);
+            font-family: 'DM Sans', sans-serif;
+            transition: var(--transition);
+            outline: none;
+        }
+        .input-control:focus {
+            border-color: var(--gold);
+            box-shadow: 0 0 0 2px var(--gold-glow);
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .checkbox-group input {
+            accent-color: var(--gold);
+            width: 16px;
+            height: 16px;
+        }
+        .checkbox-group label {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            margin-bottom: 0;
+        }
+        .auth-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        .forgot-link {
+            font-size: 0.9rem;
+            color: var(--gold);
+        }
+        .btn-full {
+            width: 100%;
+            border-radius: 100px;
+        }
+        .auth-divider {
+            display: flex;
+            align-items: center;
+            text-align: center;
+            margin: 24px 0;
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+        .auth-divider::before, .auth-divider::after {
+            content: '';
+            flex: 1;
+            border-bottom: 1px solid var(--border-soft);
+        }
+        .auth-divider:not(:empty)::before { margin-right: 16px; }
+        .auth-divider:not(:empty)::after { margin-left: 16px; }
+        .auth-footer {
+            text-align: center;
+            margin-top: 24px;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+        .auth-footer a {
+            color: var(--gold);
+            font-weight: 600;
+        }
+        .stat-floating {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            padding: 16px;
+            border-radius: var(--radius-sm);
+            margin-bottom: 16px;
+            animation: float 6s ease-in-out infinite;
+        }
+        .stat-floating.delay {
+            animation-delay: 2s;
+            margin-left: 40px;
+        }
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+        .error-message {
+            color: var(--red);
+            font-size: 0.875rem;
+            margin-bottom: 16px;
+            text-align: center;
+            display: none;
+            padding: 8px;
+            background: rgba(255, 77, 109, 0.1);
+            border: 1px solid rgba(255, 77, 109, 0.2);
+            border-radius: var(--radius-xs);
+        }
+        .pw-wrapper {
+            position: relative;
+        }
+        .pw-toggle {
+            position: absolute;
+            right: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 0.875rem;
+        }
+        
+        @media (max-width: 992px) {
+            .split-layout { flex-direction: column; }
+            .split-left { width: 100%; padding: 40px 24px; min-height: auto; }
+            .split-right { width: 100%; padding: 40px 24px; }
+            .stat-floating { display: none; }
+        }
+    </style>
 </head>
 <body>
 
-  <nav class="navbar" id="navbar">
-    <a href="index.html" class="nav-logo">
-      <div class="logo-icon">📈</div>
-      Investy<span>Signals</span>
-    </a>
-    <ul class="nav-links">
-      <li><a href="index.html">Home</a></li>
-      <li><a href="pricing.html">Pricing</a></li>
-      <li><a href="about.html">About</a></li>
-      <li><a href="contact.html">Contact</a></li>
-    </ul>
-    <div class="nav-actions">
-      <a href="register.html" class="btn-primary">Sign Up →</a>
-    </div>
-    <button class="hamburger" id="hamburger"><span></span><span></span><span></span></button>
-  </nav>
+    <div class="split-layout">
+        <!-- Left Panel -->
+        <div class="split-left">
+            <div>
+                <a href="index.html" class="logo">
+                    <span class="logo-icon">◈</span>
+                    INVESTY<span class="logo-accent">SIGNALS</span>
+                </a>
+            </div>
+            
+            <div>
+                <div class="stat-floating">
+                    <div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 4px;">Win Rate</div>
+                    <div style="font-size: 1.5rem; font-weight: 700; color: var(--gold); font-family: 'JetBrains Mono', monospace;">78%</div>
+                </div>
+                <div class="stat-floating delay">
+                    <div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 4px;">Active Traders</div>
+                    <div style="font-size: 1.5rem; font-weight: 700; color: var(--gold); font-family: 'JetBrains Mono', monospace;">15,000+</div>
+                </div>
+            </div>
 
-  <div class="mobile-menu" id="mobileMenu">
-    <a href="index.html">Home</a>
-    <a href="pricing.html">Pricing</a>
-    <a href="about.html">About</a>
-    <a href="contact.html">Contact</a>
-    <a href="register.html" style="color:var(--gold); font-weight:700">Sign Up →</a>
-  </div>
-
-  <div class="page-wrapper auth-page">
-    <div class="glow-orb auth-orb-1"></div>
-    <div class="glow-orb auth-orb-2"></div>
-
-    <div class="auth-card">
-      <div class="auth-top">
-        <a href="index.html" class="auth-logo">
-          <div class="logo-icon">📈</div>
-          Investy<span>Signals</span>
-        </a>
-        <h1>Welcome Back</h1>
-        <p>ඔබේ account එකට login වන්න</p>
-      </div>
-
-      <form id="loginForm" novalidate>
-        <div class="form-group">
-          <label class="form-label">Email Address</label>
-          <input type="email" id="loginEmail" class="form-input" placeholder="your@email.com" required autocomplete="email">
+            <div>
+                <h2 style="font-size: 2rem; margin-bottom: 16px;">Trade smarter with institutional-grade data.</h2>
+                <p style="color: var(--text-muted);">Access our 8-factor confluence engine and start making data-driven decisions today.</p>
+            </div>
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Password</label>
-          <div class="input-wrap">
-            <input type="password" id="loginPassword" class="form-input" placeholder="••••••••" required autocomplete="current-password" style="padding-right:2.75rem">
-            <button type="button" class="toggle-pw" id="togglePw" title="Show/Hide">
-              <svg id="eyeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-            </button>
-          </div>
+        <!-- Right Panel -->
+        <div class="split-right">
+            <div class="auth-card fade-up visible">
+                <div class="auth-header">
+                    <h1>Welcome Back</h1>
+                    <p>Log in to your InvestySignals account</p>
+                </div>
+
+                <div id="errorMsg" class="error-message"></div>
+
+                <form id="loginForm">
+                    <div class="input-group">
+                        <label for="email">Email Address</label>
+                        <input type="email" id="email" class="input-control" placeholder="Enter your email" required>
+                    </div>
+
+                    <div class="input-group">
+                        <label for="password">Password</label>
+                        <div class="pw-wrapper">
+                            <input type="password" id="password" class="input-control" placeholder="Enter your password" required>
+                            <button type="button" class="pw-toggle" id="togglePw">Show</button>
+                        </div>
+                    </div>
+
+                    <div class="auth-actions">
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="remember">
+                            <label for="remember">Remember me</label>
+                        </div>
+                        <a href="#" class="forgot-link">Forgot password?</a>
+                    </div>
+
+                    <button type="submit" class="btn btn-gold btn-full">Log In</button>
+                    
+                    <div class="auth-divider">or</div>
+
+                    <button type="button" class="btn btn-ghost btn-full" style="display: flex; gap: 8px;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+                        Continue with Google
+                    </button>
+                </form>
+
+                <div class="auth-footer">
+                    Don't have an account? <a href="register.html">Sign Up</a>
+                </div>
+            </div>
         </div>
-
-        <a href="#" class="forgot-link">Forgot your password?</a>
-
-        <button type="submit" class="submit-btn" id="loginBtn">
-          <span class="btn-text">Login to Dashboard</span>
-          <div class="spinner"></div>
-        </button>
-      </form>
-
-      <div class="auth-footer">
-        Don't have an account? <a href="register.html">Sign up free</a>
-      </div>
     </div>
-  </div>
 
-  <div class="toast" id="toast"></div>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-    import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-
-    const firebaseConfig = {
-      apiKey: "AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk",
-      authDomain: "investysignals-890ba.firebaseapp.com",
-      projectId: "investysignals-890ba",
-      storageBucket: "investysignals-890ba.firebasestorage.app",
-      messagingSenderId: "1045281522975",
-      appId: "1:1045281522975:web:534501aab2ceeb887bdc2a",
-      measurementId: "G-M1083J7SP6"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-
-    // Navbar scroll
-    const navbar = document.getElementById('navbar');
-    window.addEventListener('scroll', () => navbar.classList.toggle('scrolled', window.scrollY > 40));
-
-    // Hamburger
-    const hamburger = document.getElementById('hamburger');
-    const mobileMenu = document.getElementById('mobileMenu');
-    hamburger.addEventListener('click', () => {
-      hamburger.classList.toggle('open');
-      mobileMenu.classList.toggle('open');
-    });
-
-    // Toggle password
-    const togglePw = document.getElementById('togglePw');
-    const loginPassword = document.getElementById('loginPassword');
-    togglePw.addEventListener('click', () => {
-      const show = loginPassword.type === 'password';
-      loginPassword.type = show ? 'text' : 'password';
-    });
-
-    // Toast
-    function showToast(msg, type = 'error') {
-      const t = document.getElementById('toast');
-      t.textContent = (type === 'error' ? '⚠️ ' : '✅ ') + msg;
-      t.className = `toast ${type} show`;
-      setTimeout(() => t.classList.remove('show'), 3500);
-    }
-
-    // Login
-    const loginBtn = document.getElementById('loginBtn');
-    document.getElementById('loginForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const email = document.getElementById('loginEmail').value.trim();
-      const password = loginPassword.value;
-
-      if (!email || !password) { showToast('Email සහ Password ඇතුලත් කරන්න.'); return; }
-
-      loginBtn.classList.add('loading');
-      try {
-        await signInWithEmailAndPassword(auth, email, password);
-        showToast('සාර්ථකව login වුණා!', 'success');
-        setTimeout(() => window.location.href = 'dashboard.html', 900);
-      } catch (err) {
-        loginBtn.classList.remove('loading');
-        const msgs = {
-          'auth/invalid-credential': 'Email හෝ Password වැරදියි.',
-          'auth/user-not-found': 'Account එකක් හොයාගන්න බැරි.',
-          'auth/wrong-password': 'Password වැරදියි.',
-          'auth/too-many-requests': 'ගණනාවක් try කළා. ටිකක් wait කරන්න.',
+        const firebaseConfig = {
+            apiKey: "AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk",
+            authDomain: "investysignals-890ba.firebaseapp.com",
+            projectId: "investysignals-890ba",
+            storageBucket: "investysignals-890ba.firebasestorage.app",
+            messagingSenderId: "1045281522975",
+            appId: "1:1045281522975:web:534501aab2ceeb887bdc2a"
         };
-        showToast(msgs[err.code] || 'Login error: ' + err.message);
-      }
-    });
-  </script>
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+
+        const form = document.getElementById('loginForm');
+        const emailInput = document.getElementById('email');
+        const passwordInput = document.getElementById('password');
+        const errorMsg = document.getElementById('errorMsg');
+        const togglePw = document.getElementById('togglePw');
+
+        togglePw.addEventListener('click', () => {
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                togglePw.textContent = 'Hide';
+            } else {
+                passwordInput.type = 'password';
+                togglePw.textContent = 'Show';
+            }
+        });
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errorMsg.style.display = 'none';
+            
+            const btn = form.querySelector('button[type="submit"]');
+            const originalText = btn.textContent;
+            btn.textContent = 'Logging in...';
+            btn.disabled = true;
+
+            try {
+                const userCredential = await signInWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
+                sessionStorage.setItem('user', JSON.stringify(userCredential.user));
+                window.location.href = 'dashboard.html';
+            } catch (error) {
+                errorMsg.textContent = 'Invalid email or password.';
+                errorMsg.style.display = 'block';
+                btn.textContent = originalText;
+                btn.disabled = false;
+            }
+        });
+    </script>
 </body>
 </html>
