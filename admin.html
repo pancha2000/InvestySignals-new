@@ -859,6 +859,34 @@ input:checked + .toggle-slider { background: rgba(0,217,126,0.25); }
 input:checked + .toggle-slider::before { transform: translateX(20px); background: var(--green); }
 </style>
 
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
+const auth = getAuth(initializeApp({
+  apiKey:"AIzaSyCUlQccwWK-UBzFPWov2GYQjecF63y6X8k",
+  authDomain:"crypto-98b33.firebaseapp.com", projectId:"crypto-98b33",
+  storageBucket:"crypto-98b33.firebasestorage.app", messagingSenderId:"619954501803",
+  appId:"1:619954501803:web:559d48b801f072abd71fee"
+}));
+onAuthStateChanged(auth, async u => {
+  if (!u) { window.location.href = 'login.html'; return; }
+  try {
+    const sr = await fetch('/api/user/status?uid=' + encodeURIComponent(u.uid));
+    const sj = await sr.json();
+    if (sj.success && sj.status.role !== 'admin') { window.location.href = 'dashboard.html'; return; }
+  } catch(_) {}
+  window._adminAuth = auth;
+  window._adminUser = u;
+  if (typeof loadAdminStats === 'function') loadAdminStats();
+});
+window.adminSignOut = async function() {
+  if(confirm('Are you sure you want to logout from admin?')) {
+    await signOut(auth);
+    window.location.href = 'login.html';
+  }
+};
+</script>
+
 <script>
     // Section switching
     function showSection(id, el) {
@@ -900,76 +928,144 @@ input:checked + .toggle-slider::before { transform: translateX(20px); background
         });
     }
 
-    // Activity Log
-    const logs = [
-        {type:'green', msg:'BTCUSDT LONG signal issued — Score: 91', time:'2m ago'},
-        {type:'gold',  msg:'New user registered: trader_lk_001', time:'8m ago'},
-        {type:'blue',  msg:'ETHUSDT TP1 hit — SL moved to breakeven', time:'23m ago'},
-        {type:'red',   msg:'Safety gate: DOGEUSDT ADX below threshold (14.2)', time:'41m ago'},
-        {type:'green', msg:'SOLUSDT signal closed WIN ✓ RR: 2.8×', time:'1h ago'},
-        {type:'gold',  msg:'System scan completed — 104 pairs analyzed', time:'1h ago'},
-        {type:'blue',  msg:'Admin login from 192.168.x.x', time:'2h ago'},
-        {type:'red',   msg:'Funding rate gate triggered: XRPUSDT (0.31%)', time:'3h ago'},
-        {type:'green', msg:'BNBUSDT signal closed WIN ✓ RR: 1.9×', time:'4h ago'},
-        {type:'gold',  msg:'7 new users joined (daily count)', time:'5h ago'},
-    ];
-    const logContainer = document.getElementById('activityLog');
-    if(logContainer) {
-        logContainer.innerHTML = logs.map(l => `
-            <div class="log-item">
-                <div class="log-dot" style="background:var(--${l.type})"></div>
-                <div class="log-msg">
-                    <div>${l.msg}</div>
-                    <div class="log-time">${l.time}</div>
-                </div>
-            </div>
-        `).join('');
+    // Activity Log — loaded from server
+    async function loadAdminStats() {
+        try {
+            const [sigR, repR] = await Promise.all([
+                fetch('/api/signals').then(r => r.json()),
+                fetch('/api/reports').then(r => r.json()).catch(()=>({success:false})),
+            ]);
+            if (sigR.success && Array.isArray(sigR.data)) {
+                const all    = sigR.data;
+                const active = all.filter(s => s.status === 'ACTIVE' || s.status === 'WAITING');
+                const closed = all.filter(s => s.result === 'WIN' || s.result === 'LOSS');
+                const wins   = all.filter(s => s.result === 'WIN');
+                const el_a   = document.getElementById('adminActiveSignals'); if(el_a) el_a.textContent = active.length;
+                const el_s   = document.getElementById('adminSignalSub');     if(el_s) el_s.textContent = all.length + ' total';
+                const el_b   = document.getElementById('adminSignalBadge');   if(el_b) el_b.textContent = active.length + ' Active';
+                if (closed.length) {
+                    const wr = Math.round(wins.length / closed.length * 100);
+                    const el_w  = document.getElementById('adminWinRate'); if(el_w)  el_w.textContent  = wr + '%';
+                    const el_ws = document.getElementById('adminWinSub');  if(el_ws) el_ws.textContent = wins.length+'W / '+(closed.length-wins.length)+'L';
+                    const dv = document.querySelector('.donut-val'); if(dv) dv.textContent = wr + '%';
+                }
+                const tbody = document.getElementById('adminSignalsBody');
+                if (tbody) {
+                    tbody.innerHTML = active.length === 0
+                        ? '<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--text-muted);">No active signals. Post a new signal above.</td></tr>'
+                        : active.map(s => `<tr>
+                            <td class="mono">${s.pair||s.coin||'—'}</td>
+                            <td><span class="badge badge-${s.direction==='LONG'?'green':'red'}" style="font-size:0.7rem;">${s.direction}</span></td>
+                            <td class="mono">${s.entry||'—'}</td>
+                            <td class="mono" style="color:var(--green)">${s.tp1||'—'}</td>
+                            <td class="mono" style="color:var(--red)">${s.sl||'—'}</td>
+                            <td class="mono">${s.score||'—'}</td>
+                            <td><span class="badge badge-outline" style="font-size:0.68rem;">${s.status||'Active'}</span></td>
+                            <td style="color:var(--text-muted);font-size:0.8rem;">${s.plan||'All'}</td>
+                            <td><button class="btn btn-surface btn-sm" onclick="closeSignal('${s._id||s.id}')">Close</button></td>
+                          </tr>`).join('');
+                }
+            }
+            if (repR.success && repR.data) {
+                const r = repR.data;
+                const set = (id, val) => { const el=document.getElementById(id); if(el) el.textContent=val; };
+                set('adminTotalUsers', r.totalUsers||'—');
+                set('adminUserSub',    (r.newUsersToday||0)+' new today');
+                set('adminProCount',   r.proCount||'—');
+                set('adminEliteCount', r.eliteCount||'—');
+                set('adminMRR',        r.mrr?'$'+r.mrr:'—');
+                set('adminAvgRR',      r.avgRR?r.avgRR+'×':'—');
+                set('userTotal',       r.totalUsers||'—');
+                set('userActive',      r.activeUsers||'—');
+                set('userPro',         (r.proCount||0)+(r.eliteCount||0));
+                set('userBanned',      r.bannedCount||'0');
+            }
+        } catch(e) { console.warn('[Admin] Stats load failed:', e); }
+        // Activity log
+        try {
+            const logR = await fetch('/api/reports/activity').then(r=>r.json()).catch(()=>({success:false}));
+            if (logR.success && logR.data) {
+                const html = logR.data.slice(0,10).map(l => `
+                    <div class="log-item">
+                        <div class="log-dot" style="background:var(--${l.color||'text-muted'})"></div>
+                        <div class="log-msg">
+                            <div>${l.message||l.msg||'—'}</div>
+                            <div class="log-time">${l.time||l.createdAt||'—'}</div>
+                        </div>
+                    </div>`).join('');
+                const lc = document.getElementById('activityLog'); if(lc) lc.innerHTML = html;
+                const ra = document.getElementById('recentActivity'); if(ra) ra.innerHTML = html;
+            }
+        } catch(_) {}
     }
 
-    // Table filter
+    async function refreshStats() {
+        document.querySelectorAll('.stat-box-val').forEach(v => { v.style.opacity = '0.4'; });
+        await loadAdminStats();
+        document.querySelectorAll('.stat-box-val').forEach(v => { v.style.opacity = '1'; });
+    }
+
+    async function postSignal() {
+        const pair = document.getElementById('f-pair').value.trim().toUpperCase();
+        if(!pair) { alert('Enter a trading pair'); return; }
+        const body = {
+            pair,
+            direction: document.getElementById('f-dir').value,
+            leverage:  document.getElementById('f-lev').value || '10x',
+            entry:     parseFloat(document.getElementById('f-entry').value)||0,
+            tp1:       parseFloat(document.getElementById('f-tp1').value)||0,
+            tp2:       parseFloat(document.getElementById('f-tp2').value)||0,
+            sl:        parseFloat(document.getElementById('f-sl').value)||0,
+            score:     parseInt(document.getElementById('f-score').value)||0,
+        };
+        try {
+            const idToken = window._adminUser ? await window._adminUser.getIdToken() : '';
+            const res = await fetch('/api/signals', {
+                method:'POST',
+                headers:{'Content-Type':'application/json','Authorization':'Bearer '+idToken},
+                body: JSON.stringify(body)
+            });
+            const j = await res.json();
+            if(j.success) { alert('✅ Signal posted for '+pair+'!'); clearForm(); loadAdminStats(); }
+            else alert('❌ '+(j.message||'Failed to post signal'));
+        } catch(e) { alert('❌ Server error: '+e.message); }
+    }
+
+    async function closeSignal(id) {
+        if(!id||!confirm('Close this signal?')) return;
+        try {
+            const idToken = window._adminUser ? await window._adminUser.getIdToken() : '';
+            const res = await fetch('/api/signals/'+id, {
+                method:'PATCH',
+                headers:{'Content-Type':'application/json','Authorization':'Bearer '+idToken},
+                body: JSON.stringify({status:'CLOSED'})
+            });
+            const j = await res.json();
+            if(j.success) loadAdminStats();
+            else alert('❌ '+(j.message||'Failed'));
+        } catch(e) { alert('❌ '+e.message); }
+    }
+
+    function confirmLogout() { if(typeof adminSignOut==='function') adminSignOut(); else window.location.href='login.html'; }
+
     function filterTable(tableId, query) {
         const rows = document.querySelectorAll(`#${tableId} tbody tr`);
         const q = query.toLowerCase();
-        rows.forEach(row => {
-            row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
-        });
+        rows.forEach(row => { row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none'; });
     }
 
-    // Scanner toggle
     function toggleScanner(btn) {
         if(btn.textContent.includes('Pause')) {
-            btn.textContent = '▶ Resume Scanner';
-            btn.className = 'btn btn-gold btn-sm';
+            btn.textContent = '▶ Resume Scanner'; btn.className = 'btn btn-gold btn-sm';
         } else {
-            btn.textContent = '⏸ Pause Scanner';
-            btn.className = 'btn btn-surface btn-sm';
+            btn.textContent = '⏸ Pause Scanner'; btn.className = 'btn btn-surface btn-sm';
         }
-    }
-
-    // Post signal
-    function postSignal() {
-        const pair = document.getElementById('f-pair').value.trim().toUpperCase();
-        if(!pair) { alert('Enter a trading pair'); return; }
-        alert(`✅ Signal posted for ${pair}! (Demo mode)`);
     }
 
     function clearForm() {
         ['f-pair','f-lev','f-entry','f-tp1','f-tp2','f-sl','f-score'].forEach(id => {
-            const el = document.getElementById(id);
-            if(el) el.value = '';
+            const el = document.getElementById(id); if(el) el.value = '';
         });
-    }
-
-    function refreshStats() {
-        const vals = document.querySelectorAll('.stat-box-val');
-        vals.forEach(v => { v.style.opacity = '0.4'; });
-        setTimeout(()=> { vals.forEach(v => { v.style.opacity = '1'; }); }, 600);
-    }
-
-    function confirmLogout() {
-        if(confirm('Are you sure you want to logout from admin?')) {
-            window.location.href = 'login.html';
-        }
     }
 </script>
 </body>

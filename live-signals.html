@@ -175,17 +175,15 @@
         </div>
         <nav class="auth-nav-menu" id="authNavMenu">
             <a href="dashboard.html" class="auth-nav-link">📊 Dashboard</a>
-            <a href="signals.html" class="auth-nav-link">⚡ Signals</a>
             <a href="analysis.html" class="auth-nav-link">🧠 Analysis</a>
-            <a href="live-signals.html" class="auth-nav-link active">📋 Paper Trading</a>
+            <a href="live-signals.html" class="auth-nav-link active">📝 Paper Trading</a>
             <a href="profile.html" class="auth-nav-link">👤 Profile</a>
         </nav>
         <div class="auth-nav-right">
-            <div class="user-chip" id="userChip">
+            <a href="profile.html" class="user-chip" id="userChip">
                 <div class="user-avatar" id="userAvatar">U</div>
                 <div class="user-name" id="userName">User</div>
-            </div>
-            <button id="logoutBtn" class="btn btn-ghost" style="padding: 6px 12px; font-size: 0.875rem;">Logout</button>
+            </a>
         </div>
     </nav>
 
@@ -259,52 +257,68 @@
     </div>
 
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+        import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
+        const auth = getAuth(initializeApp({
+            apiKey:"AIzaSyCUlQccwWK-UBzFPWov2GYQjecF63y6X8k",
+            authDomain:"crypto-98b33.firebaseapp.com", projectId:"crypto-98b33",
+            storageBucket:"crypto-98b33.firebasestorage.app", messagingSenderId:"619954501803",
+            appId:"1:619954501803:web:559d48b801f072abd71fee"
+        }));
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk",
-            authDomain: "investysignals-890ba.firebaseapp.com",
-            projectId: "investysignals-890ba",
-            storageBucket: "investysignals-890ba.firebasestorage.app",
-            messagingSenderId: "1045281522975",
-            appId: "1:1045281522975:web:534501aab2ceeb887bdc2a"
-        };
+        onAuthStateChanged(auth, async (user) => {
+            if (!user) { window.location.href = 'login.html'; return; }
 
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
+            /* Maintenance + suspend check */
+            try {
+                const sr = await fetch('/api/user/status?uid=' + encodeURIComponent(user.uid));
+                const sj = await sr.json();
+                if (sj.success) {
+                    if (sj.status.maintenance) { document.body.innerHTML='<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg,#0a0e1a);flex-direction:column;gap:16px;font-family:Space Grotesk,sans-serif;text-align:center;padding:24px"><div style="font-size:3rem">🔧</div><div style="font-size:1.8rem;font-weight:700;color:#f0f0f0">Under Maintenance</div></div>'; return; }
+                    if (sj.status.suspended) { document.body.innerHTML='<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg,#0a0e1a);flex-direction:column;gap:20px;font-family:Space Grotesk,sans-serif;text-align:center;padding:24px"><div style="font-size:3rem">🚫</div><div style="font-size:1.8rem;font-weight:700;color:#ff3d5a">Account Suspended</div></div>'; return; }
+                }
+            } catch(_) {}
 
-        onAuthStateChanged(auth, (user) => {
-            if (!user) {
-                window.location.href = 'login.html';
-            } else {
-                const name = user.displayName || user.email.split('@')[0];
-                document.getElementById('userName').textContent = name;
-                document.getElementById('userAvatar').textContent = name.charAt(0).toUpperCase();
-                loadPaperData(user.uid);
+            window._auth = auth;
+            window._currentUser = user;
+            const name = user.displayName || user.email?.split('@')[0] || 'Trader';
+            const av = document.getElementById('userAvatar'); if(av) av.textContent = name.charAt(0).toUpperCase();
+            const un = document.getElementById('userName');   if(un) un.textContent = name;
+            await loadPaperData(user);
+
+            /* Poll for maintenance/suspend */
+            setInterval(async () => {
+                try { const r=await fetch('/api/user/status?uid='+encodeURIComponent(user.uid)); const j=await r.json(); if(j.success&&(j.status.maintenance||j.status.suspended))window.location.reload(); } catch(_) {}
+            }, 15000);
+        });
+
+        async function loadPaperData(user) {
+            try {
+                const idToken = await user.getIdToken();
+                const [tr, bl] = await Promise.all([
+                    fetch('/api/paper/trades', { headers: { Authorization: 'Bearer ' + idToken } }).then(r => r.json()),
+                    fetch('/api/paper/balance', { headers: { Authorization: 'Bearer ' + idToken } }).then(r => r.json()),
+                ]);
+                const trades = tr.success ? (tr.trades || []) : [];
+                const balance = bl.success ? (bl.balance ?? 1000) : 1000;
+                const open   = trades.filter(t => ['OPEN','PENDING_LONG','PENDING_SHORT'].includes(t.status));
+                const closed = trades.filter(t => !['OPEN','PENDING_LONG','PENDING_SHORT','CANCELLED'].includes(t.status));
+                const wins   = closed.filter(t => (t.pnl||0) > 0);
+                const totalPnl = closed.reduce((s,t)=>s+(t.pnl||0),0);
+                const equity = balance + totalPnl;
+
+                const vb = document.getElementById('virtualBalance'); if(vb) vb.textContent = '$' + balance.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+                const ev = document.getElementById('equityVal'); if(ev) ev.textContent = '$' + equity.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+                const upl = document.getElementById('unrealizedPL'); if(upl) { upl.textContent = (totalPnl>=0?'+$':'-$') + Math.abs(totalPnl).toFixed(2); upl.style.color = totalPnl>=0?'var(--green)':'var(--red)'; }
+                const tt = document.getElementById('totalTrades'); if(tt) tt.textContent = trades.length;
+                const ot = document.getElementById('openTrades');  if(ot) ot.textContent = open.length;
+                const wr = document.getElementById('winRate');     if(wr) wr.textContent = closed.length ? Math.round(wins.length/closed.length*100)+'%' : '—';
+                const tp = document.getElementById('totalPL');     if(tp) { tp.textContent = (totalPnl>=0?'+$':'-$') + Math.abs(totalPnl).toFixed(2); tp.style.color = totalPnl>=0?'var(--green)':'var(--red)'; }
+            } catch(e) {
+                /* Server not yet configured — show zero state */
+                const vb=document.getElementById('virtualBalance'); if(vb) vb.textContent='$1,000.00';
             }
-        });
-
-        document.getElementById('logoutBtn').addEventListener('click', () => {
-            signOut(auth).then(() => {
-                sessionStorage.removeItem('user');
-                window.location.href = 'index.html';
-            });
-        });
-
-        function loadPaperData(uid) {
-            const key = `paperBalance_${uid}`;
-            const balance = parseFloat(localStorage.getItem(key) || '10000');
-            document.getElementById('virtualBalance').textContent = '$' + balance.toLocaleString('en-US', { minimumFractionDigits: 2 });
-            document.getElementById('equityVal').textContent = '$' + balance.toLocaleString('en-US', { minimumFractionDigits: 2 });
         }
-
-        document.getElementById('resetBalanceBtn').addEventListener('click', () => {
-            if (confirm('Reset your virtual balance to $10,000? This cannot be undone.')) {
-                auth.currentUser && localStorage.setItem(`paperBalance_${auth.currentUser.uid}`, '10000');
-                location.reload();
-            }
-        });
     </script>
 
     <script>

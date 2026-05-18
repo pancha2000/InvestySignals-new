@@ -118,27 +118,24 @@
     </div>
     <nav class="auth-nav-menu" id="authNavMenu">
         <a href="dashboard.html" class="auth-nav-link">📊 Dashboard</a>
-        <a href="signals.html" class="auth-nav-link">⚡ Signals</a>
         <a href="analysis.html" class="auth-nav-link active">🧠 Analysis</a>
-        <a href="live-signals.html" class="auth-nav-link">🔴 Live</a>
+        <a href="live-signals.html" class="auth-nav-link">📝 Paper Trades</a>
         <a href="profile.html" class="auth-nav-link">👤 Profile</a>
     </nav>
     <div class="auth-nav-right">
-        <div class="user-chip">
+        <a href="profile.html" class="user-chip">
             <div class="user-avatar" id="userAvatar">U</div>
             <span class="user-name" id="userName">User</span>
-        </div>
-        <button id="logoutBtn" class="btn btn-surface btn-sm">Logout</button>
+        </a>
     </div>
 </nav>
 
 <div class="page-wrap">
     <div class="flex-between mb-3" style="flex-wrap:wrap;gap:10px;">
         <div>
-            <h1 style="font-size:1.6rem;margin-bottom:4px;">🧠 Analysis Engine</h1>
-            <p style="color:var(--text-muted);font-size:0.875rem;">16-factor confluence scanner — Smart Money Concepts + Technical Analysis</p>
+            <h1 style="font-size:1.6rem;margin-bottom:4px;">🧠 RSI Analysis</h1>
+            <p style="color:var(--text-muted);font-size:0.875rem;">Real-time RSI indicator — select a pair and timeframe to run analysis.</p>
         </div>
-<span class="badge badge-outline" style="font-size:0.68rem;color:var(--text-muted);">Demo Data</span>
         <span id="refreshTime" class="badge badge-outline" style="font-family:'JetBrains Mono',monospace;font-size:0.7rem;">Not run yet</span>
     </div>
 
@@ -165,121 +162,81 @@
                 <option value="1d">1 Day</option>
             </select>
         </div>
-        <div class="ctrl-group">
-            <label>Direction</label>
-            <select class="ctrl-select" id="dirSelect">
-                <option value="auto">Auto Detect</option>
-                <option value="long">Long Only</option>
-                <option value="short">Short Only</option>
-            </select>
-        </div>
         <button class="btn btn-gold" id="runBtn" style="padding:11px 28px;white-space:nowrap;" onclick="runAnalysis()">▶ Run Analysis</button>
     </div>
 
+    <!-- RSI Results Panel -->
     <div class="results-panel">
         <div class="empty-placeholder" id="emptyState">
-            <div class="ep-icon">⚙️</div>
-            <div class="ep-title">Engine Ready</div>
-            <p class="ep-sub">Select a pair and timeframe above, then click Run Analysis.</p>
+            <div class="ep-icon">📊</div>
+            <div class="ep-title">RSI Ready</div>
+            <p class="ep-sub">Select a coin and timeframe above, then click Run Analysis to get the real RSI value.</p>
         </div>
         <div class="results-content" id="resultsContent">
-            <!-- Score Header -->
-            <div class="score-header">
-                <div class="score-circle">
-                    <svg width="80" height="80" viewBox="0 0 80 80">
-                        <circle cx="40" cy="40" r="32" fill="none" stroke="var(--surface3)" stroke-width="8"/>
-                        <circle cx="40" cy="40" r="32" fill="none" stroke="var(--gold)" stroke-width="8"
-                            stroke-dasharray="201.1" id="scoreArc" stroke-dashoffset="201.1" stroke-linecap="round"/>
-                    </svg>
-                    <div class="score-circle-text">
-                        <span class="sc-num" id="scoreNum">0</span>
-                        <span class="sc-denom">/100</span>
-                    </div>
+            <!-- RSI Card -->
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:24px;">
+                <div style="background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--radius-sm);padding:24px;text-align:center;">
+                    <div style="font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:8px;font-family:'JetBrains Mono',monospace;">RSI (14)</div>
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:2.2rem;font-weight:700;line-height:1;" id="rsiValue">—</div>
+                    <div style="margin-top:8px;font-size:0.8rem;" id="rsiStatus">—</div>
                 </div>
-                <div class="score-bars">
-                    <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:10px;font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:0.06em;">Factor Breakdown</div>
-                    <div class="score-bar-row">
-                        <span class="sbr-label">Trend</span>
-                        <div class="sbr-track"><div class="sbr-fill" id="barTrend" style="width:0%;background:var(--gold)"></div></div>
-                        <span id="pctTrend" style="font-size:0.75rem;color:var(--text-muted);min-width:28px;">0%</span>
-                    </div>
-                    <div class="score-bar-row">
-                        <span class="sbr-label">Momentum</span>
-                        <div class="sbr-track"><div class="sbr-fill" id="barMom" style="width:0%;background:var(--blue)"></div></div>
-                        <span id="pctMom" style="font-size:0.75rem;color:var(--text-muted);min-width:28px;">0%</span>
-                    </div>
-                    <div class="score-bar-row">
-                        <span class="sbr-label">Volume</span>
-                        <div class="sbr-track"><div class="sbr-fill" id="barVol" style="width:0%;background:var(--green)"></div></div>
-                        <span id="pctVol" style="font-size:0.75rem;color:var(--text-muted);min-width:28px;">0%</span>
-                    </div>
-                    <div class="score-bar-row">
-                        <span class="sbr-label">SMC</span>
-                        <div class="sbr-track"><div class="sbr-fill" id="barSMC" style="width:0%;background:var(--purple)"></div></div>
-                        <span id="pctSMC" style="font-size:0.75rem;color:var(--text-muted);min-width:28px;">0%</span>
-                    </div>
+                <div style="background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--radius-sm);padding:24px;text-align:center;">
+                    <div style="font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:8px;font-family:'JetBrains Mono',monospace;">Signal</div>
+                    <div style="font-size:1.4rem;font-weight:700;line-height:1;" id="rsiSignal">—</div>
+                    <div style="margin-top:8px;font-size:0.8rem;color:var(--text-muted);" id="rsiPair">—</div>
                 </div>
-                <div class="score-verdict">
-                    <div class="verdict-label">Verdict</div>
-                    <div class="verdict-val" id="verdictDir">—</div>
-                    <div style="margin-top:6px;"><span class="badge" id="verdictBadge">—</span></div>
-                    <div style="font-size:0.72rem;color:var(--text-muted);margin-top:6px;" id="verdictGrade">—</div>
+                <div style="background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--radius-sm);padding:24px;text-align:center;">
+                    <div style="font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:8px;font-family:'JetBrains Mono',monospace;">Timeframe</div>
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:1.4rem;font-weight:700;line-height:1;color:var(--gold);" id="rsiTf">—</div>
+                    <div style="margin-top:8px;font-size:0.8rem;color:var(--text-muted);">Selected</div>
                 </div>
             </div>
 
-            <!-- Indicators -->
-            <div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:10px;font-family:'JetBrains Mono',monospace;">// 16 FACTORS</div>
-            <div class="indicator-grid">
-                <div class="ind-cell" id="ic-rsi"><div class="ind-name">RSI (14)</div><div class="ind-value" id="iv-rsi">—</div></div>
-                <div class="ind-cell" id="ic-macd"><div class="ind-name">MACD</div><div class="ind-value" id="iv-macd">—</div></div>
-                <div class="ind-cell" id="ic-ema"><div class="ind-name">EMA Stack</div><div class="ind-value" id="iv-ema">—</div></div>
-                <div class="ind-cell" id="ic-bb"><div class="ind-name">Bollinger</div><div class="ind-value" id="iv-bb">—</div></div>
-                <div class="ind-cell" id="ic-stoch"><div class="ind-name">Stoch RSI</div><div class="ind-value" id="iv-stoch">—</div></div>
-                <div class="ind-cell" id="ic-adx"><div class="ind-name">ADX</div><div class="ind-value" id="iv-adx">—</div></div>
-                <div class="ind-cell" id="ic-obv"><div class="ind-name">OBV</div><div class="ind-value" id="iv-obv">—</div></div>
-                <div class="ind-cell" id="ic-rvol"><div class="ind-name">RVOL</div><div class="ind-value" id="iv-rvol">—</div></div>
-                <div class="ind-cell" id="ic-fund"><div class="ind-name">Funding</div><div class="ind-value" id="iv-fund">—</div></div>
-                <div class="ind-cell" id="ic-oi"><div class="ind-name">Open Int.</div><div class="ind-value" id="iv-oi">—</div></div>
-                <div class="ind-cell" id="ic-vwap"><div class="ind-name">VWAP</div><div class="ind-value" id="iv-vwap">—</div></div>
-                <div class="ind-cell" id="ic-st"><div class="ind-name">Supertrend</div><div class="ind-value" id="iv-st">—</div></div>
-                <div class="ind-cell" id="ic-bos"><div class="ind-name">BOS/CHoCH</div><div class="ind-value" id="iv-bos">—</div></div>
-                <div class="ind-cell" id="ic-fvg"><div class="ind-name">FVG</div><div class="ind-value" id="iv-fvg">—</div></div>
-                <div class="ind-cell" id="ic-div"><div class="ind-name">Divergence</div><div class="ind-value" id="iv-div">—</div></div>
-                <div class="ind-cell" id="ic-4htf"><div class="ind-name">4H Trend</div><div class="ind-value" id="iv-4htf">—</div></div>
-            </div>
-
-            <!-- Levels -->
-            <div class="levels-row">
-                <div class="level-box sl-box">
-                    <div class="lbl-tag">Stop Loss</div>
-                    <div class="lbl-val" style="color:var(--red)" id="lvl-sl">—</div>
+            <!-- RSI Zone Bar -->
+            <div style="background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--radius-sm);padding:20px;margin-bottom:24px;">
+                <div style="font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:12px;font-family:'JetBrains Mono',monospace;">RSI Scale (0–100)</div>
+                <div style="position:relative;height:14px;border-radius:7px;background:linear-gradient(to right,var(--green) 0%,var(--green) 30%,var(--gold) 30%,var(--gold) 70%,var(--red) 70%,var(--red) 100%);opacity:0.35;"></div>
+                <div style="position:relative;height:14px;margin-top:-14px;">
+                    <div id="rsiMarker" style="position:absolute;top:-3px;width:20px;height:20px;background:white;border-radius:50%;border:3px solid var(--gold);box-shadow:0 0 8px rgba(240,180,41,0.5);transform:translateX(-50%);transition:left 0.8s ease;left:50%;"></div>
                 </div>
-                <div class="level-box ent-box">
-                    <div class="lbl-tag">Entry Zone</div>
-                    <div class="lbl-val text-gold" id="lvl-entry">—</div>
-                </div>
-                <div class="level-box tp-box">
-                    <div class="lbl-tag">Take Profit</div>
-                    <div class="lbl-val" style="color:var(--green)" id="lvl-tp">—</div>
+                <div style="display:flex;justify-content:space-between;margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:0.65rem;color:var(--text-muted);">
+                    <span style="color:var(--green);">Oversold (0–30)</span>
+                    <span>Neutral (30–70)</span>
+                    <span style="color:var(--red);">Overbought (70–100)</span>
                 </div>
             </div>
 
-            <div class="disclaimer">⚠ Analysis uses demo data. Connect Binance API on your server for live market data.</div>
+            <div class="disclaimer">RSI values fetched from Binance API via the server. Data refreshes each time you run analysis.</div>
         </div>
+    </div>
+
+    <!-- Market Scanner -->
+    <div style="margin-top:24px;">
+        <!-- market-scanner-button -->
+        <button class="btn btn-surface" style="width:100%;padding:16px;border-radius:var(--radius);cursor:not-allowed;opacity:0.7;display:flex;align-items:center;justify-content:center;gap:10px;" disabled>
+            <span style="font-size:1rem;">🔍</span>
+            <span style="font-weight:700;">Market Scanner</span>
+            <span class="badge badge-outline" style="font-size:0.68rem;color:var(--text-muted);">Coming Soon</span>
+        </button>
     </div>
 </div>
 
 <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-    import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-    const app = initializeApp({ apiKey:"AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk", authDomain:"investysignals-890ba.firebaseapp.com", projectId:"investysignals-890ba", storageBucket:"investysignals-890ba.firebasestorage.app", messagingSenderId:"1045281522975", appId:"1:1045281522975:web:534501aab2ceeb887bdc2a" });
-    const auth = getAuth(app);
-    onAuthStateChanged(auth, u => {
-        if (!u) { window.location.href = 'login.html'; return; }
-        document.getElementById('userAvatar').textContent = (u.displayName||u.email).charAt(0).toUpperCase();
-        document.getElementById('userName').textContent = u.displayName || u.email.split('@')[0];
-    });
-    document.getElementById('logoutBtn').addEventListener('click', () => signOut(auth).then(() => window.location.href = 'index.html'));
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
+const auth = getAuth(initializeApp({
+  apiKey:"AIzaSyCUlQccwWK-UBzFPWov2GYQjecF63y6X8k",
+  authDomain:"crypto-98b33.firebaseapp.com", projectId:"crypto-98b33",
+  storageBucket:"crypto-98b33.firebasestorage.app", messagingSenderId:"619954501803",
+  appId:"1:619954501803:web:559d48b801f072abd71fee"
+}));
+onAuthStateChanged(auth, u => {
+  if (!u) { window.location.href = 'login.html'; return; }
+  const name = u.displayName || u.email?.split('@')[0] || 'Trader';
+  const av = document.getElementById('userAvatar'); if(av) av.textContent = name.charAt(0).toUpperCase();
+  const un = document.getElementById('userName');   if(un) un.textContent = name;
+});
+window.handleSignOut = async () => { await signOut(auth); window.location.href = 'index.html'; };
 </script>
 
 <script>
@@ -287,94 +244,51 @@
         document.getElementById('authNavMenu').classList.toggle('open');
     });
 
-    // Demo data per pair
-    const demoData = {
-        BTCUSDT: { score:87, dir:'LONG', trend:90, mom:82, vol:88, smc:85, rsi:'42.1 ↗', macd:'Bull Cross', ema:'Aligned ↑', bb:'Lower Band', stoch:'Oversold', adx:'31.4 ✓', obv:'Rising ↗', rvol:'1.8×', fund:'+0.012%', oi:'Rising ↗', vwap:'Above', st:'Bullish', bos:'BOS Conf.', fvg:'Unfilled', div:'Hidden Bull', tf4:'Bullish', entry:'67,200', tp:'69,500', sl:'65,800' },
-        ETHUSDT: { score:79, dir:'SHORT', trend:75, mom:80, vol:72, smc:88, rsi:'68.4 ↘', macd:'Bear Cross', ema:'Bearish', bb:'Upper Band', stoch:'Overbought', adx:'24.2 ✓', obv:'Falling ↘', rvol:'2.1×', fund:'+0.031%', oi:'Falling ↘', vwap:'Below', st:'Bearish', bos:'CHoCH Conf.', fvg:'Filled', div:'Regular Bear', tf4:'Bearish', entry:'3,600', tp:'3,380', sl:'3,720' },
-        SOLUSDT: { score:91, dir:'LONG', trend:94, mom:89, vol:90, smc:92, rsi:'38.2 ↗', macd:'Bull Div.', ema:'Aligned ↑', bb:'Near Lower', stoch:'Oversold', adx:'38.7 ✓', obv:'Rising ↗', rvol:'2.4×', fund:'+0.008%', oi:'Rising ↗', vwap:'Above', st:'Bullish', bos:'BOS Conf.', fvg:'Unfilled', div:'Hidden Bull', tf4:'Bullish', entry:'170.20', tp:'185.00', sl:'163.00' },
-        BNBUSDT: { score:72, dir:'SHORT', trend:68, mom:74, vol:70, smc:78, rsi:'61.3 ↘', macd:'Diverge', ema:'Flattening', bb:'Mid Band', stoch:'Neutral', adx:'19.1 ✓', obv:'Neutral', rvol:'1.2×', fund:'+0.018%', oi:'Neutral', vwap:'At VWAP', st:'Bearish', bos:'Weak CHoCH', fvg:'Partial', div:'None', tf4:'Neutral', entry:'602', tp:'578', sl:'620' },
-        XRPUSDT: { score:76, dir:'SHORT', trend:78, mom:73, vol:71, smc:82, rsi:'64.5 ↘', macd:'Bear', ema:'Resist.', bb:'Upper', stoch:'OB', adx:'22.6 ✓', obv:'Falling', rvol:'1.6×', fund:'+0.022%', oi:'Falling', vwap:'Below', st:'Bearish', bos:'CHoCH', fvg:'Unfilled', div:'Hidden Bear', tf4:'Bearish', entry:'0.640', tp:'0.590', sl:'0.670' },
-        AVAXUSDT:{ score:77, dir:'LONG', trend:80, mom:72, vol:75, smc:80, rsi:'41.8 ↗', macd:'Bull', ema:'Aligned ↑', bb:'Lower', stoch:'OS', adx:'26.4 ✓', obv:'Rising', rvol:'1.9×', fund:'+0.005%', oi:'Rising', vwap:'Above', st:'Bullish', bos:'BOS', fvg:'Unfilled', div:'Regular Bull', tf4:'Bullish', entry:'42.00', tp:'47.00', sl:'39.00' },
-        DOGEUSDT:{ score:62, dir:'SHORT', trend:58, mom:65, vol:60, smc:66, rsi:'58.9 ↘', macd:'Neutral', ema:'Flat', bb:'Mid', stoch:'Neutral', adx:'15.2 ✗', obv:'Neutral', rvol:'1.1×', fund:'+0.041%', oi:'Neutral', vwap:'Flat', st:'Neutral', bos:'No Signal', fvg:'None', div:'None', tf4:'Neutral', entry:'0.148', tp:'0.138', sl:'0.155' },
-        ADAUSDT: { score:69, dir:'LONG', trend:70, mom:68, vol:65, smc:72, rsi:'44.2 ↗', macd:'Bull', ema:'Aligned', bb:'Lower', stoch:'Neutral', adx:'20.8 ✓', obv:'Rising', rvol:'1.4×', fund:'+0.014%', oi:'Rising', vwap:'Above', st:'Bullish', bos:'Weak BOS', fvg:'Partial', div:'None', tf4:'Bullish', entry:'0.482', tp:'0.510', sl:'0.462' },
-    };
-
-    window.runAnalysis = function() {
+    window.runAnalysis = async function() {
         const pair = document.getElementById('pairSelect').value;
-        const btn = document.getElementById('runBtn');
-        btn.textContent = '⏳ Scanning...'; btn.disabled = true;
+        const tf   = document.getElementById('tfSelect').value;
+        const btn  = document.getElementById('runBtn');
+        btn.textContent = '⏳ Fetching...'; btn.disabled = true;
         document.getElementById('emptyState').style.display = 'none';
         document.getElementById('resultsContent').style.display = 'none';
 
-        setTimeout(() => {
-            const d = demoData[pair] || demoData['BTCUSDT'];
-            const isLong = d.dir === 'LONG';
+        try {
+            const res = await fetch(`/api/analysis?pair=${pair}&tf=${tf}`);
+            const j   = await res.json();
+            const rsi = j.rsi ?? j.data?.rsi ?? null;
 
-            // Score arc animation
-            const arc = document.getElementById('scoreArc');
-            const circ = 201.1;
-            arc.style.strokeDashoffset = circ - (circ * d.score / 100);
-            arc.style.stroke = d.score >= 80 ? 'var(--green)' : d.score >= 65 ? 'var(--gold)' : 'var(--red)';
-            arc.style.transition = 'stroke-dashoffset 1s ease';
+            if (rsi === null) throw new Error('No RSI in response');
 
-            // Score number
-            let s = 0;
-            const t = setInterval(() => {
-                s = Math.min(s + 2, d.score);
-                document.getElementById('scoreNum').textContent = s;
-                if (s >= d.score) clearInterval(t);
-            }, 20);
+            const isOS = rsi < 30, isOB = rsi > 70;
+            const rsiColor  = isOS ? 'var(--green)' : isOB ? 'var(--red)' : 'var(--gold)';
+            const sigLabel  = isOS ? '🟢 Potential BUY — Oversold' : isOB ? '🔴 Potential SELL — Overbought' : '⚪ Neutral Zone';
+            const sigColor  = isOS ? 'var(--green)' : isOB ? 'var(--red)' : 'var(--text-muted)';
 
-            // Factor bars
-            ['Trend','Mom','Vol','SMC'].forEach(f => {
-                const k = f === 'Mom' ? 'mom' : f.toLowerCase();
-                const pct = d[k === 'smc' ? 'smc' : k];
-                setTimeout(() => {
-                    document.getElementById('bar'+f).style.width = pct + '%';
-                    document.getElementById('pct'+f).textContent = pct + '%';
-                }, 200);
-            });
+            document.getElementById('rsiValue').textContent  = rsi.toFixed(2);
+            document.getElementById('rsiValue').style.color  = rsiColor;
+            document.getElementById('rsiStatus').textContent = isOS ? 'Oversold' : isOB ? 'Overbought' : 'Neutral';
+            document.getElementById('rsiStatus').style.color = rsiColor;
+            document.getElementById('rsiSignal').textContent = sigLabel;
+            document.getElementById('rsiSignal').style.color = sigColor;
+            document.getElementById('rsiPair').textContent   = pair;
+            document.getElementById('rsiTf').textContent     = tf;
+            document.getElementById('rsiMarker').style.left  = rsi + '%';
+        } catch(e) {
+            // Server doesn't have /api/analysis yet — show placeholder
+            document.getElementById('rsiValue').textContent  = 'N/A';
+            document.getElementById('rsiValue').style.color  = 'var(--text-muted)';
+            document.getElementById('rsiStatus').textContent = 'Server endpoint not yet configured';
+            document.getElementById('rsiSignal').textContent = '⚠ /api/analysis not available';
+            document.getElementById('rsiSignal').style.color = 'var(--text-muted)';
+            document.getElementById('rsiPair').textContent   = pair;
+            document.getElementById('rsiTf').textContent     = tf;
+        }
 
-            // Verdict
-            document.getElementById('verdictDir').textContent = d.dir;
-            document.getElementById('verdictDir').style.color = isLong ? 'var(--green)' : 'var(--red)';
-            const vb = document.getElementById('verdictBadge');
-            const grade = d.score >= 85 ? 'A+' : d.score >= 75 ? 'A' : d.score >= 65 ? 'B+' : 'B';
-            vb.textContent = grade;
-            vb.className = 'badge ' + (d.score >= 75 ? 'badge-green' : d.score >= 65 ? 'badge-gold' : 'badge-outline');
-            document.getElementById('verdictGrade').textContent = d.score >= 75 ? '✓ Signal Valid' : d.score >= 65 ? '⚡ Borderline' : '⚠ Weak Setup';
-
-            // Indicators
-            const indMap = {
-                rsi:d.rsi, macd:d.macd, ema:d.ema, bb:d.bb, stoch:d.stoch,
-                adx:d.adx, obv:d.obv, rvol:d.rvol, fund:d.fund, oi:d.oi,
-                vwap:d.vwap, st:d.st, bos:d.bos, fvg:d.fvg, div:d.div, '4htf':d.tf4
-            };
-            const bullKw = ['Bull','↗','Above','Rising','Oversold','Unfilled','Conf','Bullish','Hidden Bull','Regular Bull'];
-            const bearKw = ['Bear','↘','Below','Falling','Overbought','CHoCH','Bearish','Hidden Bear','Regular Bear'];
-
-            Object.entries(indMap).forEach(([k, v]) => {
-                const el = document.getElementById('iv-'+k);
-                const cel = document.getElementById('ic-'+k);
-                if (!el) return;
-                el.textContent = v;
-                const isBull = bullKw.some(w => v.includes(w));
-                const isBear = bearKw.some(w => v.includes(w));
-                cel.className = 'ind-cell ' + (isBull ? 'bull' : isBear ? 'bear' : 'neut');
-                el.style.color = isBull ? 'var(--green)' : isBear ? 'var(--red)' : 'var(--text)';
-            });
-
-            // Levels
-            document.getElementById('lvl-entry').textContent = '$' + d.entry;
-            document.getElementById('lvl-tp').textContent    = '$' + d.tp;
-            document.getElementById('lvl-sl').textContent    = '$' + d.sl;
-
-            // Time
-            document.getElementById('refreshTime').textContent = 'Last: ' + new Date().toLocaleTimeString();
-            document.getElementById('resultsContent').style.display = 'block';
-            btn.textContent = '▶ Run Analysis'; btn.disabled = false;
-        }, 700);
+        document.getElementById('refreshTime').textContent = 'Last: ' + new Date().toLocaleTimeString();
+        document.getElementById('resultsContent').style.display = 'block';
+        btn.textContent = '▶ Run Analysis'; btn.disabled = false;
     };
+
 </script>
 </body>
 </html>

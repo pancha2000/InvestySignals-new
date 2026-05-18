@@ -194,16 +194,15 @@
         </div>
         <div class="auth-nav-menu" id="authNavMenu">
             <a href="dashboard.html" class="auth-nav-link">📊 Dashboard</a>
-            <a href="signals.html" class="auth-nav-link">⚡ Signals</a>
             <a href="analysis.html" class="auth-nav-link">🧠 Analysis</a>
-            <a href="live-signals.html" class="auth-nav-link">📋 Paper Trading</a>
+            <a href="live-signals.html" class="auth-nav-link">📝 Paper Trading</a>
             <a href="profile.html" class="auth-nav-link active">👤 Profile</a>
         </div>
         <div class="auth-nav-right">
-            <div class="user-chip" id="userChip" style="display: flex;">
+            <a href="profile.html" class="user-chip" id="userChip" style="display: flex;">
                 <div class="user-avatar" id="userAvatar">U</div>
                 <div class="user-name" id="userName" style="display: block;">User</div>
-            </div>
+            </a>
             <button id="logoutBtn" class="btn btn-ghost" style="padding: 6px 12px; font-size: 0.875rem;">Logout</button>
         </div>
     </nav>
@@ -369,35 +368,35 @@
     </div>
 
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+        import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
+        const auth = getAuth(initializeApp({
+            apiKey:"AIzaSyCUlQccwWK-UBzFPWov2GYQjecF63y6X8k",
+            authDomain:"crypto-98b33.firebaseapp.com", projectId:"crypto-98b33",
+            storageBucket:"crypto-98b33.firebasestorage.app", messagingSenderId:"619954501803",
+            appId:"1:619954501803:web:559d48b801f072abd71fee"
+        }));
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk",
-            authDomain: "investysignals-890ba.firebaseapp.com",
-            projectId: "investysignals-890ba",
-            storageBucket: "investysignals-890ba.firebasestorage.app",
-            messagingSenderId: "1045281522975",
-            appId: "1:1045281522975:web:534501aab2ceeb887bdc2a"
-        };
+        onAuthStateChanged(auth, async (user) => {
+            if (!user) { window.location.href = 'login.html'; return; }
+            try {
+                const sr = await fetch('/api/user/status?uid=' + encodeURIComponent(user.uid));
+                const sj = await sr.json();
+                if (sj.success && (sj.status.maintenance || sj.status.suspended)) { window.location.href = 'dashboard.html'; return; }
+            } catch(_) {}
 
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
+            document.getElementById('userChip').style.display = 'flex';
+            const name = user.displayName || user.email?.split('@')[0] || 'Trader';
+            document.getElementById('userAvatar').textContent = name.charAt(0).toUpperCase();
+            document.getElementById('userName').textContent = name;
+            document.getElementById('displayName').value = name;
+            document.getElementById('email').value = user.email || '';
+            const joined = user.metadata.creationTime ? new Date(user.metadata.creationTime).toLocaleDateString() : 'Recently';
+            document.getElementById('joinDate').textContent = `Joined: ${joined}`;
 
-        onAuthStateChanged(auth, (user) => {
-            if (!user) {
-                window.location.href = 'login.html';
-            } else {
-                document.getElementById('userChip').style.display = 'flex';
-                const name = user.displayName || user.email.split('@')[0];
-                document.getElementById('userAvatar').textContent = name.charAt(0).toUpperCase();
-                
-                document.getElementById('displayName').value = name;
-                document.getElementById('email').value = user.email;
-                
-                const joined = user.metadata.creationTime ? new Date(user.metadata.creationTime).toLocaleDateString() : 'Recently';
-                document.getElementById('joinDate').textContent = `Joined: ${joined}`;
-            }
+            document.getElementById('logoutBtn').addEventListener('click', () =>
+                signOut(auth).then(() => window.location.href = 'index.html')
+            );
         });
 
         // Tabs logic
