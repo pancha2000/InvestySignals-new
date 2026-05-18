@@ -6,562 +6,562 @@
     <title>Dashboard | InvestySignals</title>
     <link rel="stylesheet" href="style.css">
     <style>
-        /* ── Welcome Hero ─────────────────────────────── */
-        .welcome-hero {
-            position: relative;
-            background: linear-gradient(135deg, rgba(245,200,66,0.08) 0%, rgba(13,16,24,0) 60%);
-            border: 1px solid rgba(245,200,66,0.12);
-            border-radius: var(--radius);
-            padding: 32px 36px;
-            margin-bottom: 28px;
-            overflow: hidden;
-        }
-        .welcome-hero::before {
-            content: '';
-            position: absolute;
-            top: -60px; right: -60px;
-            width: 200px; height: 200px;
-            background: radial-gradient(circle, rgba(245,200,66,0.12) 0%, transparent 70%);
-            pointer-events: none;
-        }
-        .welcome-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 16px;
-            flex-wrap: wrap;
-        }
-        .welcome-left h1 {
-            font-size: 1.8rem;
-            margin-bottom: 4px;
-            background: linear-gradient(90deg, var(--text) 60%, var(--gold));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-        .welcome-left p { color: var(--text-muted); font-size: 0.875rem; }
-        .system-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            background: rgba(24,217,122,0.1);
-            border: 1px solid rgba(24,217,122,0.2);
-            color: var(--green);
-            font-size: 0.72rem;
-            font-weight: 700;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            padding: 4px 10px;
-            border-radius: 100px;
-            margin-bottom: 10px;
-        }
-        .system-badge::before {
-            content: '';
-            width: 6px; height: 6px;
-            background: var(--green);
-            border-radius: 50%;
-            animation: pulse-dot 2s infinite;
-        }
-        @keyframes pulse-dot {
-            0%, 100% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.4; transform: scale(0.7); }
-        }
-
-        /* ── Stats Row ────────────────────────────────── */
         .stats-row {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            gap: 16px;
-            margin-bottom: 28px;
+            gap: 14px;
+            margin-bottom: 24px;
         }
         .stat-card {
             background: var(--bg2);
             border: 1px solid var(--border-soft);
             border-radius: var(--radius);
-            padding: 22px 24px;
-            position: relative;
-            overflow: hidden;
+            padding: 20px;
+            position: relative; overflow: hidden;
             transition: var(--transition);
         }
-        .stat-card:hover { border-color: rgba(245,200,66,0.2); transform: translateY(-2px); }
+        .stat-card:hover { border-color: var(--border); transform: translateY(-2px); }
         .stat-card::after {
             content: '';
             position: absolute;
             left: 0; top: 0; bottom: 0;
-            width: 3px;
-            border-radius: 3px 0 0 3px;
+            width: 3px; border-radius: 3px 0 0 3px;
         }
-        .stat-card.accent-gold::after { background: var(--gold); }
-        .stat-card.accent-green::after { background: var(--green); }
-        .stat-card.accent-blue::after { background: var(--blue); }
-        .stat-card.accent-purple::after { background: var(--purple); }
-        .stat-icon {
-            font-size: 1.1rem;
-            margin-bottom: 10px;
-            opacity: 0.7;
-        }
-        .stat-card-title {
-            color: var(--text-muted);
-            font-size: 0.78rem;
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            margin-bottom: 6px;
-        }
-        .stat-card-val {
+        .sc-gold::after   { background: var(--gold); }
+        .sc-green::after  { background: var(--green); }
+        .sc-blue::after   { background: var(--blue); }
+        .sc-purple::after { background: var(--purple); }
+        .stat-icon { font-size: 1.2rem; margin-bottom: 10px; }
+        .stat-lbl {
+            font-size: 0.7rem; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.08em;
+            color: var(--text-muted); margin-bottom: 4px;
             font-family: 'JetBrains Mono', monospace;
-            font-size: 1.65rem;
-            font-weight: 700;
-            color: var(--text);
-            line-height: 1;
         }
-        .stat-card-sub {
-            font-size: 0.75rem;
-            color: var(--text-dim);
-            margin-top: 6px;
+        .stat-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.7rem; font-weight: 700; line-height: 1;
+            margin-bottom: 4px;
         }
+        .stat-sub { font-size: 0.75rem; color: var(--text-muted); }
+        .stat-sub.up   { color: var(--green); }
+        .stat-sub.down { color: var(--red); }
 
-        /* ── Main Grid ────────────────────────────────── */
+        .welcome-box {
+            background: linear-gradient(135deg, rgba(240,180,41,0.07) 0%, transparent 60%);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px 28px;
+            margin-bottom: 24px;
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 16px; flex-wrap: wrap;
+            position: relative; overflow: hidden;
+        }
+        .welcome-box::after {
+            content: '◈';
+            position: absolute; right: -10px; top: 50%;
+            transform: translateY(-50%);
+            font-size: 6rem; color: rgba(240,180,41,0.06);
+            pointer-events: none;
+        }
+        .welcome-box h1 {
+            font-size: 1.5rem; margin-bottom: 4px;
+            background: linear-gradient(90deg, var(--text) 60%, var(--gold));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .welcome-box p { font-size: 0.85rem; color: var(--text-muted); }
+
         .main-grid {
             display: grid;
             grid-template-columns: 1fr 340px;
             gap: 20px;
+            margin-bottom: 24px;
         }
 
-        /* ── Panel ────────────────────────────────────── */
-        .panel {
+        /* Signal List */
+        .signal-list-header {
+            display: flex; justify-content: space-between;
+            align-items: center; margin-bottom: 14px;
+            flex-wrap: wrap; gap: 8px;
+        }
+        .signal-list-title { font-size: 1rem; font-weight: 700; }
+
+        .filter-pills {
+            display: flex; gap: 6px; overflow-x: auto;
+            padding-bottom: 2px; -webkit-overflow-scrolling: touch;
+        }
+        .pill {
+            background: var(--surface);
+            border: 1px solid var(--border-soft);
+            color: var(--text-muted);
+            padding: 5px 14px;
+            border-radius: 100px; font-size: 0.8rem; font-weight: 600;
+            cursor: pointer; white-space: nowrap; transition: var(--transition);
+            font-family: 'Space Grotesk', sans-serif;
+        }
+        .pill:hover { border-color: var(--gold); color: var(--text); }
+        .pill.active { background: var(--gold); color: var(--bg); border-color: var(--gold); }
+
+        .signal-stack { display: flex; flex-direction: column; gap: 10px; }
+
+        /* Signal card */
+        .sig-card {
             background: var(--bg2);
             border: 1px solid var(--border-soft);
             border-radius: var(--radius);
-            padding: 24px;
-        }
-        .panel + .panel { margin-top: 20px; }
-        .panel-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-            padding-bottom: 16px;
-            border-bottom: 1px solid var(--border-soft);
-        }
-        .panel-title {
-            font-family: 'Syne', sans-serif;
-            font-size: 1.05rem;
-            letter-spacing: 0.02em;
-        }
-        .panel-action {
-            font-size: 0.8rem;
-            color: var(--gold);
-            font-weight: 500;
+            padding: 16px 18px;
+            position: relative; overflow: hidden;
             transition: var(--transition);
+            cursor: pointer;
         }
-        .panel-action:hover { color: var(--text); }
+        .sig-card:hover { border-color: var(--border); transform: translateX(3px); }
+        .sig-card::before {
+            content: '';
+            position: absolute; left: 0; top: 0; bottom: 0;
+            width: 3px;
+        }
+        .sig-long::before  { background: var(--green); }
+        .sig-short::before { background: var(--red); }
 
-        /* ── Quick Nav Cards ──────────────────────────── */
-        .quick-links {
+        .sig-top {
+            display: flex; justify-content: space-between;
+            align-items: flex-start; margin-bottom: 12px; gap: 8px;
+        }
+        .sig-pair { font-family: 'JetBrains Mono', monospace; font-size: 1rem; font-weight: 700; }
+        .sig-time { font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
+        .sig-badges { display: flex; gap: 5px; flex-wrap: wrap; }
+
+        .sig-prices {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 12px;
-        }
-        .quick-link-card {
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            padding: 10px;
             background: var(--surface);
-            border: 1px solid var(--border-soft);
             border-radius: var(--radius-sm);
-            padding: 18px 16px;
-            transition: var(--transition);
-            display: flex;
-            align-items: center;
-            gap: 14px;
+            margin-bottom: 12px;
         }
-        .quick-link-card:hover {
-            border-color: var(--gold);
-            background: rgba(245,200,66,0.05);
-            transform: translateX(3px);
-        }
-        .ql-icon {
-            width: 40px; height: 40px;
-            border-radius: var(--radius-xs);
-            background: rgba(245,200,66,0.1);
-            border: 1px solid rgba(245,200,66,0.15);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.1rem;
-            flex-shrink: 0;
-        }
-        .ql-title { font-weight: 600; font-size: 0.9rem; margin-bottom: 2px; }
-        .ql-desc { font-size: 0.75rem; color: var(--text-muted); }
+        .sp-item { text-align: center; }
+        .sp-lbl { font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 3px; }
+        .sp-val { font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; font-weight: 600; }
 
-        /* ── Data Table ───────────────────────────────── */
-        .table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-        .data-table {
-            width: 100%;
-            border-collapse: collapse;
-            text-align: left;
-            min-width: 540px;
-        }
-        .data-table th {
-            color: var(--text-dim);
-            font-size: 0.72rem;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            padding: 10px 14px;
-            border-bottom: 1px solid var(--border-soft);
-            font-weight: 600;
-        }
-        .data-table td {
-            padding: 14px;
-            border-bottom: 1px solid rgba(255,255,255,0.03);
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.875rem;
-        }
-        .data-table tr:last-child td { border-bottom: none; }
-        .data-table tbody tr { transition: var(--transition); }
-        .data-table tbody tr:hover { background: rgba(255,255,255,0.02); }
+        .sig-footer { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; }
+        .sig-score { display: flex; align-items: center; gap: 8px; }
+        .score-bar-wrap { width: 60px; height: 5px; background: var(--surface); border-radius: 3px; overflow: hidden; }
+        .score-bar-fill { height: 100%; border-radius: 3px; }
+        .score-num { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--text-muted); }
 
-        /* ── Market Feed ──────────────────────────────── */
-        .market-feed-label {
-            font-size: 0.7rem;
-            color: var(--text-dim);
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            text-align: center;
-            padding: 10px 0 14px;
-            border-bottom: 1px solid var(--border-soft);
-            margin-bottom: 4px;
+        /* Sidebar panels */
+        .sidebar-stack { display: flex; flex-direction: column; gap: 16px; }
+        .side-panel {
+            background: var(--bg2);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--radius);
+            overflow: hidden;
         }
-        .market-card {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 11px 0;
-            border-bottom: 1px solid rgba(255,255,255,0.03);
-            transition: var(--transition);
-        }
-        .market-card:last-child { border-bottom: none; }
-        .market-card:hover { padding-left: 4px; }
-        .mc-left { display: flex; align-items: center; gap: 10px; }
-        .mc-symbol {
-            width: 32px; height: 32px;
-            border-radius: 50%;
-            background: var(--surface2);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.7rem;
-            font-weight: 700;
-            color: var(--gold);
-            font-family: 'JetBrains Mono', monospace;
-        }
-        .mc-name { font-weight: 600; font-size: 0.875rem; }
-        .mc-sub { font-size: 0.72rem; color: var(--text-muted); }
-        .mc-right { text-align: right; }
-        .mc-price {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.875rem;
+        .side-panel-title {
+            padding: 14px 16px;
+            font-size: 0.78rem; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.08em;
             color: var(--text-muted);
+            border-bottom: 1px solid var(--border-soft);
+            background: var(--bg3);
+            font-family: 'JetBrains Mono', monospace;
         }
-        .mc-badge {
-            font-size: 0.68rem;
-            background: var(--surface);
-            color: var(--text-dim);
-            padding: 2px 6px;
-            border-radius: 4px;
-            margin-top: 2px;
-            display: inline-block;
+        .market-item {
+            display: flex; justify-content: space-between;
+            align-items: center;
+            padding: 11px 16px;
+            border-bottom: 1px solid var(--border-dim);
+            font-size: 0.85rem;
         }
+        .market-item:last-child { border-bottom: none; }
+        .market-pair { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+        .market-price { font-family: 'JetBrains Mono', monospace; color: var(--text-muted); }
+        .market-change { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; font-weight: 600; }
+        .up { color: var(--green); }
+        .down { color: var(--red); }
 
-        /* ── Empty state ──────────────────────────────── */
-        .table-empty {
-            text-align: center;
-            padding: 40px 16px;
-            color: var(--text-muted);
-        }
-        .table-empty-icon { font-size: 2rem; opacity: 0.3; margin-bottom: 10px; }
-        .table-empty p { font-size: 0.85rem; }
+        /* Portfolio table */
+        .portfolio-section { margin-top: 0; }
 
-        /* ── Responsive ───────────────────────────────── */
-        @media (max-width: 1024px) {
+        @media (max-width: 1100px) {
             .main-grid { grid-template-columns: 1fr; }
             .stats-row { grid-template-columns: repeat(2, 1fr); }
         }
         @media (max-width: 600px) {
-            .quick-links { grid-template-columns: 1fr; }
-            .stats-row { grid-template-columns: 1fr 1fr; gap: 12px; }
-            .welcome-hero { padding: 24px 20px; }
-            .welcome-left h1 { font-size: 1.4rem; }
-            .stat-card-val { font-size: 1.35rem; }
+            .stats-row { grid-template-columns: 1fr 1fr; }
+            .sig-prices { grid-template-columns: repeat(3, 1fr); }
         }
     </style>
 </head>
 <body>
 
-    <nav class="auth-nav">
-        <div class="auth-nav-left">
-            <button class="auth-hamburger" id="authHamburger">☰</button>
-            <a href="index.html" class="logo">
-                <span class="logo-icon">◈</span> INVESTY<span class="logo-accent">SIGNALS</span>
-            </a>
-        </div>
-        <div class="auth-nav-menu" id="authNavMenu">
-            <a href="dashboard.html" class="auth-nav-link active">Dashboard</a>
-            <a href="analysis.html" class="auth-nav-link">Analysis</a>
-            <a href="live-signals.html" class="auth-nav-link">Paper Trading</a>
-            <a href="signals.html" class="auth-nav-link">Signals</a>
-            <a href="profile.html" class="auth-nav-link">Profile</a>
-        </div>
-        <div class="auth-nav-right">
-            <div class="user-chip" id="userChip">
-                <div class="user-avatar" id="userAvatar">U</div>
-                <div class="user-name" id="userName">User</div>
-            </div>
-            <button id="logoutBtn" class="btn btn-ghost" style="padding: 6px 14px; font-size: 0.82rem;">Logout</button>
-        </div>
+<!-- Auth Nav -->
+<nav class="auth-nav">
+    <div class="auth-nav-left">
+        <button class="auth-hamburger" id="authHamburger">☰</button>
+        <a href="index.html" class="logo" style="font-size:0.9rem;">
+            <div class="logo-icon" style="width:26px;height:26px;font-size:0.85rem;">◈</div>
+            <span>INVESTY<span class="logo-accent">SIGNALS</span></span>
+        </a>
+        <span class="page-title">DASHBOARD</span>
+    </div>
+    <nav class="auth-nav-menu" id="authNavMenu">
+        <a href="dashboard.html" class="auth-nav-link active">📊 Dashboard</a>
+        <a href="signals.html" class="auth-nav-link">⚡ Signals</a>
+        <a href="analysis.html" class="auth-nav-link">🧠 Analysis</a>
+        <a href="live-signals.html" class="auth-nav-link">🔴 Live</a>
+        <a href="profile.html" class="auth-nav-link">👤 Profile</a>
     </nav>
+    <div class="auth-nav-right">
+        <span class="badge badge-green live-dot">System Online</span>
+        <a href="profile.html" class="user-chip">
+            <div class="user-avatar" id="userAvatar">U</div>
+            <span class="user-name" id="userName">User</span>
+        </a>
+    </div>
+</nav>
 
-    <div class="dash-container" style="padding-top: 88px;">
-
-        <!-- Welcome Hero -->
-        <div class="welcome-hero">
-            <div class="welcome-row">
-                <div class="welcome-left">
-                    <div class="system-badge">System Online</div>
-                    <h1 id="welcomeText">Good morning, Trader</h1>
-                    <p id="dateText">Loading date...</p>
-                </div>
-                <a href="analysis.html" class="btn btn-gold" style="white-space: nowrap;">Run Analysis →</a>
-            </div>
+<div class="dash-container">
+    <!-- Welcome -->
+    <div class="welcome-box fade-up">
+        <div>
+            <div class="badge badge-green live-dot" style="margin-bottom:10px;" id="systemBadge">System Online · 16-Factor Engine Active</div>
+            <h1 id="welcomeMsg">Welcome 👋</h1>
+            <p id="welcomeSub">Check the latest signals and your paper portfolio below.</p>
         </div>
-
-        <!-- Stats Row -->
-        <div class="stats-row">
-            <div class="stat-card accent-gold">
-                <div class="stat-icon">📡</div>
-                <div class="stat-card-title">Signals Tracked</div>
-                <div class="stat-card-val">0</div>
-                <div class="stat-card-sub">No signals published yet</div>
-            </div>
-            <div class="stat-card accent-blue">
-                <div class="stat-icon">📋</div>
-                <div class="stat-card-title">Open Paper Trades</div>
-                <div class="stat-card-val">0</div>
-                <div class="stat-card-sub">Start trading to track</div>
-            </div>
-            <div class="stat-card accent-green">
-                <div class="stat-icon">🎯</div>
-                <div class="stat-card-title">Win Rate</div>
-                <div class="stat-card-val" style="color: var(--text-muted);">—</div>
-                <div class="stat-card-sub">No completed trades</div>
-            </div>
-            <div class="stat-card accent-purple">
-                <div class="stat-icon">💰</div>
-                <div class="stat-card-title">Paper P&L</div>
-                <div class="stat-card-val" style="color: var(--text-muted);">$0.00</div>
-                <div class="stat-card-sub">Virtual balance: $10,000</div>
-            </div>
-        </div>
-
-        <!-- Main Grid -->
-        <div class="main-grid">
-
-            <!-- Left Column -->
-            <div>
-                <!-- Quick Nav -->
-                <div class="panel" style="margin-bottom: 20px;">
-                    <div class="panel-header">
-                        <span class="panel-title">Quick Navigation</span>
-                    </div>
-                    <div class="quick-links">
-                        <a href="analysis.html" class="quick-link-card">
-                            <div class="ql-icon">📊</div>
-                            <div>
-                                <div class="ql-title">Analysis Engine</div>
-                                <div class="ql-desc">Run multi-factor scan</div>
-                            </div>
-                        </a>
-                        <a href="live-signals.html" class="quick-link-card">
-                            <div class="ql-icon">📝</div>
-                            <div>
-                                <div class="ql-title">Paper Trading</div>
-                                <div class="ql-desc">Log & track trades</div>
-                            </div>
-                        </a>
-                        <a href="signals.html" class="quick-link-card">
-                            <div class="ql-icon">📈</div>
-                            <div>
-                                <div class="ql-title">Signals</div>
-                                <div class="ql-desc">Admin-published signals</div>
-                            </div>
-                        </a>
-                        <a href="profile.html" class="quick-link-card">
-                            <div class="ql-icon">👤</div>
-                            <div>
-                                <div class="ql-title">Profile</div>
-                                <div class="ql-desc">Account & preferences</div>
-                            </div>
-                        </a>
-                    </div>
-                </div>
-
-                <!-- Recent Signals Table -->
-                <div class="panel">
-                    <div class="panel-header">
-                        <span class="panel-title">Recent Signals</span>
-                        <a href="signals.html" class="panel-action">View All →</a>
-                    </div>
-                    <div class="table-wrapper">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Pair</th>
-                                    <th>Direction</th>
-                                    <th>Entry</th>
-                                    <th>TP</th>
-                                    <th>SL</th>
-                                    <th>Grade</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td colspan="7">
-                                        <div class="table-empty">
-                                            <div class="table-empty-icon">📡</div>
-                                            <p>No signals published yet. Check back soon.</p>
-                                        </div>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Right Column: Market Watch -->
-            <div class="panel" style="height: fit-content;">
-                <div class="panel-header">
-                    <span class="panel-title">Market Watch</span>
-                </div>
-                <div class="market-feed-label">⚠ Connect API for live prices</div>
-                <div class="market-card">
-                    <div class="mc-left">
-                        <div class="mc-symbol">BTC</div>
-                        <div>
-                            <div class="mc-name">Bitcoin</div>
-                            <div class="mc-sub">BTC/USDT</div>
-                        </div>
-                    </div>
-                    <div class="mc-right">
-                        <div class="mc-price">—</div>
-                        <div class="mc-badge">No feed</div>
-                    </div>
-                </div>
-                <div class="market-card">
-                    <div class="mc-left">
-                        <div class="mc-symbol">ETH</div>
-                        <div>
-                            <div class="mc-name">Ethereum</div>
-                            <div class="mc-sub">ETH/USDT</div>
-                        </div>
-                    </div>
-                    <div class="mc-right">
-                        <div class="mc-price">—</div>
-                        <div class="mc-badge">No feed</div>
-                    </div>
-                </div>
-                <div class="market-card">
-                    <div class="mc-left">
-                        <div class="mc-symbol">SOL</div>
-                        <div>
-                            <div class="mc-name">Solana</div>
-                            <div class="mc-sub">SOL/USDT</div>
-                        </div>
-                    </div>
-                    <div class="mc-right">
-                        <div class="mc-price">—</div>
-                        <div class="mc-badge">No feed</div>
-                    </div>
-                </div>
-                <div class="market-card">
-                    <div class="mc-left">
-                        <div class="mc-symbol">BNB</div>
-                        <div>
-                            <div class="mc-name">BNB</div>
-                            <div class="mc-sub">BNB/USDT</div>
-                        </div>
-                    </div>
-                    <div class="mc-right">
-                        <div class="mc-price">—</div>
-                        <div class="mc-badge">No feed</div>
-                    </div>
-                </div>
-                <div class="market-card">
-                    <div class="mc-left">
-                        <div class="mc-symbol">XRP</div>
-                        <div>
-                            <div class="mc-name">XRP</div>
-                            <div class="mc-sub">XRP/USDT</div>
-                        </div>
-                    </div>
-                    <div class="mc-right">
-                        <div class="mc-price">—</div>
-                        <div class="mc-badge">No feed</div>
-                    </div>
-                </div>
-            </div>
-
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <a href="analysis.html" class="btn btn-surface btn-sm">🧠 Run Analysis</a>
+            <a href="signals.html" class="btn btn-gold btn-sm">⚡ View Signals</a>
         </div>
     </div>
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+    <!-- Stats -->
+    <div class="stats-row fade-up">
+        <div class="stat-card sc-gold">
+            <div class="stat-icon">📊</div>
+            <div class="stat-lbl">Paper Balance</div>
+            <div class="stat-val text-gold" id="statBalance">$10,000</div>
+            <div class="stat-sub" id="statBalanceSub">Paper trading balance</div>
+        </div>
+        <div class="stat-card sc-green">
+            <div class="stat-icon">✅</div>
+            <div class="stat-lbl">Win Rate (30d)</div>
+            <div class="stat-val text-green" id="statWinRate">—</div>
+            <div class="stat-sub" id="statWinSub">No trades yet</div>
+        </div>
+        <div class="stat-card sc-blue">
+            <div class="stat-icon">⚡</div>
+            <div class="stat-lbl">Open Trades</div>
+            <div class="stat-val" style="color:var(--blue)" id="statOpenTrades">0</div>
+            <div class="stat-sub" id="statOpenSub">No open trades</div>
+        </div>
+        <div class="stat-card sc-purple">
+            <div class="stat-icon">📈</div>
+            <div class="stat-lbl">Avg R:R</div>
+            <div class="stat-val" style="color:var(--purple)" id="statRR">—</div>
+            <div class="stat-sub">Target: ≥ 2.0×</div>
+        </div>
+    </div>
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk",
-            authDomain: "investysignals-890ba.firebaseapp.com",
-            projectId: "investysignals-890ba",
-            storageBucket: "investysignals-890ba.firebasestorage.app",
-            messagingSenderId: "1045281522975",
-            appId: "1:1045281522975:web:534501aab2ceeb887bdc2a"
-        };
+    <!-- Main Grid -->
+    <div class="main-grid">
+        <!-- Left: Signals -->
+        <div>
+            <div class="signal-list-header">
+                <span class="signal-list-title">⚡ Active Signals</span>
+                <a href="signals.html" class="btn btn-surface btn-sm">View All →</a>
+            </div>
+            <div class="filter-pills mb-3">
+                <button class="pill active" onclick="filterSig('all',this)">All</button>
+                <button class="pill" onclick="filterSig('long',this)">LONG</button>
+                <button class="pill" onclick="filterSig('short',this)">SHORT</button>
+                <button class="pill" onclick="filterSig('open',this)">Open</button>
+                <button class="pill" onclick="filterSig('tp',this)">TP Hit</button>
+            </div>
+            <div class="signal-stack" id="signalStack">
+                <!-- Signal cards rendered by JS -->
+            </div>
+        </div>
 
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
+        <!-- Right: Sidebar -->
+        <div class="sidebar-stack">
+            <div class="side-panel">
+                <div class="side-panel-title">// Market Overview <span style="font-size:0.65rem;color:var(--text-dim);font-weight:400;">(live via API)</span></div>
+                <div class="market-item">
+                    <div><div class="market-pair">BTC/USDT</div><div style="font-size:0.7rem;color:var(--text-muted)">Bitcoin</div></div>
+                    <div style="text-align:right">
+                        <div class="market-price" id="mp-btc">—</div>
+                        <div class="market-change" id="mc-btc">—</div>
+                    </div>
+                </div>
+                <div class="market-item">
+                    <div><div class="market-pair">ETH/USDT</div><div style="font-size:0.7rem;color:var(--text-muted)">Ethereum</div></div>
+                    <div style="text-align:right">
+                        <div class="market-price" id="mp-eth">—</div>
+                        <div class="market-change" id="mc-eth">—</div>
+                    </div>
+                </div>
+                <div class="market-item">
+                    <div><div class="market-pair">BNB/USDT</div><div style="font-size:0.7rem;color:var(--text-muted)">BNB Chain</div></div>
+                    <div style="text-align:right">
+                        <div class="market-price" id="mp-bnb">—</div>
+                        <div class="market-change" id="mc-bnb">—</div>
+                    </div>
+                </div>
+                <div class="market-item">
+                    <div><div class="market-pair">SOL/USDT</div><div style="font-size:0.7rem;color:var(--text-muted)">Solana</div></div>
+                    <div style="text-align:right">
+                        <div class="market-price" id="mp-sol">—</div>
+                        <div class="market-change" id="mc-sol">—</div>
+                    </div>
+                </div>
+                <div class="market-item">
+                    <div><div class="market-pair">XRP/USDT</div><div style="font-size:0.7rem;color:var(--text-muted)">Ripple</div></div>
+                    <div style="text-align:right">
+                        <div class="market-price" id="mp-xrp">—</div>
+                        <div class="market-change" id="mc-xrp">—</div>
+                    </div>
+                </div>
+            </div>
 
-        const opts = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-        document.getElementById('dateText').textContent = new Date().toLocaleDateString('en-US', opts);
+            <div class="side-panel">
+                <div class="side-panel-title">// Quick Stats</div>
+                <div style="padding:16px;display:flex;flex-direction:column;gap:10px;">
+                    <div style="display:flex;justify-content:space-between;font-size:0.85rem;">
+                        <span class="text-muted">Total Signals Taken</span>
+                        <span class="mono font-bold" id="qs-total">—</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;font-size:0.85rem;">
+                        <span class="text-muted">Wins / Losses</span>
+                        <span class="mono" id="qs-wl">— / —</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;font-size:0.85rem;">
+                        <span class="text-muted">Best Trade</span>
+                        <span class="mono up" id="qs-best">—</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;font-size:0.85rem;">
+                        <span class="text-muted">Worst Trade</span>
+                        <span class="mono down" id="qs-worst">—</span>
+                    </div>
+                    <div class="divider"></div>
+                    <div style="display:flex;justify-content:space-between;font-size:0.85rem;">
+                        <span class="text-muted">BTC Funding Rate</span>
+                        <span class="mono up">+0.012%</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;font-size:0.85rem;">
+                        <span class="text-muted">Market Sentiment</span>
+                        <span class="badge badge-gold" style="font-size:0.68rem;">Greed 72</span>
+                    </div>
+                </div>
+            </div>
 
-        onAuthStateChanged(auth, (user) => {
-            if (!user) {
-                window.location.href = 'login.html';
-            } else {
-                const name = user.displayName || user.email.split('@')[0];
-                document.getElementById('userName').textContent = name;
-                document.getElementById('userAvatar').textContent = name.charAt(0).toUpperCase();
-                const h = new Date().getHours();
-                const g = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
-                document.getElementById('welcomeText').textContent = `${g}, ${name}`;
+            <div class="side-panel">
+                <div class="side-panel-title">// Account</div>
+                <div style="padding:16px;display:flex;flex-direction:column;gap:10px;">
+                    <div style="display:flex;justify-content:space-between;font-size:0.85rem;">
+                        <span class="text-muted">Plan</span>
+                        <span class="badge badge-gold">Free</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;font-size:0.85rem;">
+                        <span class="text-muted">Member Since</span>
+                        <span class="mono text-muted">Jan 2026</span>
+                    </div>
+                    <a href="pricing.html" class="btn btn-gold btn-sm" style="width:100%;justify-content:center;margin-top:4px;">⬆ Upgrade to Pro</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Portfolio Table -->
+    <div class="card fade-up" style="margin-bottom:0;">
+        <div class="flex-between mb-3">
+            <h3 style="font-size:1rem;">📂 Paper Portfolio</h3>
+            <div style="display:flex;gap:8px;">
+                <button class="btn btn-surface btn-sm">Export CSV</button>
+                <a href="signals.html" class="btn btn-gold btn-sm">+ Open Trade</a>
+            </div>
+        </div>
+        <div style="overflow-x:auto;">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Pair</th>
+                        <th>Dir</th>
+                        <th>Entry</th>
+                        <th>Current</th>
+                        <th>TP1</th>
+                        <th>SL</th>
+                        <th>Status</th>
+                        <th>PnL</th>
+                        <th>R:R</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong class="mono">BTCUSDT</strong></td>
+                        <td><span class="badge badge-green">LONG</span></td>
+                        <td class="mono">$67,200</td>
+                        <td class="mono">$67,432</td>
+                        <td class="mono text-green">$69,500</td>
+                        <td class="mono text-red">$65,800</td>
+                        <td><span class="badge badge-gold">TP1 Hit</span></td>
+                        <td class="up mono">+$232</td>
+                        <td class="mono text-muted">1.63×</td>
+                    </tr>
+                    <tr>
+                        <td><strong class="mono">ETHUSDT</strong></td>
+                        <td><span class="badge badge-red">SHORT</span></td>
+                        <td class="mono">$3,600</td>
+                        <td class="mono">$3,541</td>
+                        <td class="mono text-green">$3,420</td>
+                        <td class="mono text-red">$3,720</td>
+                        <td><span class="badge badge-blue">Open</span></td>
+                        <td class="up mono">+$59</td>
+                        <td class="mono text-muted">0.49×</td>
+                    </tr>
+                    <tr>
+                        <td><strong class="mono">SOLUSDT</strong></td>
+                        <td><span class="badge badge-green">LONG</span></td>
+                        <td class="mono">$170.20</td>
+                        <td class="mono">$178.50</td>
+                        <td class="mono text-green">$185.00</td>
+                        <td class="mono text-red">$163.00</td>
+                        <td><span class="badge badge-gold">TP1 Hit</span></td>
+                        <td class="up mono">+$414</td>
+                        <td class="mono text-muted">1.01×</td>
+                    </tr>
+                    <tr>
+                        <td><strong class="mono">XRPUSDT</strong></td>
+                        <td><span class="badge badge-red">SHORT</span></td>
+                        <td class="mono">$0.640</td>
+                        <td class="mono">$0.618</td>
+                        <td class="mono text-green">$0.590</td>
+                        <td class="mono text-red">$0.670</td>
+                        <td><span class="badge badge-blue">Open</span></td>
+                        <td class="up mono">+$22</td>
+                        <td class="mono text-muted">0.73×</td>
+                    </tr>
+                    <tr>
+                        <td><strong class="mono">AVAXUSDT</strong></td>
+                        <td><span class="badge badge-green">LONG</span></td>
+                        <td class="mono">$42.00</td>
+                        <td class="mono text-red">$38.60</td>
+                        <td class="mono text-green">$47.00</td>
+                        <td class="mono text-red">$39.00</td>
+                        <td><span class="badge badge-red">Near SL</span></td>
+                        <td class="down mono">-$170</td>
+                        <td class="mono text-muted">—</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Auth nav hamburger
+    const authHam = document.getElementById('authHamburger');
+    const authMenu = document.getElementById('authNavMenu');
+    authHam.addEventListener('click', ()=> authMenu.classList.toggle('open'));
+
+    // Fade up animation
+    const obs = new IntersectionObserver((entries) => {
+        entries.forEach(e => { if(e.isIntersecting){ e.target.classList.add('visible'); obs.unobserve(e.target); } });
+    }, { threshold: 0.08 });
+    document.querySelectorAll('.fade-up').forEach(el => obs.observe(el));
+
+    // Signals loaded from MongoDB via server API
+    let allSignals = [];
+
+    async function loadSignals() {
+        try {
+            const res = await fetch('/api/signals?limit=10');
+            if (res.ok) {
+                const data = await res.json();
+                allSignals = data.signals || [];
             }
-        });
-
-        document.getElementById('logoutBtn').addEventListener('click', () => {
-            signOut(auth).then(() => {
-                sessionStorage.removeItem('user');
-                window.location.href = 'index.html';
-            });
-        });
-    </script>
-
-    <script>
-        const authHamburger = document.getElementById('authHamburger');
-        const authNavMenu = document.getElementById('authNavMenu');
-        if (authHamburger) {
-            authHamburger.addEventListener('click', () => authNavMenu.classList.toggle('open'));
+        } catch(e) {
+            allSignals = [];
         }
-        document.querySelectorAll('.auth-nav-link').forEach(link => {
-            link.addEventListener('click', () => authNavMenu.classList.remove('open'));
-        });
-    </script>
+        renderSignals('all');
+    }
 
+    function renderSignals(filter='all') {
+        const stack = document.getElementById('signalStack');
+        const filtered = allSignals.filter(s => {
+            if(filter === 'all')   return true;
+            if(filter === 'long')  return s.direction === 'LONG';
+            if(filter === 'short') return s.direction === 'SHORT';
+            if(filter === 'open')  return s.status === 'OPEN' || s.status === 'PENDING_LONG' || s.status === 'PENDING_SHORT';
+            if(filter === 'tp')    return s.status === 'TP1_HIT' || s.status === 'TP2_HIT';
+            return true;
+        });
+
+        if (filtered.length === 0) {
+            stack.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--border-soft);border-radius:var(--radius);padding:48px 24px;text-align:center;color:var(--text-muted);">
+                <div style="font-size:2rem;margin-bottom:12px;opacity:0.4;">📡</div>
+                <div style="font-weight:600;margin-bottom:6px;">No signals found</div>
+                <div style="font-size:0.85rem;">No signals match this filter. Check back soon.</div>
+            </div>`;
+            return;
+        }
+
+        stack.innerHTML = filtered.map(s => {
+            const isLong = s.direction === 'LONG';
+            const score = s.score || 0;
+            const scoreColor = score >= 85 ? 'var(--green)' : score >= 70 ? 'var(--gold)' : 'var(--text-muted)';
+            const statusLbl = s.status === 'TP1_HIT' ? 'TP1 Hit' : s.status === 'TP2_HIT' ? 'TP2 Hit' : s.status === 'OPEN' ? 'Open' : s.status || 'Active';
+            const statusClass = (s.status === 'TP1_HIT' || s.status === 'TP2_HIT') ? 'badge-gold' : s.status === 'OPEN' ? 'badge-blue' : 'badge-outline';
+            const timeAgo = s.createdAt ? new Date(s.createdAt).toLocaleTimeString() : '—';
+            return `
+            <div class="sig-card sig-${s.direction.toLowerCase()}">
+                <div class="sig-top">
+                    <div>
+                        <div class="sig-pair">${s.pair}</div>
+                        <div class="sig-time">${timeAgo} · ${s.leverage || '—'} leverage</div>
+                    </div>
+                    <div class="sig-badges">
+                        <span class="badge badge-${isLong ? 'green' : 'red'}">${s.direction}</span>
+                        <span class="badge ${statusClass}">${statusLbl}</span>
+                    </div>
+                </div>
+                <div class="sig-prices">
+                    <div class="sp-item">
+                        <div class="sp-lbl">Entry</div>
+                        <div class="sp-val text-gold">$${s.entry}</div>
+                    </div>
+                    <div class="sp-item">
+                        <div class="sp-lbl">TP</div>
+                        <div class="sp-val" style="color:var(--green)">$${s.tp1}</div>
+                    </div>
+                    <div class="sp-item">
+                        <div class="sp-lbl">SL</div>
+                        <div class="sp-val" style="color:var(--red)">$${s.sl}</div>
+                    </div>
+                </div>
+                <div class="sig-footer">
+                    <div class="sig-score">
+                        <span style="font-size:0.72rem;color:var(--text-muted);">Score:</span>
+                        <div class="score-bar-wrap">
+                            <div class="score-bar-fill" style="width:${score}%;background:${scoreColor};"></div>
+                        </div>
+                        <span class="score-num">${score}/100</span>
+                    </div>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:var(--text-muted);">R:R ${s.rr || '—'}×</span>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    function filterSig(filter, el) {
+        document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+        el.classList.add('active');
+        renderSignals(filter);
+    }
+
+    loadSignals();
+</script>
 </body>
 </html>

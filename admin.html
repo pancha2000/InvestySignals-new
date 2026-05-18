@@ -6,513 +6,971 @@
     <title>Admin Panel | InvestySignals</title>
     <link rel="stylesheet" href="style.css">
     <style>
-        /* body flex removed — handled by .dash-container */
-        
-        
-        
-        
-        .menu-section {
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            color: var(--text-muted);
-            margin: 24px 0 8px 8px;
-            letter-spacing: 0.05em;
+        .admin-wrapper {
+            display: flex;
+            min-height: 100vh;
+            padding-top: 64px;
+        }
+
+        /* ── Sidebar ── */
+        .admin-sidebar {
+            width: 240px;
+            flex-shrink: 0;
+            background: var(--bg2);
+            border-right: 1px solid var(--border-soft);
+            position: fixed;
+            top: 64px; bottom: 0; left: 0;
+            overflow-y: auto;
+            padding: 16px 12px;
+            transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+            z-index: 100;
+        }
+        .sidebar-section {
+            font-size: 0.65rem; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.12em;
+            color: var(--text-dim); padding: 16px 12px 6px;
+            font-family: 'JetBrains Mono', monospace;
         }
         .menu-item {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 10px 12px;
-            color: var(--text);
-            border-radius: var(--radius-sm);
-            cursor: pointer;
-            transition: var(--transition);
-            margin-bottom: 4px;
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 12px; border-radius: var(--radius-sm);
+            cursor: pointer; transition: var(--transition);
+            font-size: 0.88rem; font-weight: 500;
+            color: var(--text-muted); margin-bottom: 2px;
+            border: none; background: none; width: 100%;
+            text-align: left; font-family: 'Space Grotesk', sans-serif;
         }
-        .menu-item:hover {
-            background: var(--surface);
+        .menu-item:hover { background: var(--surface); color: var(--text); }
+        .menu-item.active { background: rgba(240,180,41,0.1); color: var(--gold); }
+        .menu-item.danger:hover { background: var(--red-glow); color: var(--red); }
+        .menu-icon { font-size: 1rem; width: 20px; text-align: center; flex-shrink: 0; }
+        .menu-badge {
+            margin-left: auto;
+            font-size: 0.65rem; font-weight: 700;
+            background: var(--red-glow); color: var(--red);
+            padding: 2px 7px; border-radius: 100px;
+            font-family: 'JetBrains Mono', monospace;
         }
-        .menu-item.active {
-            background: rgba(245, 200, 66, 0.1);
-            color: var(--gold);
+
+        /* ── Main Content ── */
+        .admin-main {
+            flex: 1;
+            margin-left: 240px;
+            padding: 28px 28px 48px;
+            min-height: calc(100vh - 64px);
         }
-        .menu-item.danger:hover {
-            background: rgba(255, 77, 109, 0.1);
-            color: var(--red);
-        }
-        
-        
-        
-        
-        
-        .admin-content { padding-top: 8px; }
+
+        /* ── Content Sections ── */
         .content-section { display: none; }
         .content-section.active {
             display: block;
-            animation: fadeIn 0.3s ease;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(6px); }
-            to { opacity: 1; transform: translateY(0); }
+            animation: slideIn 0.3s ease;
         }
 
-        /* Admin Hero Banner */
-        .admin-hero {
-            background: linear-gradient(135deg, rgba(255,77,109,0.07) 0%, rgba(13,16,24,0) 60%);
-            border: 1px solid rgba(255,77,109,0.12);
+        /* ── Admin Banner ── */
+        .admin-banner {
+            background: linear-gradient(135deg, rgba(255,59,92,0.07) 0%, transparent 60%);
+            border: 1px solid rgba(255,59,92,0.14);
             border-radius: var(--radius);
-            padding: 22px 28px;
+            padding: 20px 24px;
             margin-bottom: 24px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            flex-wrap: wrap;
-            gap: 12px;
+            display: flex; align-items: center; justify-content: space-between;
+            flex-wrap: wrap; gap: 12px;
         }
-        .admin-hero-left h2 { font-size: 1.3rem; margin-bottom: 4px; }
-        .admin-hero-left p { font-size: 0.82rem; color: var(--text-muted); }
-        .admin-badge-pill {
+        .admin-banner-left h2 { font-size: 1.2rem; margin-bottom: 3px; }
+        .admin-banner-left p  { font-size: 0.8rem; color: var(--text-muted); }
+        .admin-pill {
             display: inline-flex; align-items: center; gap: 6px;
-            background: rgba(255,77,109,0.1);
-            border: 1px solid rgba(255,77,109,0.2);
+            background: var(--red-glow);
+            border: 1px solid rgba(255,59,92,0.25);
             color: var(--red);
-            font-size: 0.7rem; font-weight: 700;
+            font-size: 0.68rem; font-weight: 700;
             letter-spacing: 0.08em; text-transform: uppercase;
             padding: 4px 12px; border-radius: 100px;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .admin-pill::before {
+            content: '';
+            width: 5px; height: 5px;
+            background: var(--red); border-radius: 50%;
         }
 
-        /* Section Header */
-        .section-header {
-            display: flex; justify-content: space-between;
-            align-items: center; margin-bottom: 24px;
-            padding-bottom: 16px;
-            border-bottom: 1px solid var(--border-soft);
-        }
-        .section-title {
-            font-family: 'Syne', sans-serif;
-            font-size: 1.4rem;
-        }
-
-        /* Stat Cards */
-        .stats-grid {
+        /* ── Stats Grid ── */
+        .stats-grid-4 {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
             gap: 14px;
             margin-bottom: 24px;
         }
-        .stat-card {
+        .stat-box {
             background: var(--bg2);
             border: 1px solid var(--border-soft);
             border-radius: var(--radius-sm);
             padding: 18px 20px;
-            position: relative;
-            overflow: hidden;
+            position: relative; overflow: hidden;
             transition: var(--transition);
         }
-        .stat-card:hover { border-color: rgba(245,200,66,0.15); }
-        .stat-card::after {
+        .stat-box:hover { border-color: var(--border); }
+        .stat-box::before {
             content: '';
-            position: absolute;
-            left: 0; top: 0; bottom: 0;
+            position: absolute; left: 0; top: 0; bottom: 0;
             width: 3px; border-radius: 3px 0 0 3px;
-            background: var(--gold);
         }
-        .stat-card-title {
-            color: var(--text-muted);
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            margin-bottom: 8px;
-        }
-        .stat-card-val {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 1.6rem;
-            font-weight: 700;
-            line-height: 1;
-        }
+        .sb-gold::before   { background: var(--gold); }
+        .sb-green::before  { background: var(--green); }
+        .sb-blue::before   { background: var(--blue); }
+        .sb-red::before    { background: var(--red); }
+        .sb-purple::before { background: var(--purple); }
 
-        /* Data Panel */
+        .stat-box-lbl {
+            font-size: 0.7rem; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.08em;
+            color: var(--text-muted); margin-bottom: 6px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .stat-box-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.8rem; font-weight: 700; line-height: 1;
+            margin-bottom: 4px;
+        }
+        .stat-box-sub {
+            font-size: 0.75rem; color: var(--text-muted);
+            display: flex; align-items: center; gap: 4px;
+        }
+        .stat-box-sub.up   { color: var(--green); }
+        .stat-box-sub.down { color: var(--red); }
+
+        /* ── Data Panel ── */
         .data-panel {
             background: var(--bg2);
             border: 1px solid var(--border-soft);
             border-radius: var(--radius);
-            padding: 24px;
+            overflow: hidden;
         }
-        
-        .table-controls {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 16px;
+        .panel-header {
+            display: flex; justify-content: space-between;
+            align-items: center;
+            padding: 18px 22px;
+            border-bottom: 1px solid var(--border-soft);
+            flex-wrap: wrap; gap: 12px;
+        }
+        .panel-title {
+            font-size: 0.95rem; font-weight: 700;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .panel-body { padding: 0; }
+        .panel-controls {
+            display: flex; gap: 10px; align-items: center;
+            flex-wrap: wrap;
+        }
+        .search-box {
+            background: var(--surface);
+            border: 1px solid var(--border-soft);
+            color: var(--text);
+            padding: 8px 14px 8px 36px;
+            border-radius: var(--radius-sm);
+            font-size: 0.875rem;
+            outline: none; transition: var(--transition);
+            font-family: 'Space Grotesk', sans-serif;
+            width: 200px;
+        }
+        .search-box:focus { border-color: var(--gold); width: 250px; }
+        .search-wrap { position: relative; }
+        .search-icon {
+            position: absolute; left: 12px; top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted); font-size: 0.9rem;
+            pointer-events: none;
+        }
+
+        .table-wrap { overflow-x: auto; }
+
+        /* ── Chart Area ── */
+        .chart-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 18px;
+            margin-bottom: 24px;
+        }
+        .chart-box {
+            background: var(--bg2);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--radius);
+            padding: 20px;
+        }
+        .chart-box-title {
+            font-size: 0.85rem; font-weight: 700;
+            margin-bottom: 16px; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: 0.06em;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .bar-chart {
+            display: flex; align-items: flex-end; gap: 6px;
+            height: 100px;
+        }
+        .bar-col {
+            flex: 1; border-radius: 4px 4px 0 0;
+            transition: var(--transition); cursor: pointer;
+            position: relative;
+        }
+        .bar-col:hover { opacity: 0.8; }
+        .bar-col::after {
+            content: attr(data-label);
+            position: absolute; bottom: -20px; left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.6rem; color: var(--text-muted);
+            white-space: nowrap;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .donut-chart {
+            position: relative; width: 120px; height: 120px; margin: 0 auto;
+        }
+        .donut-chart svg { transform: rotate(-90deg); }
+        .donut-center {
+            position: absolute; inset: 0;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+        }
+        .donut-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.4rem; font-weight: 700; color: var(--green);
+        }
+        .donut-lbl { font-size: 0.65rem; color: var(--text-muted); }
+
+        /* ── Alert / Log items ── */
+        .log-item {
+            display: flex; align-items: flex-start; gap: 12px;
+            padding: 12px 22px;
+            border-bottom: 1px solid var(--border-dim);
+            font-size: 0.85rem;
+        }
+        .log-item:last-child { border-bottom: none; }
+        .log-dot {
+            width: 7px; height: 7px; border-radius: 50%;
+            flex-shrink: 0; margin-top: 5px;
+        }
+        .log-time { color: var(--text-muted); font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; }
+        .log-msg  { flex: 1; }
+
+        /* ── Signal Form ── */
+        .signal-form-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
             gap: 16px;
         }
-        .search-input {
-            background: var(--surface);
-            border: 1px solid var(--border-soft);
-            color: var(--text);
-            padding: 8px 16px;
-            border-radius: 100px;
-            outline: none;
-            width: 300px;
-        }
-        .search-input:focus {
-            border-color: var(--gold);
-        }
-        .filter-select {
-            background: var(--surface);
-            border: 1px solid var(--border-soft);
-            color: var(--text);
-            padding: 8px 16px;
-            border-radius: 100px;
-            outline: none;
-        }
-        
-        .admin-table {
-            width: 100%;
-            border-collapse: collapse;
-            text-align: left;
-            min-width: 800px;
-        }
-        .admin-table th {
-            color: var(--text-muted);
-            font-size: 0.8rem;
-            text-transform: uppercase;
-            padding: 12px;
-            border-bottom: 1px solid var(--border-soft);
-        }
-        .admin-table td {
-            padding: 16px 12px;
-            border-bottom: 1px solid var(--border-soft);
-            font-size: 0.9rem;
-        }
-        
-        .user-row-avatar {
-            width: 32px; height: 32px;
-            border-radius: 50%;
-            background: var(--surface2);
-            display: flex; align-items: center; justify-content: center;
-            font-weight: 600; font-size: 0.8rem;
-            margin-right: 12px;
-        }
-        
-        .action-btn {
-            background: none;
-            border: none;
-            color: var(--text-muted);
-            cursor: pointer;
-            padding: 4px 8px;
-            font-size: 1rem;
-            border-radius: 4px;
-        }
-        .action-btn:hover { background: var(--surface); color: var(--text); }
-        .action-btn.delete:hover { color: var(--red); background: rgba(255, 77, 109, 0.1); }
-        
-        .danger-zone {
-            border: 1px solid rgba(255, 77, 109, 0.3);
-            border-radius: var(--radius);
-            padding: 24px;
-            background: rgba(255, 77, 109, 0.05);
-        }
-        .danger-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 16px 0;
-            border-bottom: 1px solid rgba(255, 77, 109, 0.1);
-        }
-        .danger-item:last-child { border-bottom: none; }
-        
 
-        
-        
-        
-        @media (max-width: 992px) {
-            
-            
-            
-            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+        /* ── Responsive ── */
+        @media (max-width: 1100px) {
+            .stats-grid-4 { grid-template-columns: repeat(2, 1fr); }
+            .chart-grid { grid-template-columns: 1fr; }
         }
-        @media (max-width: 768px) {
-            .stats-grid { grid-template-columns: 1fr; }
-            .table-controls { flex-direction: column; }
-            .search-input { width: 100%; }
+        @media (max-width: 900px) {
+            .admin-sidebar {
+                transform: translateX(-100%);
+            }
+            .admin-sidebar.open {
+                transform: translateX(0);
+            }
+            .admin-main { margin-left: 0; }
+            .signal-form-grid { grid-template-columns: 1fr 1fr; }
+        }
+        @media (max-width: 600px) {
+            .stats-grid-4 { grid-template-columns: 1fr 1fr; }
+            .admin-main { padding: 16px; }
+            .signal-form-grid { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 400px) {
+            .stats-grid-4 { grid-template-columns: 1fr; }
         }
     </style>
 </head>
 <body>
-    <!-- Admin auth is handled by Firebase -->
-    <nav class="auth-nav">
-        <div class="auth-nav-left">
-            <button class="auth-hamburger" id="authHamburger">☰</button>
-            <a href="index.html" class="logo">
-                <span class="logo-icon">◈</span> INVESTY<span class="logo-accent">SIGNALS</span>
-            </a>
-        </div>
-        <div class="auth-nav-menu" id="authNavMenu">
-            <a class="auth-nav-link active menu-item" data-target="dashboard">Dashboard</a>
-            <a class="auth-nav-link menu-item" data-target="users">Users</a>
-            <a class="auth-nav-link menu-item" data-target="signals">Signals</a>
-            <a class="auth-nav-link menu-item" data-target="settings">Settings</a>
-            <a class="auth-nav-link menu-item" style="color: var(--red);" data-target="danger">Danger Zone</a>
-        </div>
-        <div class="auth-nav-right">
-            <span class="badge badge-gold" style="display: none; font-size: 0.7rem;" id="adminBadge">⚡ Admin</span>
-            <button id="logoutBtn" class="btn btn-ghost" style="padding: 6px 14px; font-size: 0.82rem;">Logout</button>
-        </div>
-    </nav>
 
-    <div class="dash-container" style="padding-top: 88px;">
-        <div class="admin-content">
-
-            <!-- Dashboard Section -->
-            <div class="content-section active" id="dashboard">
-                <div class="admin-hero">
-                    <div class="admin-hero-left">
-                        <div class="admin-badge-pill">🔐 Superadmin Access</div>
-                        <h2>Control Panel</h2>
-                        <p>Manage users, signals, and site settings from here.</p>
-                    </div>
-                    <div style="font-size: 0.75rem; color: var(--text-dim); text-align: right;">
-                        <div id="adminTime"></div>
-                    </div>
-                </div>
-                
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-card-title">Total Users</div>
-                        <div class="stat-card-val">1</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-card-title">Active Users</div>
-                        <div class="stat-card-val">1</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-card-title">Total Signals</div>
-                        <div class="stat-card-val">0</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-card-title">Pro/Elite Users</div>
-                        <div class="stat-card-val" style="color: var(--text-muted);">0</div>
-                    </div>
-                </div>
-                
-                <div class="data-panel">
-                    <h3 style="margin-bottom: 20px;">Recent Registrations</h3>
-                    <div style="overflow-x: auto;">
-                        <table class="admin-table">
-                            <thead>
-                                <tr>
-                                    <th>User</th>
-                                    <th>Email</th>
-                                    <th>Plan</th>
-                                    <th>Status</th>
-                                    <th>Joined</th>
-                                </tr>
-                            </thead>
-                            <tbody><tr><td colspan="6" style="text-align: center; padding: 32px; color: var(--text-muted);">No users found</td></tr></tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Users Section -->
-            <div class="content-section" id="users">
-                <div class="section-header">
-                    <h1 class="section-title">All Users</h1>
-                </div>
-                <div class="data-panel">
-                    <div class="table-controls">
-                        <input type="text" class="search-input" placeholder="Search users by name or email...">
-                        <div style="display: flex; gap: 8px;">
-                            <select class="filter-select">
-                                <option>All Plans</option>
-                                <option>Free</option>
-                                <option>Pro</option>
-                                <option>Elite</option>
-                            </select>
-                            <select class="filter-select">
-                                <option>All Status</option>
-                                <option>Active</option>
-                                <option>Banned</option>
-                            </select>
-                        </div>
-                    </div>
-                    
-                    <div style="overflow-x: auto;">
-                        <table class="admin-table">
-                            <thead>
-                                <tr>
-                                    <th>User</th>
-                                    <th>Email</th>
-                                    <th>Plan</th>
-                                    <th>Status</th>
-                                    <th>Joined</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody><tr><td colspan="6" style="text-align: center; padding: 32px; color: var(--text-muted);">No users found</td></tr></tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Other Sections (Placeholders) -->
-            <div class="content-section" id="banned">
-                <div class="section-header">
-                    <h1 class="section-title">Banned Users</h1>
-                </div>
-                <div class="data-panel">
-                    <p style="color: var(--text-muted);">Showing all banned users.</p>
-                </div>
-            </div>
-            
-            <div class="content-section" id="signals">
-                <div class="section-header">
-                    <h1 class="section-title">Signal Management</h1>
-                </div>
-                <div class="data-panel">
-                    <p style="color: var(--text-muted);">Signals list will appear here.</p>
-                </div>
-            </div>
-            
-            <div class="content-section" id="settings">
-                <div class="section-header">
-                    <h1 class="section-title">Site Settings</h1>
-                </div>
-                <div class="data-panel">
-                    <div style="max-width: 500px;">
-                        <div style="margin-bottom: 20px;">
-                            <label style="display: block; margin-bottom: 8px; color: var(--text-muted);">Site Name</label>
-                            <input type="text" value="InvestySignals" style="width: 100%; padding: 10px; background: var(--surface); border: 1px solid var(--border-soft); color: var(--text); border-radius: 4px;">
-                        </div>
-                        <div style="margin-bottom: 20px; display: flex; align-items: center; gap: 12px;">
-                            <input type="checkbox" id="maintMode">
-                            <label for="maintMode" style="color: var(--text-muted);">Maintenance Mode</label>
-                        </div>
-                        <button class="btn btn-gold">Save Settings</button>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="content-section" id="announcements">
-                <div class="section-header">
-                    <h1 class="section-title">Announcements</h1>
-                </div>
-                <div class="data-panel">
-                    <p style="color: var(--text-muted);">Manage site-wide banners.</p>
-                </div>
-            </div>
-            
-            <div class="content-section" id="danger">
-                <div class="section-header">
-                    <h1 class="section-title" style="color: var(--red);">Danger Zone</h1>
-                </div>
-                <div class="danger-zone">
-                    <div class="danger-item">
-                        <div>
-                            <div style="font-weight: 600; margin-bottom: 4px; color: var(--red);">Flush All Signals</div>
-                            <div style="font-size: 0.875rem; color: var(--text-muted);">Permanently delete all historical signals from the database.</div>
-                        </div>
-                        <button class="btn btn-ghost" style="border-color: var(--red); color: var(--red);">Flush Signals</button>
-                    </div>
-                    <div class="danger-item">
-                        <div>
-                            <div style="font-weight: 600; margin-bottom: 4px; color: var(--red);">Reset Paper Trades</div>
-                            <div style="font-size: 0.875rem; color: var(--text-muted);">Clear all user paper trading history and reset balances.</div>
-                        </div>
-                        <button class="btn btn-ghost" style="border-color: var(--red); color: var(--red);">Reset Data</button>
-                    </div>
-                </div>
-            </div>
-            
-        
-        </div>
+<!-- Auth Nav -->
+<nav class="auth-nav">
+    <div class="auth-nav-left">
+        <button class="auth-hamburger" id="sidebarToggle">☰</button>
+        <a href="index.html" class="logo" style="font-size:0.9rem;">
+            <div class="logo-icon" style="width:26px;height:26px;font-size:0.85rem;">◈</div>
+            <span>INVESTY<span class="logo-accent">SIGNALS</span></span>
+        </a>
+        <span class="page-title">ADMIN PANEL</span>
     </div>
+    <div class="auth-nav-right">
+        <span class="badge badge-red live-dot">ADMIN ACCESS</span>
+        <div class="user-chip">
+            <div class="user-avatar">A</div>
+            <span class="user-name">Admin</span>
+        </div>
+        <a href="index.html" class="btn btn-surface btn-sm">← Exit Admin</a>
+    </div>
+</nav>
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+<div class="admin-wrapper">
+    <!-- Sidebar -->
+    <aside class="admin-sidebar" id="adminSidebar">
+        <div class="sidebar-section">Overview</div>
+        <button class="menu-item active" onclick="showSection('overview', this)">
+            <span class="menu-icon">📊</span> Dashboard
+        </button>
+        <button class="menu-item" onclick="showSection('activity', this)">
+            <span class="menu-icon">📋</span> Activity Log
+            <span class="menu-badge">12</span>
+        </button>
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk",
-            authDomain: "investysignals-890ba.firebaseapp.com",
-            projectId: "investysignals-890ba",
-            storageBucket: "investysignals-890ba.firebasestorage.app",
-            messagingSenderId: "1045281522975",
-            appId: "1:1045281522975:web:534501aab2ceeb887bdc2a"
-        };
+        <div class="sidebar-section">Management</div>
+        <button class="menu-item" onclick="showSection('users', this)">
+            <span class="menu-icon">👤</span> Users
+        </button>
+        <button class="menu-item" onclick="showSection('signals', this)">
+            <span class="menu-icon">⚡</span> Signals
+        </button>
+        <button class="menu-item" onclick="showSection('broadcast', this)">
+            <span class="menu-icon">📡</span> Broadcast
+        </button>
 
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
+        <div class="sidebar-section">Engine</div>
+        <button class="menu-item" onclick="showSection('indicators', this)">
+            <span class="menu-icon">🔧</span> Indicators
+        </button>
+        <button class="menu-item" onclick="showSection('scanner', this)">
+            <span class="menu-icon">🔍</span> Scanner Config
+        </button>
 
-        onAuthStateChanged(auth, (user) => {
-            if (!user) {
-                window.location.href = 'login.html';
-            } else if (user.email !== 'cdilrukshi52@gmail.com') {
-                window.location.href = 'dashboard.html';
-            } else {
-                document.getElementById('adminBadge').style.display = 'inline-flex';
-                // Live clock in admin hero
-                const clockEl = document.getElementById('adminTime');
-                if (clockEl) {
-                    const tick = () => {
-                        const now = new Date();
-                        clockEl.textContent = now.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-                    };
-                    tick();
-                    setInterval(tick, 60000);
-                }
-            }
-        });
+        <div class="sidebar-section">System</div>
+        <button class="menu-item" onclick="showSection('settings', this)">
+            <span class="menu-icon">⚙️</span> Settings
+        </button>
+        <button class="menu-item danger" onclick="confirmLogout()">
+            <span class="menu-icon">🔓</span> Logout
+        </button>
+    </aside>
 
-        const logoutBtn = document.getElementById('logoutBtn');
-        if (logoutBtn) {
-            logoutBtn.addEventListener('click', () => {
-                signOut(auth).then(() => {
-                    sessionStorage.removeItem('user');
-                    window.location.href = 'index.html';
-                });
-            });
+    <!-- Main Content -->
+    <main class="admin-main">
+
+        <!-- ── OVERVIEW ── -->
+        <div class="content-section active" id="section-overview">
+            <div class="admin-banner">
+                <div class="admin-banner-left">
+                    <div class="admin-pill">Admin Access</div>
+                    <h2>Control Center</h2>
+                    <p>System overview and platform statistics — <span id="adminDateTime"></span></p>
+                </div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <button class="btn btn-surface btn-sm" onclick="refreshStats()">🔄 Refresh</button>
+                    <button class="btn btn-gold btn-sm" onclick="showSection('signals', null)">+ New Signal</button>
+                </div>
+            </div>
+
+            <!-- Stats -->
+            <div class="stats-grid-4">
+                <div class="stat-box sb-gold">
+                    <div class="stat-box-lbl">Total Users</div>
+                    <div class="stat-box-val text-gold" id="adminTotalUsers">—</div>
+                    <div class="stat-box-sub" id="adminUserSub">Loading...</div>
+                </div>
+                <div class="stat-box sb-green">
+                    <div class="stat-box-lbl">Active Signals</div>
+                    <div class="stat-box-val text-green" id="adminActiveSignals">—</div>
+                    <div class="stat-box-sub" id="adminSignalSub">Loading...</div>
+                </div>
+                <div class="stat-box sb-blue">
+                    <div class="stat-box-lbl">Win Rate (30d)</div>
+                    <div class="stat-box-val" style="color:var(--blue)" id="adminWinRate">—</div>
+                    <div class="stat-box-sub" id="adminWinSub">Loading...</div>
+                </div>
+                <div class="stat-box sb-red">
+                    <div class="stat-box-lbl">System Alerts</div>
+                    <div class="stat-box-val text-red" id="adminAlerts">0</div>
+                    <div class="stat-box-sub">System status</div>
+                </div>
+            </div>
+
+            <!-- Charts -->
+            <div class="chart-grid">
+                <div class="chart-box">
+                    <div class="chart-box-title">// Signal Volume (Last 7 Days)</div>
+                    <div class="bar-chart" id="barChart"></div>
+                    <div style="height:24px;"></div>
+                    <div style="display:flex;gap:16px;margin-top:8px;">
+                        <span style="font-size:0.78rem;color:var(--text-muted);">Total this week: <strong style="color:var(--text)">183</strong></span>
+                        <span style="font-size:0.78rem;color:var(--text-muted);">Avg/day: <strong style="color:var(--text)">26.1</strong></span>
+                    </div>
+                </div>
+                <div class="chart-box">
+                    <div class="chart-box-title">// Win / Loss Rate</div>
+                    <div class="donut-chart">
+                        <svg width="120" height="120" viewBox="0 0 120 120">
+                            <circle cx="60" cy="60" r="48" fill="none" stroke="var(--surface3)" stroke-width="14"/>
+                            <circle cx="60" cy="60" r="48" fill="none" stroke="var(--green)" stroke-width="14"
+                                stroke-dasharray="301.6" stroke-dashoffset="70" stroke-linecap="round"/>
+                        </svg>
+                        <div class="donut-center">
+                            <span class="donut-val">77%</span>
+                            <span class="donut-lbl">Win Rate</span>
+                        </div>
+                    </div>
+                    <div style="margin-top:16px;display:flex;flex-direction:column;gap:8px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.8rem;">
+                            <span style="display:flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;"></span>Wins</span>
+                            <span class="mono" style="color:var(--green)">77.2%</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.8rem;">
+                            <span style="display:flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--red);display:inline-block;"></span>Losses</span>
+                            <span class="mono" style="color:var(--red)">22.8%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Second Row Stats -->
+            <div class="stats-grid-4" style="margin-bottom:24px;">
+                <div class="stat-box sb-purple">
+                    <div class="stat-box-lbl">Pro Subscribers</div>
+                    <div class="stat-box-val" style="color:var(--purple)" id="adminProCount">—</div>
+                    <div class="stat-box-sub">Pro subscribers</div>
+                </div>
+                <div class="stat-box sb-gold">
+                    <div class="stat-box-lbl">Elite Members</div>
+                    <div class="stat-box-val text-gold" id="adminEliteCount">—</div>
+                    <div class="stat-box-sub">Elite members</div>
+                </div>
+                <div class="stat-box sb-green">
+                    <div class="stat-box-lbl">MRR</div>
+                    <div class="stat-box-val text-green" id="adminMRR">—</div>
+                    <div class="stat-box-sub">Monthly revenue</div>
+                </div>
+                <div class="stat-box sb-blue">
+                    <div class="stat-box-lbl">Avg R:R (30d)</div>
+                    <div class="stat-box-val" style="color:var(--blue)" id="adminAvgRR">—</div>
+                    <div class="stat-box-sub">Target: ≥ 2.0×</div>
+                </div>
+            </div>
+
+            <!-- Recent Activity -->
+            <div class="data-panel">
+                <div class="panel-header">
+                    <div class="panel-title">📋 Recent Activity</div>
+                    <button class="btn btn-surface btn-sm" onclick="showSection('activity', null)">View All →</button>
+                </div>
+                <div class="panel-body" id="recentActivity">
+                    <div style="padding:32px;text-align:center;color:var(--text-muted);font-size:0.88rem;">
+                        No recent activity yet. Activity will appear here once signals are posted.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── USERS ── -->
+        <div class="content-section" id="section-users">
+            <div class="admin-banner">
+                <div class="admin-banner-left">
+                    <div class="admin-pill">User Management</div>
+                    <h2>Manage Users</h2>
+                    <p>View, edit, and manage platform user accounts and permissions.</p>
+                </div>
+                <button class="btn btn-gold btn-sm">+ Add User</button>
+            </div>
+            <div class="stats-grid-4" style="grid-template-columns:repeat(4,1fr);margin-bottom:20px;">
+                <div class="stat-box sb-gold"><div class="stat-box-lbl">Total</div><div class="stat-box-val text-gold" id="userTotal">—</div></div>
+                <div class="stat-box sb-green"><div class="stat-box-lbl">Active</div><div class="stat-box-val text-green" id="userActive">—</div></div>
+                <div class="stat-box sb-blue"><div class="stat-box-lbl">Pro/Elite</div><div class="stat-box-val" style="color:var(--blue)" id="userPro">—</div></div>
+                <div class="stat-box sb-red"><div class="stat-box-lbl">Banned</div><div class="stat-box-val text-red" id="userBanned">—</div></div>
+            </div>
+            <div class="data-panel">
+                <div class="panel-header">
+                    <div class="panel-title">👤 All Users</div>
+                    <div class="panel-controls">
+                        <div class="search-wrap">
+                            <span class="search-icon">🔍</span>
+                            <input type="text" class="search-box" placeholder="Search users..." id="userSearch" oninput="filterTable('userTable', this.value)">
+                        </div>
+                        <select class="input-control" style="width:auto;padding:8px 12px;font-size:0.85rem;">
+                            <option>All Plans</option>
+                            <option>Free</option>
+                            <option>Pro</option>
+                            <option>Elite</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="table-wrap panel-body">
+                    <table class="data-table" id="userTable">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>User</th>
+                                <th>Email</th>
+                                <th>Plan</th>
+                                <th>Joined</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="userTableBody">
+                            <tr>
+                                <td colspan="7" style="text-align:center;padding:32px;color:var(--text-muted);">
+                                    Loading users from database...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── SIGNALS ── -->
+        <div class="content-section" id="section-signals">
+            <div class="admin-banner">
+                <div class="admin-banner-left">
+                    <div class="admin-pill">Signal Management</div>
+                    <h2>Manage Signals</h2>
+                    <p>Create, edit, and monitor all trading signals.</p>
+                </div>
+            </div>
+
+            <!-- Create Signal Form -->
+            <div class="data-panel" style="margin-bottom:20px;">
+                <div class="panel-header">
+                    <div class="panel-title">⚡ Post New Signal</div>
+                </div>
+                <div style="padding:22px;">
+                    <div class="signal-form-grid">
+                        <div class="input-group">
+                            <label>Trading Pair</label>
+                            <input type="text" class="input-control" placeholder="e.g. BTCUSDT" id="f-pair">
+                        </div>
+                        <div class="input-group">
+                            <label>Direction</label>
+                            <select class="input-control" id="f-dir">
+                                <option value="LONG">LONG 🟢</option>
+                                <option value="SHORT">SHORT 🔴</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label>Leverage</label>
+                            <input type="text" class="input-control" placeholder="e.g. 10x" id="f-lev">
+                        </div>
+                        <div class="input-group">
+                            <label>Entry Price</label>
+                            <input type="number" class="input-control" placeholder="0.00" id="f-entry">
+                        </div>
+                        <div class="input-group">
+                            <label>Take Profit 1</label>
+                            <input type="number" class="input-control" placeholder="0.00" id="f-tp1">
+                        </div>
+                        <div class="input-group">
+                            <label>Take Profit 2</label>
+                            <input type="number" class="input-control" placeholder="0.00" id="f-tp2">
+                        </div>
+                        <div class="input-group">
+                            <label>Stop Loss</label>
+                            <input type="number" class="input-control" placeholder="0.00" id="f-sl">
+                        </div>
+                        <div class="input-group">
+                            <label>Score (0–100)</label>
+                            <input type="number" class="input-control" placeholder="e.g. 85" id="f-score" min="0" max="100">
+                        </div>
+                        <div class="input-group">
+                            <label>Plan Access</label>
+                            <select class="input-control" id="f-plan">
+                                <option>All (Free+)</option>
+                                <option>Pro+</option>
+                                <option>Elite Only</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="input-group">
+                        <label>Notes / Analysis</label>
+                        <textarea class="input-control" rows="3" placeholder="Signal rationale, key levels, market context..."></textarea>
+                    </div>
+                    <div style="display:flex;gap:10px;">
+                        <button class="btn btn-gold" onclick="postSignal()">⚡ Post Signal</button>
+                        <button class="btn btn-surface">Save Draft</button>
+                        <button class="btn btn-ghost" onclick="clearForm()">Clear</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Active Signals -->
+            <div class="data-panel">
+                <div class="panel-header">
+                    <div class="panel-title">📊 Active Signals</div>
+                    <span class="badge badge-green" id="adminSignalBadge">0 Active</span>
+                </div>
+                <div class="table-wrap panel-body">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Pair</th>
+                                <th>Dir</th>
+                                <th>Entry</th>
+                                <th>TP1</th>
+                                <th>SL</th>
+                                <th>Score</th>
+                                <th>Status</th>
+                                <th>Plan</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="adminSignalsBody">
+                            <tr>
+                                <td colspan="9" style="text-align:center;padding:32px;color:var(--text-muted);">
+                                    No active signals. Post a new signal above.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── BROADCAST ── -->
+        <div class="content-section" id="section-broadcast">
+            <div class="admin-banner">
+                <div class="admin-banner-left">
+                    <div class="admin-pill">Broadcast</div>
+                    <h2>Send Announcement</h2>
+                    <p>Send messages to all users or specific segments.</p>
+                </div>
+            </div>
+            <div class="data-panel">
+                <div class="panel-header"><div class="panel-title">📡 New Broadcast</div></div>
+                <div style="padding:22px;">
+                    <div class="input-group">
+                        <label>Target Audience</label>
+                        <select class="input-control">
+                            <option>All Users</option>
+                            <option>Pro+ Members</option>
+                            <option>Free Users</option>
+                            <option>Elite Only</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label>Subject</label>
+                        <input type="text" class="input-control" placeholder="Announcement title...">
+                    </div>
+                    <div class="input-group">
+                        <label>Message</label>
+                        <textarea class="input-control" rows="6" placeholder="Your announcement message..."></textarea>
+                    </div>
+                    <div style="display:flex;gap:10px;">
+                        <button class="btn btn-gold">📡 Send Now</button>
+                        <button class="btn btn-surface">Schedule</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── INDICATORS ── -->
+        <div class="content-section" id="section-indicators">
+            <div class="admin-banner">
+                <div class="admin-banner-left">
+                    <div class="admin-pill">Engine Config</div>
+                    <h2>Indicator Settings</h2>
+                    <p>Configure weights and thresholds for the 16-factor analysis engine.</p>
+                </div>
+                <button class="btn btn-gold btn-sm">💾 Save Changes</button>
+            </div>
+            <div class="data-panel">
+                <div class="panel-header"><div class="panel-title">🔧 Factor Weights</div></div>
+                <div class="table-wrap panel-body">
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>Factor</th><th>Category</th><th>Weight</th><th>Threshold</th><th>Enabled</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>RSI</td><td><span class="badge badge-blue">Momentum</span></td><td class="mono">8</td><td class="mono">30 / 70</td><td><input type="checkbox" checked></td></tr>
+                            <tr><td>EMA Stack 20/50/200</td><td><span class="badge badge-gold">Trend</span></td><td class="mono">10</td><td class="mono">—</td><td><input type="checkbox" checked></td></tr>
+                            <tr><td>MACD</td><td><span class="badge badge-blue">Momentum</span></td><td class="mono">8</td><td class="mono">Signal cross</td><td><input type="checkbox" checked></td></tr>
+                            <tr><td>Bollinger Bands</td><td><span class="badge badge-blue">Volatility</span></td><td class="mono">6</td><td class="mono">Band touch</td><td><input type="checkbox" checked></td></tr>
+                            <tr><td>ADX</td><td><span class="badge badge-gold">Trend</span></td><td class="mono">8</td><td class="mono">&gt; 18 (gate)</td><td><input type="checkbox" checked></td></tr>
+                            <tr><td>OBV</td><td><span class="badge badge-green">Volume</span></td><td class="mono">7</td><td class="mono">Divergence</td><td><input type="checkbox" checked></td></tr>
+                            <tr><td>Funding Rate</td><td><span class="badge badge-red">Derivatives</span></td><td class="mono">9</td><td class="mono">±0.25% (gate)</td><td><input type="checkbox" checked></td></tr>
+                            <tr><td>Open Interest</td><td><span class="badge badge-red">Derivatives</span></td><td class="mono">8</td><td class="mono">OI spike</td><td><input type="checkbox" checked></td></tr>
+                            <tr><td>BOS / CHoCH</td><td><span class="badge badge-gold">SMC</span></td><td class="mono">10</td><td class="mono">Confirmed</td><td><input type="checkbox" checked></td></tr>
+                            <tr><td>Fair Value Gap</td><td><span class="badge badge-gold">SMC</span></td><td class="mono">9</td><td class="mono">Unfilled</td><td><input type="checkbox" checked></td></tr>
+                            <tr><td>Supertrend</td><td><span class="badge badge-blue">Trend</span></td><td class="mono">7</td><td class="mono">Direction</td><td><input type="checkbox" checked></td></tr>
+                            <tr><td>VWAP</td><td><span class="badge badge-green">Volume</span></td><td class="mono">6</td><td class="mono">Above/Below</td><td><input type="checkbox" checked></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── SCANNER ── -->
+        <div class="content-section" id="section-scanner">
+            <div class="admin-banner">
+                <div class="admin-banner-left">
+                    <div class="admin-pill">Scanner</div>
+                    <h2>Scanner Configuration</h2>
+                    <p>Control scanner behavior, pairs list, and refresh intervals.</p>
+                </div>
+                <div style="display:flex;gap:10px;">
+                    <button class="btn btn-surface btn-sm" id="scannerStatus" onclick="toggleScanner(this)">⏸ Pause Scanner</button>
+                    <button class="btn btn-gold btn-sm">💾 Save</button>
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+                <div class="data-panel">
+                    <div class="panel-header"><div class="panel-title">⚙️ Engine Settings</div></div>
+                    <div style="padding:20px;display:flex;flex-direction:column;gap:16px;">
+                        <div class="input-group" style="margin:0;">
+                            <label>Min Score to Signal</label>
+                            <input type="number" class="input-control" value="75" min="0" max="100">
+                        </div>
+                        <div class="input-group" style="margin:0;">
+                            <label>Scan Interval (seconds)</label>
+                            <input type="number" class="input-control" value="60">
+                        </div>
+                        <div class="input-group" style="margin:0;">
+                            <label>Max Active Signals</label>
+                            <input type="number" class="input-control" value="50">
+                        </div>
+                        <div class="input-group" style="margin:0;">
+                            <label>Min ADX (hard gate)</label>
+                            <input type="number" class="input-control" value="18">
+                        </div>
+                        <div class="input-group" style="margin:0;">
+                            <label>Max Funding Rate %</label>
+                            <input type="number" class="input-control" value="0.25" step="0.01">
+                        </div>
+                    </div>
+                </div>
+                <div class="data-panel">
+                    <div class="panel-header"><div class="panel-title">📋 Active Pairs</div></div>
+                    <div style="padding:16px;max-height:320px;overflow-y:auto;">
+                        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                            <script>
+                                const pairs = ['BTCUSDT','ETHUSDT','BNBUSDT','SOLUSDT','XRPUSDT','DOGEUSDT','ADAUSDT','AVAXUSDT','DOTUSDT','LINKUSDT','MATICUSDT','UNIUSDT','ATOMUSDT','LTCUSDT','NEARUSDT','APTUSDT','ARBUSDT','OPUSDT','SUIUSDT'];
+                                document.write(pairs.map(p => `<span class="badge badge-outline" style="cursor:pointer;" title="Click to disable">${p}</span>`).join(''));
+                            </script>
+                        </div>
+                    </div>
+                    <div style="padding:12px 16px;border-top:1px solid var(--border-soft);">
+                        <div style="display:flex;gap:8px;">
+                            <input type="text" class="input-control" style="flex:1;" placeholder="Add pair (e.g. INJUSDT)">
+                            <button class="btn btn-gold btn-sm">+ Add</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── ACTIVITY ── -->
+        <div class="content-section" id="section-activity">
+            <div class="admin-banner">
+                <div class="admin-banner-left">
+                    <div class="admin-pill">Logs</div>
+                    <h2>Activity Log</h2>
+                    <p>Full system event history.</p>
+                </div>
+                <button class="btn btn-danger btn-sm">🗑 Clear Logs</button>
+            </div>
+            <div class="data-panel">
+                <div class="panel-header">
+                    <div class="panel-title">📋 System Events</div>
+                    <div class="search-wrap">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" class="search-box" placeholder="Filter logs...">
+                    </div>
+                </div>
+                <div id="activityLog"></div>
+            </div>
+        </div>
+
+        <!-- ── SETTINGS ── -->
+        <div class="content-section" id="section-settings">
+            <div class="admin-banner">
+                <div class="admin-banner-left">
+                    <div class="admin-pill">Settings</div>
+                    <h2>System Settings</h2>
+                    <p>Platform configuration and admin credentials.</p>
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+                <div class="data-panel">
+                    <div class="panel-header"><div class="panel-title">🔐 Change Password</div></div>
+                    <div style="padding:20px;">
+                        <div class="input-group"><label>Current Password</label><input type="password" class="input-control" placeholder="••••••••"></div>
+                        <div class="input-group"><label>New Password</label><input type="password" class="input-control" placeholder="••••••••"></div>
+                        <div class="input-group"><label>Confirm Password</label><input type="password" class="input-control" placeholder="••••••••"></div>
+                        <button class="btn btn-gold">Update Password</button>
+                    </div>
+                </div>
+                <div class="data-panel">
+                    <div class="panel-header"><div class="panel-title">⚙️ Platform Settings</div></div>
+                    <div style="padding:20px;display:flex;flex-direction:column;gap:16px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--surface);border-radius:var(--radius-sm);">
+                            <div>
+                                <div style="font-weight:600;font-size:0.9rem;">Maintenance Mode</div>
+                                <div style="font-size:0.78rem;color:var(--text-muted);">Show maintenance page to users</div>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="maintToggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--surface);border-radius:var(--radius-sm);">
+                            <div>
+                                <div style="font-weight:600;font-size:0.9rem;">Auto-Signal Engine</div>
+                                <div style="font-size:0.78rem;color:var(--text-muted);">Enable automatic signal generation</div>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" checked id="engineToggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--surface);border-radius:var(--radius-sm);">
+                            <div>
+                                <div style="font-weight:600;font-size:0.9rem;">New Registrations</div>
+                                <div style="font-size:0.78rem;color:var(--text-muted);">Allow new user sign-ups</div>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" checked id="regToggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+</div>
+
+<!-- Toggle Switch CSS (inline for self-contained) -->
+<style>
+.toggle-switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+    position: absolute; inset: 0;
+    background: var(--surface3); border-radius: 24px;
+    cursor: pointer; transition: var(--transition);
+}
+.toggle-slider::before {
+    content: '';
+    position: absolute; left: 3px; top: 3px;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: var(--text-muted); transition: var(--transition);
+}
+input:checked + .toggle-slider { background: rgba(0,217,126,0.25); }
+input:checked + .toggle-slider::before { transform: translateX(20px); background: var(--green); }
+</style>
+
+<script>
+    // Section switching
+    function showSection(id, el) {
+        document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));
+        document.getElementById('section-' + id).classList.add('active');
+        if(el) {
+            document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
+            el.classList.add('active');
         }
-    </script>
-    <script>
-        // Navigation Logic
-        const menuItems = document.querySelectorAll('.menu-item');
-        const contentSections = document.querySelectorAll('.content-section');
-        const authNavMenu = document.getElementById('authNavMenu');
-        
-        menuItems.forEach(item => {
-            item.addEventListener('click', () => {
-                // Update active class in menu
-                menuItems.forEach(mi => mi.classList.remove('active'));
-                item.classList.add('active');
-                
-                // Show corresponding section
-                const targetId = item.getAttribute('data-target');
-                contentSections.forEach(section => {
-                    if (section.id === targetId) {
-                        section.classList.add('active');
-                    } else {
-                        section.classList.remove('active');
-                    }
-                });
-                
-                // Close menu on mobile after click
-                authNavMenu.classList.remove('open');
-            });
-        });
+    }
 
-        const authHamburger = document.getElementById('authHamburger');
-        if (authHamburger) {
-            authHamburger.addEventListener('click', () => {
-                authNavMenu.classList.toggle('open');
-            });
+    // Sidebar toggle (mobile)
+    const sidebar = document.getElementById('adminSidebar');
+    document.getElementById('sidebarToggle').addEventListener('click', ()=> {
+        sidebar.classList.toggle('open');
+    });
+
+    // DateTime
+    function updateTime() {
+        const now = new Date();
+        document.getElementById('adminDateTime').textContent =
+            now.toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+    }
+    updateTime();
+
+    // Bar chart
+    const barData = [22, 31, 18, 28, 35, 21, 28];
+    const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    const maxBar = Math.max(...barData);
+    const barChart = document.getElementById('barChart');
+    if(barChart) {
+        barData.forEach((v, i) => {
+            const col = document.createElement('div');
+            col.className = 'bar-col';
+            col.setAttribute('data-label', days[i]);
+            col.style.height = (v / maxBar * 90) + '%';
+            col.style.background = i === 4 ? 'var(--gold)' : 'var(--surface3)';
+            barChart.appendChild(col);
+        });
+    }
+
+    // Activity Log
+    const logs = [
+        {type:'green', msg:'BTCUSDT LONG signal issued — Score: 91', time:'2m ago'},
+        {type:'gold',  msg:'New user registered: trader_lk_001', time:'8m ago'},
+        {type:'blue',  msg:'ETHUSDT TP1 hit — SL moved to breakeven', time:'23m ago'},
+        {type:'red',   msg:'Safety gate: DOGEUSDT ADX below threshold (14.2)', time:'41m ago'},
+        {type:'green', msg:'SOLUSDT signal closed WIN ✓ RR: 2.8×', time:'1h ago'},
+        {type:'gold',  msg:'System scan completed — 104 pairs analyzed', time:'1h ago'},
+        {type:'blue',  msg:'Admin login from 192.168.x.x', time:'2h ago'},
+        {type:'red',   msg:'Funding rate gate triggered: XRPUSDT (0.31%)', time:'3h ago'},
+        {type:'green', msg:'BNBUSDT signal closed WIN ✓ RR: 1.9×', time:'4h ago'},
+        {type:'gold',  msg:'7 new users joined (daily count)', time:'5h ago'},
+    ];
+    const logContainer = document.getElementById('activityLog');
+    if(logContainer) {
+        logContainer.innerHTML = logs.map(l => `
+            <div class="log-item">
+                <div class="log-dot" style="background:var(--${l.type})"></div>
+                <div class="log-msg">
+                    <div>${l.msg}</div>
+                    <div class="log-time">${l.time}</div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    // Table filter
+    function filterTable(tableId, query) {
+        const rows = document.querySelectorAll(`#${tableId} tbody tr`);
+        const q = query.toLowerCase();
+        rows.forEach(row => {
+            row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+        });
+    }
+
+    // Scanner toggle
+    function toggleScanner(btn) {
+        if(btn.textContent.includes('Pause')) {
+            btn.textContent = '▶ Resume Scanner';
+            btn.className = 'btn btn-gold btn-sm';
+        } else {
+            btn.textContent = '⏸ Pause Scanner';
+            btn.className = 'btn btn-surface btn-sm';
         }
-        // Close menu when nav link clicked on mobile
-        document.querySelectorAll('.auth-nav-link').forEach(link => {
-            link.addEventListener('click', () => authNavMenu.classList.remove('open'));
-        });
-    </script>
+    }
 
+    // Post signal
+    function postSignal() {
+        const pair = document.getElementById('f-pair').value.trim().toUpperCase();
+        if(!pair) { alert('Enter a trading pair'); return; }
+        alert(`✅ Signal posted for ${pair}! (Demo mode)`);
+    }
+
+    function clearForm() {
+        ['f-pair','f-lev','f-entry','f-tp1','f-tp2','f-sl','f-score'].forEach(id => {
+            const el = document.getElementById(id);
+            if(el) el.value = '';
+        });
+    }
+
+    function refreshStats() {
+        const vals = document.querySelectorAll('.stat-box-val');
+        vals.forEach(v => { v.style.opacity = '0.4'; });
+        setTimeout(()=> { vals.forEach(v => { v.style.opacity = '1'; }); }, 600);
+    }
+
+    function confirmLogout() {
+        if(confirm('Are you sure you want to logout from admin?')) {
+            window.location.href = 'login.html';
+        }
+    }
+</script>
 </body>
 </html>

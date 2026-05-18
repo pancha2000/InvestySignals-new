@@ -6,388 +6,375 @@
     <title>Analysis Engine | InvestySignals</title>
     <link rel="stylesheet" href="style.css">
     <style>
-        .page-wrap {
-            padding: 88px 24px 48px;
-            max-width: 1000px;
-            margin: 0 auto;
-            width: 100%;
-        }
-
-        /* ── Page Header ──────────────────────────────── */
-        .page-header-bar {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            margin-bottom: 24px;
-            flex-wrap: wrap;
-            gap: 12px;
-        }
-        .page-header-bar h1 {
-            font-size: 1.6rem;
-            margin-bottom: 4px;
-        }
-        .page-header-bar p { color: var(--text-muted); font-size: 0.85rem; }
-        .refresh-tag {
-            font-size: 0.72rem;
-            color: var(--text-dim);
-            background: var(--surface);
-            padding: 4px 10px;
-            border-radius: 6px;
-            white-space: nowrap;
-            align-self: flex-start;
-            margin-top: 4px;
-        }
-
-        /* ── Controls Panel ───────────────────────────── */
+        .page-wrap { padding: 88px 24px 48px; max-width: 1000px; margin: 0 auto; width: 100%; }
         .controls-panel {
-            background: var(--bg2);
-            border: 1px solid var(--border-soft);
-            border-radius: var(--radius);
-            padding: 20px 24px;
-            margin-bottom: 20px;
-            display: flex;
-            gap: 16px;
-            align-items: flex-end;
-            flex-wrap: wrap;
+            background: var(--bg2); border: 1px solid var(--border-soft);
+            border-radius: var(--radius); padding: 18px 20px;
+            display: flex; gap: 14px; align-items: flex-end;
+            flex-wrap: wrap; margin-bottom: 20px;
         }
-        .control-group {
-            flex: 1;
-            min-width: 140px;
-        }
-        .control-group label {
-            display: block;
-            margin-bottom: 7px;
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-        }
-        .control-select {
-            width: 100%;
-            background: var(--surface);
-            border: 1px solid var(--border-soft);
-            color: var(--text);
-            padding: 11px 14px;
-            border-radius: var(--radius-sm);
-            outline: none;
-            font-family: 'DM Sans', sans-serif;
-            font-size: 0.9rem;
-            appearance: none;
-            transition: var(--transition);
-        }
-        .control-select:focus { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold-glow); }
+        .ctrl-group { flex: 1; min-width: 130px; }
+        .ctrl-group label { display: block; margin-bottom: 6px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+        .ctrl-select { width: 100%; background: var(--surface); border: 1px solid var(--border-soft); color: var(--text); padding: 11px 14px; border-radius: var(--radius-sm); outline: none; font-family: 'Space Grotesk', sans-serif; font-size: 0.9rem; transition: var(--transition); cursor: pointer; }
+        .ctrl-select:focus { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-subtle); }
 
-        /* ── Results Panel ────────────────────────────── */
         .results-panel {
-            background: var(--bg2);
-            border: 1px solid var(--border-soft);
-            border-radius: var(--radius);
-            padding: 40px;
-            min-height: 380px;
-            display: flex;
-            flex-direction: column;
+            background: var(--bg2); border: 1px solid var(--border-soft);
+            border-radius: var(--radius); padding: 32px;
+            min-height: 360px; display: flex; flex-direction: column;
         }
-        .empty-state {
-            margin: auto;
-            text-align: center;
-            color: var(--text-muted);
-        }
-        .empty-icon { font-size: 2.5rem; margin-bottom: 14px; opacity: 0.4; }
-        .empty-state h2 { color: var(--text); font-size: 1.2rem; margin-bottom: 6px; }
-        .empty-state p { font-size: 0.85rem; max-width: 320px; }
+        .empty-placeholder { margin: auto; text-align: center; color: var(--text-muted); }
+        .ep-icon { font-size: 2.5rem; margin-bottom: 14px; opacity: 0.35; }
+        .ep-title { font-size: 1.1rem; color: var(--text); margin-bottom: 6px; }
+        .ep-sub { font-size: 0.85rem; max-width: 300px; }
 
-        .results-content { display: none; animation: fadeIn 0.4s ease; }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(8px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
+        .results-content { display: none; animation: fadeSlide 0.4s ease; }
+        @keyframes fadeSlide { from{opacity:0;transform:translateY(10px);} to{opacity:1;transform:translateY(0);} }
 
-        /* ── Score Card ───────────────────────────────── */
-        .score-card {
-            background: linear-gradient(135deg, rgba(245,200,66,0.06) 0%, rgba(13,16,24,0) 100%);
-            border: 1px solid rgba(245,200,66,0.2);
+        /* Score */
+        .score-header {
+            display: grid; grid-template-columns: auto 1fr auto;
+            gap: 20px; align-items: center;
+            background: linear-gradient(135deg, rgba(240,180,41,0.07) 0%, transparent 70%);
+            border: 1px solid var(--border);
             border-radius: var(--radius-sm);
-            padding: 24px;
-            margin-bottom: 28px;
-            text-align: center;
-            box-shadow: 0 0 30px rgba(245,200,66,0.06);
+            padding: 20px 24px; margin-bottom: 24px;
         }
-        .score-title {
-            font-size: 0.72rem;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            color: var(--gold);
-            margin-bottom: 14px;
+        .score-circle {
+            width: 80px; height: 80px; position: relative;
+            flex-shrink: 0;
         }
-        .score-bar-bg {
-            height: 10px;
-            background: var(--surface);
-            border-radius: 100px;
-            overflow: hidden;
-            margin-bottom: 14px;
-            border: 1px solid var(--border-soft);
+        .score-circle svg { transform: rotate(-90deg); }
+        .score-circle-text {
+            position: absolute; inset: 0;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
         }
-        .score-bar-fill {
-            height: 100%;
-            background: linear-gradient(90deg, var(--gold-dark), var(--gold));
-            border-radius: 100px;
-            transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .score-value {
-            font-family: 'Syne', sans-serif;
-            font-size: 2rem;
-            font-weight: 800;
-        }
+        .sc-num { font-family: 'JetBrains Mono', monospace; font-size: 1.4rem; font-weight: 700; color: var(--gold); line-height: 1; }
+        .sc-denom { font-size: 0.65rem; color: var(--text-muted); }
+        .score-bars { flex: 1; }
+        .score-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; font-size: 0.8rem; }
+        .sbr-label { color: var(--text-muted); min-width: 55px; }
+        .sbr-track { flex: 1; height: 4px; background: var(--surface); border-radius: 2px; overflow: hidden; }
+        .sbr-fill  { height: 100%; border-radius: 2px; transition: width 0.8s ease; }
+        .score-verdict { text-align: center; }
+        .verdict-label { font-size: 0.65rem; font-family: 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 4px; }
+        .verdict-val { font-family: 'JetBrains Mono', monospace; font-size: 1.1rem; font-weight: 700; }
 
-        /* ── Indicator Grid ───────────────────────────── */
+        /* Indicator grid */
         .indicator-grid {
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 10px;
-            margin-bottom: 28px;
+            display: grid; grid-template-columns: repeat(5, 1fr);
+            gap: 8px; margin-bottom: 20px;
         }
-        .indicator-card {
-            background: var(--surface);
-            border: 1px solid var(--border-soft);
-            border-radius: var(--radius-xs);
-            padding: 14px 12px;
-            text-align: center;
-            transition: var(--transition);
+        .ind-cell {
+            background: var(--surface); border: 1px solid var(--border-soft);
+            border-radius: var(--radius-xs); padding: 12px 10px; text-align: center;
+            transition: var(--transition); position: relative; overflow: hidden;
         }
-        .indicator-card:hover { border-color: rgba(245,200,66,0.15); }
-        .ind-name { font-size: 0.7rem; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
-        .ind-val { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 0.85rem; }
+        .ind-cell:hover { border-color: var(--border); }
+        .ind-cell.bull { border-color: rgba(0,217,126,0.25); }
+        .ind-cell.bear { border-color: rgba(255,59,92,0.25); }
+        .ind-cell.neut { border-color: var(--border-soft); }
+        .ind-cell.bull::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--green); }
+        .ind-cell.bear::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--red); }
+        .ind-name { font-size: 0.62rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+        .ind-value { font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; font-weight: 600; }
 
-        /* ── Levels Grid ──────────────────────────────── */
-        .levels-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 14px;
-            margin-bottom: 24px;
+        /* Levels */
+        .levels-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+        .level-box {
+            background: var(--surface); border-radius: var(--radius-sm);
+            padding: 16px; text-align: center; border: 1px solid var(--border-soft);
         }
-        .level-card {
-            background: var(--surface);
-            border: 1px dashed var(--border-soft);
-            border-radius: var(--radius-sm);
-            padding: 20px;
-            text-align: center;
-            transition: var(--transition);
-        }
-        .level-title { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
-        .level-price {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 1.3rem;
-            font-weight: 700;
-        }
+        .level-box.sl-box  { border-color: rgba(255,59,92,0.2); }
+        .level-box.tp-box  { border-color: rgba(0,217,126,0.2); }
+        .level-box.ent-box { border-color: rgba(240,180,41,0.2); }
+        .lbl-tag { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 6px; font-family: 'JetBrains Mono', monospace; }
+        .lbl-val { font-family: 'JetBrains Mono', monospace; font-size: 1.2rem; font-weight: 700; }
 
-        .disclaimer {
-            text-align: center;
-            font-size: 0.78rem;
-            color: var(--text-dim);
-            padding-top: 20px;
-            border-top: 1px solid var(--border-soft);
-        }
-        .last-refresh {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            font-weight: 400;
-            font-family: 'DM Sans', sans-serif;
-            background: var(--surface);
-            padding: 2px 8px;
-            border-radius: 100px;
-        }
+        .disclaimer { text-align: center; font-size: 0.75rem; color: var(--text-dim); padding-top: 16px; border-top: 1px solid var(--border-soft); }
 
-        @media (max-width: 992px) {
+        @media (max-width: 900px) {
+            .score-header { grid-template-columns: 1fr; justify-items: center; text-align: center; }
             .indicator-grid { grid-template-columns: repeat(3, 1fr); }
         }
-        @media (max-width: 768px) {
-            .controls-panel { flex-direction: column; }
+        @media (max-width: 600px) {
             .indicator-grid { grid-template-columns: repeat(2, 1fr); }
-            .levels-grid { grid-template-columns: 1fr; }
-            .results-panel { padding: 24px 16px; }
+            .levels-row { grid-template-columns: 1fr; }
+            .controls-panel { flex-direction: column; }
+            .results-panel { padding: 18px; }
         }
     </style>
 </head>
 <body>
-
-    <nav class="auth-nav">
-        <div class="auth-nav-left">
-            <button class="auth-hamburger" id="authHamburger">☰</button>
-            <a href="index.html" class="logo">
-                <span class="logo-icon">◈</span> INVESTY<span class="logo-accent">SIGNALS</span>
-            </a>
-        </div>
-        <div class="auth-nav-menu" id="authNavMenu">
-            <a href="dashboard.html" class="auth-nav-link">Dashboard</a>
-            <a href="analysis.html" class="auth-nav-link active">Analysis</a>
-            <a href="live-signals.html" class="auth-nav-link">Paper Trading</a>
-            <a href="signals.html" class="auth-nav-link">Signals</a>
-            <a href="profile.html" class="auth-nav-link">Profile</a>
-        </div>
-        <div class="auth-nav-right">
-            <div class="user-chip" id="userChip">
-                <div class="user-avatar" id="userAvatar">U</div>
-                <div class="user-name" id="userName">User</div>
-            </div>
-            <button id="logoutBtn" class="btn btn-ghost" style="padding: 6px 14px; font-size: 0.82rem;">Logout</button>
-        </div>
+<nav class="auth-nav">
+    <div class="auth-nav-left">
+        <button class="auth-hamburger" id="authHamburger">☰</button>
+        <a href="index.html" class="logo" style="font-size:0.9rem;">
+            <div class="logo-icon" style="width:26px;height:26px;font-size:0.85rem;">◈</div>
+            <span>INVESTY<span class="logo-accent">SIGNALS</span></span>
+        </a>
+        <span class="page-title">ANALYSIS</span>
+    </div>
+    <nav class="auth-nav-menu" id="authNavMenu">
+        <a href="dashboard.html" class="auth-nav-link">📊 Dashboard</a>
+        <a href="signals.html" class="auth-nav-link">⚡ Signals</a>
+        <a href="analysis.html" class="auth-nav-link active">🧠 Analysis</a>
+        <a href="live-signals.html" class="auth-nav-link">🔴 Live</a>
+        <a href="profile.html" class="auth-nav-link">👤 Profile</a>
     </nav>
-
-    <div class="page-wrap">
-        <div class="page-header-bar">
-            <div>
-                <h1>Analysis Engine</h1>
-                <p>Multi-factor confluence scanner — 15 technical indicators</p>
-            </div>
-            <span id="refreshTime" class="refresh-tag">Not run yet</span>
+    <div class="auth-nav-right">
+        <div class="user-chip">
+            <div class="user-avatar" id="userAvatar">U</div>
+            <span class="user-name" id="userName">User</span>
         </div>
+        <button id="logoutBtn" class="btn btn-surface btn-sm">Logout</button>
+    </div>
+</nav>
 
-        <div class="controls-panel">
-            <div class="control-group">
-                <label>Trading Pair</label>
-                <select class="control-select" id="pairSelect">
-                    <option value="BTCUSDT">BTC / USDT</option>
-                    <option value="ETHUSDT">ETH / USDT</option>
-                    <option value="SOLUSDT">SOL / USDT</option>
-                    <option value="BNBUSDT">BNB / USDT</option>
-                    <option value="XRPUSDT">XRP / USDT</option>
-                </select>
-            </div>
-            <div class="control-group">
-                <label>Timeframe</label>
-                <select class="control-select" id="tfSelect">
-                    <option value="15m">15 Minutes</option>
-                    <option value="1h" selected>1 Hour</option>
-                    <option value="4h">4 Hours</option>
-                    <option value="1d">1 Day</option>
-                </select>
-            </div>
-            <button class="btn btn-gold" id="runBtn" style="padding: 11px 32px; height: 44px; white-space: nowrap;">▶ Run Analysis</button>
+<div class="page-wrap">
+    <div class="flex-between mb-3" style="flex-wrap:wrap;gap:10px;">
+        <div>
+            <h1 style="font-size:1.6rem;margin-bottom:4px;">🧠 Analysis Engine</h1>
+            <p style="color:var(--text-muted);font-size:0.875rem;">16-factor confluence scanner — Smart Money Concepts + Technical Analysis</p>
         </div>
-
-        <div class="results-panel">
-            <div class="empty-state" id="emptyState">
-                <div class="empty-icon">⚙️</div>
-                <h2>Ready for Analysis</h2>
-                <p>Select a pair and timeframe above, then click Run Analysis.</p>
-            </div>
-
-            <div class="results-content" id="resultsContent">
-                <div class="score-card">
-                    <div class="score-title">Confluence Score</div>
-                    <div class="score-bar-bg">
-                        <div class="score-bar-fill" id="scoreBar" style="width: 0%;"></div>
-                    </div>
-                    <div class="score-value" id="scoreVal">
-                        0% <span style="font-size: 1rem; color: var(--text-muted); font-family: 'DM Sans', sans-serif;">WAITING</span>
-                    </div>
-                </div>
-
-                <div class="indicator-grid">
-                    <div class="indicator-card"><div class="ind-name">RSI (14)</div><div class="ind-val" id="i-rsi">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">MACD</div><div class="ind-val" id="i-macd">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">EMA 20/50</div><div class="ind-val" id="i-ema">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">Bollinger</div><div class="ind-val" id="i-bb">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">Stoch RSI</div><div class="ind-val" id="i-stoch">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">ADX</div><div class="ind-val" id="i-adx">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">OBV</div><div class="ind-val" id="i-obv">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">Volume</div><div class="ind-val" id="i-vol">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">Funding</div><div class="ind-val" id="i-fund">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">VWAP</div><div class="ind-val" id="i-vwap">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">Supertrend</div><div class="ind-val" id="i-st">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">FVG</div><div class="ind-val" id="i-fvg">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">ATR</div><div class="ind-val" id="i-atr">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">Open Int.</div><div class="ind-val" id="i-oi">—</div></div>
-                    <div class="indicator-card"><div class="ind-name">BOS/CHoCH</div><div class="ind-val" id="i-bos">—</div></div>
-                </div>
-
-                <div class="levels-grid">
-                    <div class="level-card" style="border-color: rgba(255,77,109,0.3);">
-                        <div class="level-title">Stop Loss</div>
-                        <div class="level-price" style="color: var(--red);" id="lvl-sl">—</div>
-                    </div>
-                    <div class="level-card" style="border-color: rgba(255,255,255,0.08);">
-                        <div class="level-title">Entry Target</div>
-                        <div class="level-price" id="lvl-entry">—</div>
-                    </div>
-                    <div class="level-card" style="border-color: rgba(24,217,122,0.3);">
-                        <div class="level-title">Take Profit</div>
-                        <div class="level-price" style="color: var(--green);" id="lvl-tp">—</div>
-                    </div>
-                </div>
-
-                <div class="disclaimer">
-                    ⚠ No live data connection established. Connect your Binance API to enable real-time analysis.
-                </div>
-            </div>
-        </div>
+<span class="badge badge-outline" style="font-size:0.68rem;color:var(--text-muted);">Demo Data</span>
+        <span id="refreshTime" class="badge badge-outline" style="font-family:'JetBrains Mono',monospace;font-size:0.7rem;">Not run yet</span>
     </div>
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+    <div class="controls-panel">
+        <div class="ctrl-group">
+            <label>Trading Pair</label>
+            <select class="ctrl-select" id="pairSelect">
+                <option value="BTCUSDT">BTC / USDT</option>
+                <option value="ETHUSDT">ETH / USDT</option>
+                <option value="SOLUSDT">SOL / USDT</option>
+                <option value="BNBUSDT">BNB / USDT</option>
+                <option value="XRPUSDT">XRP / USDT</option>
+                <option value="AVAXUSDT">AVAX / USDT</option>
+                <option value="DOGEUSDT">DOGE / USDT</option>
+                <option value="ADAUSDT">ADA / USDT</option>
+            </select>
+        </div>
+        <div class="ctrl-group">
+            <label>Timeframe</label>
+            <select class="ctrl-select" id="tfSelect">
+                <option value="15m">15 Minutes</option>
+                <option value="1h" selected>1 Hour</option>
+                <option value="4h">4 Hours</option>
+                <option value="1d">1 Day</option>
+            </select>
+        </div>
+        <div class="ctrl-group">
+            <label>Direction</label>
+            <select class="ctrl-select" id="dirSelect">
+                <option value="auto">Auto Detect</option>
+                <option value="long">Long Only</option>
+                <option value="short">Short Only</option>
+            </select>
+        </div>
+        <button class="btn btn-gold" id="runBtn" style="padding:11px 28px;white-space:nowrap;" onclick="runAnalysis()">▶ Run Analysis</button>
+    </div>
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk",
-            authDomain: "investysignals-890ba.firebaseapp.com",
-            projectId: "investysignals-890ba",
-            storageBucket: "investysignals-890ba.firebasestorage.app",
-            messagingSenderId: "1045281522975",
-            appId: "1:1045281522975:web:534501aab2ceeb887bdc2a"
-        };
+    <div class="results-panel">
+        <div class="empty-placeholder" id="emptyState">
+            <div class="ep-icon">⚙️</div>
+            <div class="ep-title">Engine Ready</div>
+            <p class="ep-sub">Select a pair and timeframe above, then click Run Analysis.</p>
+        </div>
+        <div class="results-content" id="resultsContent">
+            <!-- Score Header -->
+            <div class="score-header">
+                <div class="score-circle">
+                    <svg width="80" height="80" viewBox="0 0 80 80">
+                        <circle cx="40" cy="40" r="32" fill="none" stroke="var(--surface3)" stroke-width="8"/>
+                        <circle cx="40" cy="40" r="32" fill="none" stroke="var(--gold)" stroke-width="8"
+                            stroke-dasharray="201.1" id="scoreArc" stroke-dashoffset="201.1" stroke-linecap="round"/>
+                    </svg>
+                    <div class="score-circle-text">
+                        <span class="sc-num" id="scoreNum">0</span>
+                        <span class="sc-denom">/100</span>
+                    </div>
+                </div>
+                <div class="score-bars">
+                    <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:10px;font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:0.06em;">Factor Breakdown</div>
+                    <div class="score-bar-row">
+                        <span class="sbr-label">Trend</span>
+                        <div class="sbr-track"><div class="sbr-fill" id="barTrend" style="width:0%;background:var(--gold)"></div></div>
+                        <span id="pctTrend" style="font-size:0.75rem;color:var(--text-muted);min-width:28px;">0%</span>
+                    </div>
+                    <div class="score-bar-row">
+                        <span class="sbr-label">Momentum</span>
+                        <div class="sbr-track"><div class="sbr-fill" id="barMom" style="width:0%;background:var(--blue)"></div></div>
+                        <span id="pctMom" style="font-size:0.75rem;color:var(--text-muted);min-width:28px;">0%</span>
+                    </div>
+                    <div class="score-bar-row">
+                        <span class="sbr-label">Volume</span>
+                        <div class="sbr-track"><div class="sbr-fill" id="barVol" style="width:0%;background:var(--green)"></div></div>
+                        <span id="pctVol" style="font-size:0.75rem;color:var(--text-muted);min-width:28px;">0%</span>
+                    </div>
+                    <div class="score-bar-row">
+                        <span class="sbr-label">SMC</span>
+                        <div class="sbr-track"><div class="sbr-fill" id="barSMC" style="width:0%;background:var(--purple)"></div></div>
+                        <span id="pctSMC" style="font-size:0.75rem;color:var(--text-muted);min-width:28px;">0%</span>
+                    </div>
+                </div>
+                <div class="score-verdict">
+                    <div class="verdict-label">Verdict</div>
+                    <div class="verdict-val" id="verdictDir">—</div>
+                    <div style="margin-top:6px;"><span class="badge" id="verdictBadge">—</span></div>
+                    <div style="font-size:0.72rem;color:var(--text-muted);margin-top:6px;" id="verdictGrade">—</div>
+                </div>
+            </div>
 
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
+            <!-- Indicators -->
+            <div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:10px;font-family:'JetBrains Mono',monospace;">// 16 FACTORS</div>
+            <div class="indicator-grid">
+                <div class="ind-cell" id="ic-rsi"><div class="ind-name">RSI (14)</div><div class="ind-value" id="iv-rsi">—</div></div>
+                <div class="ind-cell" id="ic-macd"><div class="ind-name">MACD</div><div class="ind-value" id="iv-macd">—</div></div>
+                <div class="ind-cell" id="ic-ema"><div class="ind-name">EMA Stack</div><div class="ind-value" id="iv-ema">—</div></div>
+                <div class="ind-cell" id="ic-bb"><div class="ind-name">Bollinger</div><div class="ind-value" id="iv-bb">—</div></div>
+                <div class="ind-cell" id="ic-stoch"><div class="ind-name">Stoch RSI</div><div class="ind-value" id="iv-stoch">—</div></div>
+                <div class="ind-cell" id="ic-adx"><div class="ind-name">ADX</div><div class="ind-value" id="iv-adx">—</div></div>
+                <div class="ind-cell" id="ic-obv"><div class="ind-name">OBV</div><div class="ind-value" id="iv-obv">—</div></div>
+                <div class="ind-cell" id="ic-rvol"><div class="ind-name">RVOL</div><div class="ind-value" id="iv-rvol">—</div></div>
+                <div class="ind-cell" id="ic-fund"><div class="ind-name">Funding</div><div class="ind-value" id="iv-fund">—</div></div>
+                <div class="ind-cell" id="ic-oi"><div class="ind-name">Open Int.</div><div class="ind-value" id="iv-oi">—</div></div>
+                <div class="ind-cell" id="ic-vwap"><div class="ind-name">VWAP</div><div class="ind-value" id="iv-vwap">—</div></div>
+                <div class="ind-cell" id="ic-st"><div class="ind-name">Supertrend</div><div class="ind-value" id="iv-st">—</div></div>
+                <div class="ind-cell" id="ic-bos"><div class="ind-name">BOS/CHoCH</div><div class="ind-value" id="iv-bos">—</div></div>
+                <div class="ind-cell" id="ic-fvg"><div class="ind-name">FVG</div><div class="ind-value" id="iv-fvg">—</div></div>
+                <div class="ind-cell" id="ic-div"><div class="ind-name">Divergence</div><div class="ind-value" id="iv-div">—</div></div>
+                <div class="ind-cell" id="ic-4htf"><div class="ind-name">4H Trend</div><div class="ind-value" id="iv-4htf">—</div></div>
+            </div>
 
-        onAuthStateChanged(auth, (user) => {
-            if (!user) {
-                window.location.href = 'login.html';
-            } else {
-                const name = user.displayName || user.email.split('@')[0];
-                document.getElementById('userAvatar').textContent = name.charAt(0).toUpperCase();
-                document.getElementById('userName').textContent = name;
-            }
-        });
+            <!-- Levels -->
+            <div class="levels-row">
+                <div class="level-box sl-box">
+                    <div class="lbl-tag">Stop Loss</div>
+                    <div class="lbl-val" style="color:var(--red)" id="lvl-sl">—</div>
+                </div>
+                <div class="level-box ent-box">
+                    <div class="lbl-tag">Entry Zone</div>
+                    <div class="lbl-val text-gold" id="lvl-entry">—</div>
+                </div>
+                <div class="level-box tp-box">
+                    <div class="lbl-tag">Take Profit</div>
+                    <div class="lbl-val" style="color:var(--green)" id="lvl-tp">—</div>
+                </div>
+            </div>
 
-        document.getElementById('logoutBtn').addEventListener('click', () => {
-            signOut(auth).then(() => {
-                sessionStorage.removeItem('user');
-                window.location.href = 'index.html';
+            <div class="disclaimer">⚠ Analysis uses demo data. Connect Binance API on your server for live market data.</div>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+    import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+    const app = initializeApp({ apiKey:"AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk", authDomain:"investysignals-890ba.firebaseapp.com", projectId:"investysignals-890ba", storageBucket:"investysignals-890ba.firebasestorage.app", messagingSenderId:"1045281522975", appId:"1:1045281522975:web:534501aab2ceeb887bdc2a" });
+    const auth = getAuth(app);
+    onAuthStateChanged(auth, u => {
+        if (!u) { window.location.href = 'login.html'; return; }
+        document.getElementById('userAvatar').textContent = (u.displayName||u.email).charAt(0).toUpperCase();
+        document.getElementById('userName').textContent = u.displayName || u.email.split('@')[0];
+    });
+    document.getElementById('logoutBtn').addEventListener('click', () => signOut(auth).then(() => window.location.href = 'index.html'));
+</script>
+
+<script>
+    document.getElementById('authHamburger').addEventListener('click', () => {
+        document.getElementById('authNavMenu').classList.toggle('open');
+    });
+
+    // Demo data per pair
+    const demoData = {
+        BTCUSDT: { score:87, dir:'LONG', trend:90, mom:82, vol:88, smc:85, rsi:'42.1 ↗', macd:'Bull Cross', ema:'Aligned ↑', bb:'Lower Band', stoch:'Oversold', adx:'31.4 ✓', obv:'Rising ↗', rvol:'1.8×', fund:'+0.012%', oi:'Rising ↗', vwap:'Above', st:'Bullish', bos:'BOS Conf.', fvg:'Unfilled', div:'Hidden Bull', tf4:'Bullish', entry:'67,200', tp:'69,500', sl:'65,800' },
+        ETHUSDT: { score:79, dir:'SHORT', trend:75, mom:80, vol:72, smc:88, rsi:'68.4 ↘', macd:'Bear Cross', ema:'Bearish', bb:'Upper Band', stoch:'Overbought', adx:'24.2 ✓', obv:'Falling ↘', rvol:'2.1×', fund:'+0.031%', oi:'Falling ↘', vwap:'Below', st:'Bearish', bos:'CHoCH Conf.', fvg:'Filled', div:'Regular Bear', tf4:'Bearish', entry:'3,600', tp:'3,380', sl:'3,720' },
+        SOLUSDT: { score:91, dir:'LONG', trend:94, mom:89, vol:90, smc:92, rsi:'38.2 ↗', macd:'Bull Div.', ema:'Aligned ↑', bb:'Near Lower', stoch:'Oversold', adx:'38.7 ✓', obv:'Rising ↗', rvol:'2.4×', fund:'+0.008%', oi:'Rising ↗', vwap:'Above', st:'Bullish', bos:'BOS Conf.', fvg:'Unfilled', div:'Hidden Bull', tf4:'Bullish', entry:'170.20', tp:'185.00', sl:'163.00' },
+        BNBUSDT: { score:72, dir:'SHORT', trend:68, mom:74, vol:70, smc:78, rsi:'61.3 ↘', macd:'Diverge', ema:'Flattening', bb:'Mid Band', stoch:'Neutral', adx:'19.1 ✓', obv:'Neutral', rvol:'1.2×', fund:'+0.018%', oi:'Neutral', vwap:'At VWAP', st:'Bearish', bos:'Weak CHoCH', fvg:'Partial', div:'None', tf4:'Neutral', entry:'602', tp:'578', sl:'620' },
+        XRPUSDT: { score:76, dir:'SHORT', trend:78, mom:73, vol:71, smc:82, rsi:'64.5 ↘', macd:'Bear', ema:'Resist.', bb:'Upper', stoch:'OB', adx:'22.6 ✓', obv:'Falling', rvol:'1.6×', fund:'+0.022%', oi:'Falling', vwap:'Below', st:'Bearish', bos:'CHoCH', fvg:'Unfilled', div:'Hidden Bear', tf4:'Bearish', entry:'0.640', tp:'0.590', sl:'0.670' },
+        AVAXUSDT:{ score:77, dir:'LONG', trend:80, mom:72, vol:75, smc:80, rsi:'41.8 ↗', macd:'Bull', ema:'Aligned ↑', bb:'Lower', stoch:'OS', adx:'26.4 ✓', obv:'Rising', rvol:'1.9×', fund:'+0.005%', oi:'Rising', vwap:'Above', st:'Bullish', bos:'BOS', fvg:'Unfilled', div:'Regular Bull', tf4:'Bullish', entry:'42.00', tp:'47.00', sl:'39.00' },
+        DOGEUSDT:{ score:62, dir:'SHORT', trend:58, mom:65, vol:60, smc:66, rsi:'58.9 ↘', macd:'Neutral', ema:'Flat', bb:'Mid', stoch:'Neutral', adx:'15.2 ✗', obv:'Neutral', rvol:'1.1×', fund:'+0.041%', oi:'Neutral', vwap:'Flat', st:'Neutral', bos:'No Signal', fvg:'None', div:'None', tf4:'Neutral', entry:'0.148', tp:'0.138', sl:'0.155' },
+        ADAUSDT: { score:69, dir:'LONG', trend:70, mom:68, vol:65, smc:72, rsi:'44.2 ↗', macd:'Bull', ema:'Aligned', bb:'Lower', stoch:'Neutral', adx:'20.8 ✓', obv:'Rising', rvol:'1.4×', fund:'+0.014%', oi:'Rising', vwap:'Above', st:'Bullish', bos:'Weak BOS', fvg:'Partial', div:'None', tf4:'Bullish', entry:'0.482', tp:'0.510', sl:'0.462' },
+    };
+
+    window.runAnalysis = function() {
+        const pair = document.getElementById('pairSelect').value;
+        const btn = document.getElementById('runBtn');
+        btn.textContent = '⏳ Scanning...'; btn.disabled = true;
+        document.getElementById('emptyState').style.display = 'none';
+        document.getElementById('resultsContent').style.display = 'none';
+
+        setTimeout(() => {
+            const d = demoData[pair] || demoData['BTCUSDT'];
+            const isLong = d.dir === 'LONG';
+
+            // Score arc animation
+            const arc = document.getElementById('scoreArc');
+            const circ = 201.1;
+            arc.style.strokeDashoffset = circ - (circ * d.score / 100);
+            arc.style.stroke = d.score >= 80 ? 'var(--green)' : d.score >= 65 ? 'var(--gold)' : 'var(--red)';
+            arc.style.transition = 'stroke-dashoffset 1s ease';
+
+            // Score number
+            let s = 0;
+            const t = setInterval(() => {
+                s = Math.min(s + 2, d.score);
+                document.getElementById('scoreNum').textContent = s;
+                if (s >= d.score) clearInterval(t);
+            }, 20);
+
+            // Factor bars
+            ['Trend','Mom','Vol','SMC'].forEach(f => {
+                const k = f === 'Mom' ? 'mom' : f.toLowerCase();
+                const pct = d[k === 'smc' ? 'smc' : k];
+                setTimeout(() => {
+                    document.getElementById('bar'+f).style.width = pct + '%';
+                    document.getElementById('pct'+f).textContent = pct + '%';
+                }, 200);
             });
-        });
 
-        const runBtn = document.getElementById('runBtn');
-        const emptyState = document.getElementById('emptyState');
-        const resultsContent = document.getElementById('resultsContent');
-        const refreshTime = document.getElementById('refreshTime');
+            // Verdict
+            document.getElementById('verdictDir').textContent = d.dir;
+            document.getElementById('verdictDir').style.color = isLong ? 'var(--green)' : 'var(--red)';
+            const vb = document.getElementById('verdictBadge');
+            const grade = d.score >= 85 ? 'A+' : d.score >= 75 ? 'A' : d.score >= 65 ? 'B+' : 'B';
+            vb.textContent = grade;
+            vb.className = 'badge ' + (d.score >= 75 ? 'badge-green' : d.score >= 65 ? 'badge-gold' : 'badge-outline');
+            document.getElementById('verdictGrade').textContent = d.score >= 75 ? '✓ Signal Valid' : d.score >= 65 ? '⚡ Borderline' : '⚠ Weak Setup';
 
-        runBtn.addEventListener('click', () => {
-            const original = runBtn.textContent;
-            runBtn.textContent = '⏳ Analyzing...';
-            runBtn.disabled = true;
-            emptyState.style.display = 'none';
-            resultsContent.style.display = 'none';
+            // Indicators
+            const indMap = {
+                rsi:d.rsi, macd:d.macd, ema:d.ema, bb:d.bb, stoch:d.stoch,
+                adx:d.adx, obv:d.obv, rvol:d.rvol, fund:d.fund, oi:d.oi,
+                vwap:d.vwap, st:d.st, bos:d.bos, fvg:d.fvg, div:d.div, '4htf':d.tf4
+            };
+            const bullKw = ['Bull','↗','Above','Rising','Oversold','Unfilled','Conf','Bullish','Hidden Bull','Regular Bull'];
+            const bearKw = ['Bear','↘','Below','Falling','Overbought','CHoCH','Bearish','Hidden Bear','Regular Bear'];
 
-            setTimeout(() => {
-                runBtn.textContent = original;
-                runBtn.disabled = false;
-                resultsContent.style.display = 'block';
-                const now = new Date();
-                refreshTime.textContent = `Last run: ${now.toLocaleTimeString()}`;
-            }, 600);
-        });
-    </script>
+            Object.entries(indMap).forEach(([k, v]) => {
+                const el = document.getElementById('iv-'+k);
+                const cel = document.getElementById('ic-'+k);
+                if (!el) return;
+                el.textContent = v;
+                const isBull = bullKw.some(w => v.includes(w));
+                const isBear = bearKw.some(w => v.includes(w));
+                cel.className = 'ind-cell ' + (isBull ? 'bull' : isBear ? 'bear' : 'neut');
+                el.style.color = isBull ? 'var(--green)' : isBear ? 'var(--red)' : 'var(--text)';
+            });
 
-    <script>
-        const authHamburger = document.getElementById('authHamburger');
-        const authNavMenu = document.getElementById('authNavMenu');
-        if (authHamburger) {
-            authHamburger.addEventListener('click', () => authNavMenu.classList.toggle('open'));
-        }
-        document.querySelectorAll('.auth-nav-link').forEach(link => {
-            link.addEventListener('click', () => authNavMenu.classList.remove('open'));
-        });
-    </script>
+            // Levels
+            document.getElementById('lvl-entry').textContent = '$' + d.entry;
+            document.getElementById('lvl-tp').textContent    = '$' + d.tp;
+            document.getElementById('lvl-sl').textContent    = '$' + d.sl;
 
+            // Time
+            document.getElementById('refreshTime').textContent = 'Last: ' + new Date().toLocaleTimeString();
+            document.getElementById('resultsContent').style.display = 'block';
+            btn.textContent = '▶ Run Analysis'; btn.disabled = false;
+        }, 700);
+    };
+</script>
 </body>
 </html>

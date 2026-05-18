@@ -1,370 +1,268 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
     <title>Register | InvestySignals</title>
     <link rel="stylesheet" href="style.css">
     <style>
-        .split-layout {
-            display: flex;
-            min-height: 100vh;
-        }
-
-        .split-right {
-            width: 40%;
-            background: linear-gradient(135deg, var(--bg) 0%, var(--bg2) 100%);
-            border-left: 1px solid var(--border);
-            display: flex;
-            flex-direction: column;
+        body { overflow-y: auto; }
+        .auth-layout { min-height: 100vh; display: flex; }
+        .auth-right {
+            width: 42%;
+            background: var(--bg2);
+            border-left: 1px solid var(--border-soft);
+            display: flex; flex-direction: column;
             justify-content: space-between;
             padding: 40px;
-            position: relative;
-            overflow: hidden;
+            position: relative; overflow: hidden;
         }
-
-        .split-right::before {
+        .auth-right::before {
             content: '';
-            position: absolute;
-            bottom: 20%;
-            right: -20%;
-            width: 600px;
-            height: 600px;
-            background: radial-gradient(circle, rgba(77, 159, 255, 0.1) 0%, transparent 70%);
+            position: absolute; inset: 0;
+            background-image:
+                linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+            background-size: 40px 40px;
             pointer-events: none;
         }
+        .auth-orb {
+            position: absolute; border-radius: 50%; filter: blur(70px); pointer-events: none;
+        }
+        .ao-1 { width: 400px; height: 400px; background: radial-gradient(circle, rgba(59,139,255,0.1) 0%, transparent 70%); bottom: 20%; right: -10%; }
+        .ao-2 { width: 300px; height: 300px; background: radial-gradient(circle, rgba(240,180,41,0.1) 0%, transparent 70%); top: 10%; left: 5%; }
+        .side-content { position: relative; z-index: 1; }
 
-        .split-left {
-            width: 60%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 40px;
-            background: var(--bg);
+        .feature-list { list-style: none; display: flex; flex-direction: column; gap: 14px; }
+        .feature-list li {
+            display: flex; align-items: flex-start; gap: 12px;
+            font-size: 0.9rem; color: var(--text-muted);
+        }
+        .feat-check {
+            width: 22px; height: 22px; border-radius: 6px;
+            background: var(--green-glow); border: 1px solid rgba(0,217,126,0.25);
+            display: flex; align-items: center; justify-content: center;
+            color: var(--green); font-size: 0.75rem; flex-shrink: 0;
+            margin-top: 1px;
         }
 
+        .auth-left {
+            flex: 1; display: flex; align-items: center; justify-content: center;
+            padding: 40px 32px; background: var(--bg); position: relative;
+        }
+        .auth-left::before {
+            content: '';
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 500px; height: 500px;
+            background: radial-gradient(circle, rgba(59,139,255,0.04) 0%, transparent 70%);
+            pointer-events: none;
+        }
         .auth-card {
-            width: 100%;
-            max-width: 480px;
+            width: 100%; max-width: 460px;
             background: var(--bg2);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 40px;
-            backdrop-filter: blur(12px);
-        }
-
-        .auth-header {
-            margin-bottom: 32px;
-            text-align: center;
-        }
-
-        .auth-header h1 {
-            font-size: 2rem;
-            margin-bottom: 8px;
-        }
-
-        .auth-header p {
-            color: var(--text-muted);
-        }
-
-        .input-group {
-            margin-bottom: 20px;
-        }
-
-        .input-group label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 500;
-            color: var(--text-muted);
-            font-size: 0.9rem;
-        }
-
-        .input-control {
-            width: 100%;
-            background: var(--surface);
             border: 1px solid var(--border-soft);
-            color: var(--text);
-            padding: 14px 16px;
-            border-radius: var(--radius-sm);
-            font-family: 'DM Sans', sans-serif;
-            transition: var(--transition);
-            outline: none;
+            border-radius: var(--radius);
+            padding: 32px;
+            position: relative; z-index: 1;
+            box-shadow: 0 24px 64px rgba(0,0,0,0.4);
         }
+        .auth-card-header { text-align: center; margin-bottom: 24px; }
+        .auth-card-header h1 { font-size: 1.6rem; margin-bottom: 6px; }
+        .auth-card-header p { color: var(--text-muted); font-size: 0.88rem; }
 
-        .input-control:focus {
-            border-color: var(--gold);
-            box-shadow: 0 0 0 2px var(--gold-glow);
+        .error-box { background: var(--red-glow); border: 1px solid rgba(255,59,92,0.25); color: var(--red); border-radius: var(--radius-sm); padding: 10px 14px; font-size: 0.85rem; margin-bottom: 14px; display: none; }
+        .success-box { background: var(--green-glow); border: 1px solid rgba(0,217,126,0.25); color: var(--green); border-radius: var(--radius-sm); padding: 10px 14px; font-size: 0.85rem; margin-bottom: 14px; display: none; }
+
+        .pw-wrap { position: relative; }
+        .pw-eye { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.82rem; }
+
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .check-group { display: flex; align-items: flex-start; gap: 9px; margin-bottom: 20px; }
+        .check-group input { accent-color: var(--gold); width: 15px; height: 15px; margin-top: 2px; flex-shrink: 0; }
+        .check-group label { font-size: 0.82rem; color: var(--text-muted); line-height: 1.5; }
+        .check-group a { color: var(--gold); }
+
+        .auth-divider { display: flex; align-items: center; margin: 16px 0; color: var(--text-muted); font-size: 0.8rem; }
+        .auth-divider::before, .auth-divider::after { content: ''; flex: 1; height: 1px; background: var(--border-soft); }
+        .auth-divider::before { margin-right: 12px; }
+        .auth-divider::after  { margin-left:  12px; }
+        .auth-footer { text-align: center; margin-top: 16px; font-size: 0.875rem; color: var(--text-muted); }
+        .auth-footer a { color: var(--gold); font-weight: 600; }
+
+        @media (max-width: 900px) {
+            .auth-right { display: none; }
+            .auth-left { padding: 24px 20px; }
         }
-
-        .checkbox-group {
-            display: flex;
-            align-items: flex-start;
-            gap: 12px;
-            margin-bottom: 24px;
-        }
-
-        .checkbox-group input {
-            accent-color: var(--gold);
-            width: 18px;
-            height: 18px;
-            margin-top: 2px;
-        }
-
-        .checkbox-group label {
-            font-size: 0.85rem;
-            color: var(--text-muted);
-            margin-bottom: 0;
-            line-height: 1.4;
-        }
-
-        .checkbox-group a {
-            color: var(--gold);
-        }
-
-        .btn-full {
-            width: 100%;
-            border-radius: 100px;
-        }
-
-        .auth-footer {
-            text-align: center;
-            margin-top: 24px;
-            font-size: 0.9rem;
-            color: var(--text-muted);
-        }
-
-        .auth-footer a {
-            color: var(--gold);
-            font-weight: 600;
-        }
-
-        .error-message {
-            color: var(--red);
-            font-size: 0.875rem;
-            margin-bottom: 16px;
-            text-align: center;
-            display: none;
-            padding: 8px;
-            background: rgba(255, 77, 109, 0.1);
-            border: 1px solid rgba(255, 77, 109, 0.2);
-            border-radius: var(--radius-xs);
-        }
-
-        .pw-wrapper {
-            position: relative;
-        }
-
-        .pw-strength {
-            height: 4px;
-            background: var(--surface);
-            border-radius: 2px;
-            margin-top: 8px;
-            overflow: hidden;
-            display: flex;
-        }
-
-        .pw-strength-bar {
-            height: 100%;
-            width: 0;
-            transition: all 0.3s ease;
-        }
-
-        .pw-strength-text {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            margin-top: 4px;
-            text-align: right;
-            display: block;
-        }
-
-        .weak {
-            background: var(--red);
-            width: 33.33%;
-        }
-
-        .medium {
-            background: var(--gold);
-            width: 66.66%;
-        }
-
-        .strong {
-            background: var(--green);
-            width: 100%;
-        }
-
-        @media (max-width: 992px) {
-            .split-layout {
-                flex-direction: column-reverse;
-            }
-
-            .split-right {
-                width: 100%;
-                padding: 40px 24px;
-                text-align: center;
-            }
-
-            .split-left {
-                width: 100%;
-                padding: 40px 24px;
-            }
-        }
+        @media (max-width: 480px) { .form-row { grid-template-columns: 1fr; } }
     </style>
 </head>
-
 <body>
-
-    <div class="split-layout">
-        <!-- Left Panel (Form) -->
-        <div class="split-left">
-            <div class="auth-card fade-up visible">
-                <div class="auth-header">
-                    <h1>Create Account</h1>
-                    <p>Start your data-driven trading journey</p>
-                </div>
-
-                <div id="errorMsg" class="error-message"></div>
-
-                <form id="registerForm">
-                    <div class="input-group">
-                        <label for="displayName">Display Name</label>
-                        <input type="text" id="displayName" class="input-control" placeholder="How should we call you?"
-                            required>
-                    </div>
-
-                    <div class="input-group">
-                        <label for="email">Email Address</label>
-                        <input type="email" id="email" class="input-control" placeholder="Enter your email" required>
-                    </div>
-
-                    <div class="input-group">
-                        <label for="password">Password</label>
-                        <div class="pw-wrapper">
-                            <input type="password" id="password" class="input-control"
-                                placeholder="Create a strong password" required>
-                        </div>
-                        <div class="pw-strength">
-                            <div id="pwBar" class="pw-strength-bar"></div>
-                        </div>
-                        <span id="pwText" class="pw-strength-text">Password strength</span>
-                    </div>
-
-                    <div class="input-group">
-                        <label for="confirmPassword">Confirm Password</label>
-                        <input type="password" id="confirmPassword" class="input-control"
-                            placeholder="Confirm your password" required>
-                    </div>
-
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="terms" required>
-                        <label for="terms">I agree to the <a href="terms.html">Terms of Service</a> and <a
-                                href="privacy.html">Privacy Policy</a>.</label>
-                    </div>
-
-                    <button type="submit" class="btn btn-gold btn-full">Register Account</button>
-                </form>
-
-                <div class="auth-footer">
-                    Already have an account? <a href="login.html">Log In</a>
-                </div>
-            </div>
-        </div>
-
-        <!-- Right Panel -->
-        <div class="split-right">
-            <div style="text-align: right;">
-                <a href="index.html" class="logo" style="justify-content: flex-end;">
-                    <span class="logo-icon">◈</span>
-                    INVESTY<span class="logo-accent">SIGNALS</span>
+<div class="auth-layout">
+    <!-- Form side -->
+    <div class="auth-left">
+        <div class="auth-card fade-up visible">
+            <div class="auth-card-header">
+                <a href="index.html" class="logo" style="font-size:0.9rem;justify-content:center;margin-bottom:20px;display:inline-flex;">
+                    <div class="logo-icon" style="width:26px;height:26px;font-size:0.85rem;">◈</div>
+                    <span>INVESTY<span class="logo-accent">SIGNALS</span></span>
                 </a>
+                <h1>Create Account</h1>
+                <p>Join 15,000+ traders — it's completely free</p>
             </div>
 
-            <div style="text-align: right;">
-                <h2 style="font-size: 2rem; margin-bottom: 16px;">Join the elite tier of retail traders.</h2>
-                <p style="color: var(--text-muted);">Get instant access to our real-time signals, 8-factor confluence
-                    analysis, and built-in paper trading simulator.</p>
-            </div>
+            <div class="error-box"   id="errorBox"></div>
+            <div class="success-box" id="successBox">Account created! Redirecting...</div>
 
-            <div></div> <!-- Spacer -->
+            <div class="form-row">
+                <div class="input-group">
+                    <label>First Name</label>
+                    <input type="text" class="input-control" id="firstName" placeholder="Kasun">
+                </div>
+                <div class="input-group">
+                    <label>Last Name</label>
+                    <input type="text" class="input-control" id="lastName" placeholder="Silva">
+                </div>
+            </div>
+            <div class="input-group">
+                <label>Email Address</label>
+                <input type="email" class="input-control" id="email" placeholder="you@example.com">
+            </div>
+            <div class="input-group">
+                <label>Password</label>
+                <div class="pw-wrap">
+                    <input type="password" class="input-control" id="password" placeholder="Min 8 characters" style="padding-right:50px;">
+                    <button class="pw-eye" id="togglePw" type="button">Show</button>
+                </div>
+            </div>
+            <div class="input-group" style="margin-bottom:16px;">
+                <label>Confirm Password</label>
+                <div class="pw-wrap">
+                    <input type="password" class="input-control" id="confirmPw" placeholder="Repeat password" style="padding-right:50px;">
+                    <button class="pw-eye" id="togglePw2" type="button">Show</button>
+                </div>
+            </div>
+            <div class="check-group">
+                <input type="checkbox" id="agree">
+                <label for="agree">I agree to the <a href="terms.html">Terms of Service</a> and <a href="privacy.html">Privacy Policy</a></label>
+            </div>
+            <button class="btn btn-gold" style="width:100%;justify-content:center;" id="registerBtn" onclick="handleRegister()">
+                Create Free Account →
+            </button>
+            <div class="auth-divider">or</div>
+            <button class="btn btn-surface" style="width:100%;justify-content:center;gap:10px;" onclick="handleGoogle()">
+                <svg width="17" height="17" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+                Sign up with Google
+            </button>
+            <div class="auth-footer">Already have an account? <a href="login.html">Sign in →</a></div>
         </div>
     </div>
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getAuth, createUserWithEmailAndPassword, updateProfile } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+    <!-- Right panel -->
+    <div class="auth-right">
+        <div class="auth-orb ao-1"></div>
+        <div class="auth-orb ao-2"></div>
+        <div class="side-content">
+            <a href="index.html" class="logo" style="font-size:0.9rem;margin-bottom:36px;display:inline-flex;">
+                <div class="logo-icon" style="width:26px;height:26px;font-size:0.85rem;">◈</div>
+                <span>INVESTY<span class="logo-accent">SIGNALS</span></span>
+            </a>
+            <h2 style="font-size:1.8rem;margin-bottom:14px;">Everything you need. Free.</h2>
+            <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:32px;line-height:1.7;">Your free account includes access to our full signal engine and paper trading suite — no credit card required.</p>
+            <ul class="feature-list">
+                <li><span class="feat-check">✓</span><div><strong style="color:var(--text);">Real-Time Signals</strong><br>High-probability Binance Futures setups delivered instantly.</div></li>
+                <li><span class="feat-check">✓</span><div><strong style="color:var(--text);">16-Factor Engine</strong><br>RSI, EMA, MACD, SMC, Funding Rate and more.</div></li>
+                <li><span class="feat-check">✓</span><div><strong style="color:var(--text);">Paper Trading</strong><br>Track every trade risk-free with TP/SL simulation.</div></li>
+                <li><span class="feat-check">✓</span><div><strong style="color:var(--text);">Signal History</strong><br>Review past 7 days of signals and performance.</div></li>
+                <li><span class="feat-check">✓</span><div><strong style="color:var(--text);">Mobile Optimized</strong><br>Full functionality on any device, any screen size.</div></li>
+            </ul>
+        </div>
+        <div class="side-content" style="background:rgba(240,180,41,0.06);border:1px solid var(--border);border-radius:var(--radius-sm);padding:18px;">
+            <div style="display:flex;gap:14px;margin-bottom:12px;">
+                <div style="text-align:center;flex:1;">
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:1.5rem;font-weight:700;color:var(--gold);">78%</div>
+                    <div style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Win Rate</div>
+                </div>
+                <div style="text-align:center;flex:1;">
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:1.5rem;font-weight:700;color:var(--green);">2.4×</div>
+                    <div style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Avg R:R</div>
+                </div>
+                <div style="text-align:center;flex:1;">
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:1.5rem;font-weight:700;color:var(--blue);">15K+</div>
+                    <div style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Traders</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk",
-            authDomain: "investysignals-890ba.firebaseapp.com",
-            projectId: "investysignals-890ba",
-            storageBucket: "investysignals-890ba.firebasestorage.app",
-            messagingSenderId: "1045281522975",
-            appId: "1:1045281522975:web:534501aab2ceeb887bdc2a"
-        };
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+    import { getAuth, createUserWithEmailAndPassword, updateProfile, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
+    const firebaseConfig = {
+        apiKey: "AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk",
+        authDomain: "investysignals-890ba.firebaseapp.com",
+        projectId: "investysignals-890ba",
+        storageBucket: "investysignals-890ba.firebasestorage.app",
+        messagingSenderId: "1045281522975",
+        appId: "1:1045281522975:web:534501aab2ceeb887bdc2a"
+    };
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const provider = new GoogleAuthProvider();
 
-        const form = document.getElementById('registerForm');
-        const nameInput = document.getElementById('displayName');
-        const emailInput = document.getElementById('email');
-        const passwordInput = document.getElementById('password');
-        const confirmPasswordInput = document.getElementById('confirmPassword');
-        const errorMsg = document.getElementById('errorMsg');
-        const pwBar = document.getElementById('pwBar');
-        const pwText = document.getElementById('pwText');
+    // PW toggles
+    document.getElementById('togglePw').addEventListener('click', () => {
+        const pw = document.getElementById('password');
+        pw.type = pw.type === 'password' ? 'text' : 'password';
+        document.getElementById('togglePw').textContent = pw.type === 'text' ? 'Hide' : 'Show';
+    });
+    document.getElementById('togglePw2').addEventListener('click', () => {
+        const pw = document.getElementById('confirmPw');
+        pw.type = pw.type === 'password' ? 'text' : 'password';
+        document.getElementById('togglePw2').textContent = pw.type === 'text' ? 'Hide' : 'Show';
+    });
 
-        // Password strength checker
-        passwordInput.addEventListener('input', () => {
-            const val = passwordInput.value;
-            let strength = 0;
-            if (val.length > 5) strength++;
-            if (val.length > 7 && /[A-Z]/.test(val) && /[0-9]/.test(val)) strength++;
-            if (val.length > 9 && /[^A-Za-z0-9]/.test(val)) strength++;
+    window.handleRegister = async function() {
+        const first  = document.getElementById('firstName').value.trim();
+        const last   = document.getElementById('lastName').value.trim();
+        const email  = document.getElementById('email').value.trim();
+        const pw     = document.getElementById('password').value;
+        const pw2    = document.getElementById('confirmPw').value;
+        const agree  = document.getElementById('agree').checked;
+        const errBox = document.getElementById('errorBox');
+        const okBox  = document.getElementById('successBox');
+        errBox.style.display = 'none';
 
-            pwBar.className = 'pw-strength-bar';
-            if (val.length === 0) {
-                pwText.textContent = '';
-            } else if (strength === 1) {
-                pwBar.classList.add('weak');
-                pwText.textContent = 'Weak';
-            } else if (strength === 2) {
-                pwBar.classList.add('medium');
-                pwText.textContent = 'Medium';
-            } else if (strength === 3) {
-                pwBar.classList.add('strong');
-                pwText.textContent = 'Strong';
-            }
-        });
+        if (!first || !last || !email || !pw) { errBox.textContent = 'Please fill in all fields.'; errBox.style.display = 'block'; return; }
+        if (pw.length < 8) { errBox.textContent = 'Password must be at least 8 characters.'; errBox.style.display = 'block'; return; }
+        if (pw !== pw2)    { errBox.textContent = 'Passwords do not match.'; errBox.style.display = 'block'; return; }
+        if (!agree)        { errBox.textContent = 'Please accept the Terms of Service.'; errBox.style.display = 'block'; return; }
 
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            errorMsg.style.display = 'none';
+        const btn = document.getElementById('registerBtn');
+        btn.textContent = 'Creating account...'; btn.style.opacity = '0.7'; btn.style.pointerEvents = 'none';
+        try {
+            const cred = await createUserWithEmailAndPassword(auth, email, pw);
+            await updateProfile(cred.user, { displayName: `${first} ${last}` });
+            okBox.style.display = 'block';
+            setTimeout(() => { window.location.href = 'dashboard.html'; }, 1200);
+        } catch(e) {
+            errBox.textContent = e.code === 'auth/email-already-in-use' ? 'This email is already registered.' : 'Registration failed. Please try again.';
+            errBox.style.display = 'block';
+            btn.textContent = 'Create Free Account →'; btn.style.opacity = ''; btn.style.pointerEvents = '';
+        }
+    };
 
-            if (passwordInput.value !== confirmPasswordInput.value) {
-                errorMsg.textContent = 'Passwords do not match.';
-                errorMsg.style.display = 'block';
-                return;
-            }
-
-            const btn = form.querySelector('button[type="submit"]');
-            const originalText = btn.textContent;
-            btn.textContent = 'Creating account...';
-            btn.disabled = true;
-
-            try {
-                const userCredential = await createUserWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
-                await updateProfile(userCredential.user, { displayName: nameInput.value });
-                sessionStorage.setItem('user', JSON.stringify(userCredential.user));
-                window.location.href = 'dashboard.html';
-            } catch (error) {
-                errorMsg.textContent = error.message.replace('Firebase: ', '');
-                errorMsg.style.display = 'block';
-                btn.textContent = originalText;
-                btn.disabled = false;
-            }
-        });
-    </script>
+    window.handleGoogle = async function() {
+        try {
+            const cred = await signInWithPopup(auth, provider);
+            window.location.href = 'dashboard.html';
+        } catch(e) {
+            document.getElementById('errorBox').textContent = 'Google sign-up failed.';
+            document.getElementById('errorBox').style.display = 'block';
+        }
+    };
+</script>
 </body>
-
 </html>
