@@ -83,6 +83,7 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '5mb' }));
 
+// ── Rate Limiters ─────────────────────────────────────────────
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 300,
@@ -90,7 +91,29 @@ const apiLimiter = rateLimit({
   legacyHeaders: false,
   message: { success: false, error: 'Too many requests, please try again later.' }
 });
+
+// FIX: Admin routes get a higher limit so bulk operations don't get throttled
+const adminLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests.' }
+});
+
+// FIX: Register admin limiter BEFORE the general /api/ limiter
+app.use('/api/admin/', adminLimiter);
 app.use('/api/', apiLimiter);
+
+// FIX: Block sensitive files from being served as static assets
+const BLOCKED_STATIC = ['.env', 'serviceAccount.json', 'package.json', '.gitignore'];
+app.use((req, res, next) => {
+  const basename = path.basename(req.path);
+  if (BLOCKED_STATIC.includes(basename)) {
+    return res.status(403).json({ success: false, error: 'Forbidden' });
+  }
+  next();
+});
 
 app.use(express.static(path.join(__dirname)));
 
@@ -174,6 +197,91 @@ app.get('/api/health', (req, res) => {
   res.json({ success: true, status: 'ok', time: new Date().toISOString() });
 });
 
+// ── Analysis — RSI from Binance klines ───────────────────────
+app.get('/api/analysis', async (req, res) => {
+  try {
+    const pair      = (req.query.pair || 'BTCUSDT').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const tf        = (req.query.tf   || '1h').replace(/[^a-zA-Z0-9]/g, '');
+    const limit     = 100; // need at least 14+1 candles for RSI
+
+    const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${pair}&interval=${tf}&limit=${limit}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      const err = await response.text();
+      return res.status(502).json({ success: false, error: `Binance error: ${err}` });
+    }
+    const klines = await response.json();
+    if (!Array.isArray(klines) || klines.length < 15) {
+      return res.status(502).json({ success: false, error: 'Not enough candle data' });
+    }
+
+    // Closing prices
+    const closes = klines.map(k => parseFloat(k[4]));
+
+    // ── RSI(14) ──
+    const period = 14;
+    let gains = 0, losses = 0;
+    for (let i = 1; i <= period; i++) {
+      const diff = closes[i] - closes[i - 1];
+      if (diff >= 0) gains += diff; else losses -= diff;
+    }
+    let avgGain = gains / period;
+    let avgLoss = losses / period;
+    for (let i = period + 1; i < closes.length; i++) {
+      const diff = closes[i] - closes[i - 1];
+      const g = diff > 0 ? diff : 0;
+      const l = diff < 0 ? -diff : 0;
+      avgGain = (avgGain * (period - 1) + g) / period;
+      avgLoss = (avgLoss * (period - 1) + l) / period;
+    }
+    const rs  = avgLoss === 0 ? 100 : avgGain / avgLoss;
+    const rsi = parseFloat((100 - 100 / (1 + rs)).toFixed(2));
+
+    // ── MACD(12,26,9) ──
+    function ema(data, n) {
+      const k = 2 / (n + 1);
+      let val = data.slice(0, n).reduce((a, b) => a + b, 0) / n;
+      const out = [val];
+      for (let i = n; i < data.length; i++) {
+        val = data[i] * k + val * (1 - k);
+        out.push(val);
+      }
+      return out;
+    }
+    const ema12    = ema(closes, 12);
+    const ema26    = ema(closes, 26);
+    const macdLine = ema12.slice(ema12.length - ema26.length).map((v, i) => v - ema26[i]);
+    const signal9  = ema(macdLine, 9);
+    const macd     = parseFloat(macdLine[macdLine.length - 1].toFixed(4));
+    const macdSig  = parseFloat(signal9[signal9.length - 1].toFixed(4));
+    const macdHist = parseFloat((macd - macdSig).toFixed(4));
+
+    // ── Bollinger Bands(20, 2σ) ──
+    const bbPeriod = 20;
+    const bbCloses = closes.slice(-bbPeriod);
+    const bbMiddle = bbCloses.reduce((a, b) => a + b, 0) / bbPeriod;
+    const variance = bbCloses.reduce((a, c) => a + Math.pow(c - bbMiddle, 2), 0) / bbPeriod;
+    const stdDev   = Math.sqrt(variance);
+    const bbUpper  = parseFloat((bbMiddle + 2 * stdDev).toFixed(2));
+    const bbLower  = parseFloat((bbMiddle - 2 * stdDev).toFixed(2));
+    const bbMid    = parseFloat(bbMiddle.toFixed(2));
+    const currentPrice = closes[closes.length - 1];
+
+    res.json({
+      success: true,
+      pair, tf,
+      price: parseFloat(currentPrice.toFixed(4)),
+      rsi,
+      macd: { macd, signal: macdSig, histogram: macdHist },
+      bb:   { upper: bbUpper, middle: bbMid, lower: bbLower },
+      data: { rsi, macd, signal: macdSig, histogram: macdHist, bbUpper, bbMid, bbLower }
+    });
+  } catch (err) {
+    console.error('/api/analysis error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ── User Status ──────────────────────────────────────────────
 app.get('/api/user/status', async (req, res) => {
   try {
@@ -192,6 +300,9 @@ app.get('/api/user/status', async (req, res) => {
 
     const user = await ensureAdminPromotion(uid, tokenEmail);
     if (!user) return res.status(500).json({ success: false, error: 'Could not load user' });
+
+    // FIX: track last login time
+    await User.updateOne({ uid }, { lastLogin: new Date() });
 
     const isMaintenance = globalSettings.maintenance || user.maintenance;
     const maintMsg = globalSettings.maintenance
@@ -297,6 +408,38 @@ app.post('/api/paper/trade', verifyToken, async (req, res) => {
   }
 });
 
+// FIX: Paper trade CLOSE endpoint — was missing; open trades stuck forever
+app.patch('/api/paper/trade/:id/close', verifyToken, async (req, res) => {
+  try {
+    const trade = await PaperTrade.findOne({ _id: req.params.id, userUid: req.user.uid });
+    if (!trade) return res.status(404).json({ success: false, error: 'Trade not found' });
+    if (trade.status !== 'OPEN') {
+      return res.json({ success: false, error: 'Trade is already closed' });
+    }
+
+    // closePrice from body, or fall back to current entry price
+    const closePrice = parseFloat(req.body.closePrice) || trade.entry;
+    const priceDiff  = trade.direction === 'LONG'
+      ? closePrice - trade.entry
+      : trade.entry - closePrice;
+    const pnlPct = (priceDiff / trade.entry) * trade.leverage * 100;
+    const pnl    = parseFloat(((pnlPct / 100) * trade.size).toFixed(2));
+
+    const closedTrade = await PaperTrade.findByIdAndUpdate(
+      trade._id,
+      { status: 'CLOSED', closePrice, closedAt: new Date(), pnl, pnlPct: parseFloat(pnlPct.toFixed(2)) },
+      { new: true }
+    );
+
+    // Refund size + PnL to paper balance
+    await User.updateOne({ uid: req.user.uid }, { $inc: { paperBalance: trade.size + pnl } });
+
+    res.json({ success: true, trade: closedTrade });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ── User Report Submission (public — no auth required) ────────
 app.post('/api/reports', async (req, res) => {
   try {
@@ -324,11 +467,10 @@ app.post('/api/reports', async (req, res) => {
 });
 
 // ── User's own reports ────────────────────────────────────────
-app.get('/api/my-reports', async (req, res) => {
+app.get('/api/my-reports', verifyToken, async (req, res) => {
   try {
-    const { uid } = req.query;
-    if (!uid) return res.status(400).json({ success: false, error: 'uid required' });
-    const data = await Report.find({ reporterUid: uid })
+    // FIX: use token UID instead of trusting query param uid
+    const data = await Report.find({ reporterUid: req.user.uid })
       .sort({ createdAt: -1 }).limit(20);
     res.json({ success: true, data });
   } catch(err) {
@@ -554,6 +696,17 @@ app.post('/api/admin/broadcast', verifyAdmin, async (req, res) => {
 });
 
 // ── Admin: Reports CRUD ───────────────────────────────────────
+// FIX: /unread-count MUST be registered BEFORE /:id — otherwise Express matches
+// "unread-count" as the :id param and this route is never reached.
+app.get('/api/admin/reports/unread-count', verifyAdmin, async (req, res) => {
+  try {
+    const count = await Report.countDocuments({ status: 'open', readByAdmin: false });
+    res.json({ success: true, count });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.get('/api/admin/reports', verifyAdmin, async (req, res) => {
   try {
     const { status, skip=0, limit=50 } = req.query;
@@ -564,15 +717,6 @@ app.get('/api/admin/reports', verifyAdmin, async (req, res) => {
       Report.countDocuments({ status: 'open' }),
     ]);
     res.json({ success: true, total, openCount, data });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.get('/api/admin/reports/unread-count', verifyAdmin, async (req, res) => {
-  try {
-    const count = await Report.countDocuments({ status: 'open', readByAdmin: false });
-    res.json({ success: true, count });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -720,5 +864,10 @@ server.listen(PORT, () => {
 });
 
 process.on('SIGTERM', () => {
+  server.close(() => process.exit(0));
+});
+
+// FIX: also handle Ctrl+C in dev (SIGINT)
+process.on('SIGINT', () => {
   server.close(() => process.exit(0));
 });
