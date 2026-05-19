@@ -1225,7 +1225,6 @@ window.adminSignOut = async function() {
             else alert('❌ '+(j.error||j.message||'Failed'));
         } catch(e) { alert('❌ '+e.message); }
     }
-    }
 
     function confirmLogout() { if(typeof adminSignOut==='function') adminSignOut(); else window.location.href='login.html'; }
 
