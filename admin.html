@@ -342,6 +342,9 @@
         <button class="menu-item" onclick="showSection('settings', this)">
             <span class="menu-icon">⚙️</span> Settings
         </button>
+        <button class="menu-item" onclick="window.location.href='dashboard.html'" style="color:var(--blue,#3b82f6)">
+            <span class="menu-icon">👤</span> User Panel
+        </button>
         <button class="menu-item danger" onclick="confirmLogout()">
             <span class="menu-icon">🔓</span> Logout
         </button>
@@ -873,13 +876,30 @@ onAuthStateChanged(auth, async u => {
   try {
     const sr = await fetch('/api/user/status?uid=' + encodeURIComponent(u.uid));
     const sj = await sr.json();
-    if (!sj.success || sj.status.role !== 'admin') { window.location.href = 'dashboard.html'; return; }
-  } catch(_) {
-    // On error, deny access — fail safe
-    window.location.href = 'dashboard.html'; return;
+    if (!sj.success || sj.status.role !== 'admin') {
+      // Not an admin — redirect to user dashboard
+      window.location.href = 'dashboard.html';
+      return;
+    }
+  } catch(err) {
+    // On network error retry once after 2s before denying
+    console.warn('Admin check failed, retrying...', err.message);
+    await new Promise(r => setTimeout(r, 2000));
+    try {
+      const sr2 = await fetch('/api/user/status?uid=' + encodeURIComponent(u.uid));
+      const sj2 = await sr2.json();
+      if (!sj2.success || sj2.status.role !== 'admin') {
+        window.location.href = 'dashboard.html'; return;
+      }
+    } catch(_) {
+      window.location.href = 'dashboard.html'; return;
+    }
   }
   window._adminAuth = auth;
   window._adminUser = u;
+  // Show admin content (remove loading overlay if any)
+  const overlay = document.getElementById('adminLoadingOverlay');
+  if (overlay) overlay.style.display = 'none';
   if (typeof loadAdminStats === 'function') loadAdminStats();
 });
 window.adminSignOut = async function() {

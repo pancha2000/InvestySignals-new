@@ -36,6 +36,12 @@ mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/investysign
   .then(() => console.log('✅ MongoDB connected'))
   .catch(err => { console.error('❌ MongoDB error:', err.message); process.exit(1); });
 
+// ── Admin Emails (auto-promoted to 'admin' role on first login) ──
+const ADMIN_EMAILS = [
+  'cdilrukshi52@gmail.com',
+  // Add more admin emails here if needed
+];
+
 // ── Express Setup ────────────────────────────────────────────
 const app = express();
 
@@ -43,8 +49,11 @@ app.use(helmet({
   contentSecurityPolicy: false,   // Firebase CDN scripts need this off
   crossOriginEmbedderPolicy: false
 }));
-app.use(cors());
-app.use(express.json());
+app.use(cors({
+  origin: process.env.ALLOWED_ORIGIN || true,  // Set ALLOWED_ORIGIN in .env for production
+  credentials: true
+}));
+app.use(express.json({ limit: '1mb' }));
 
 // Rate limiting — protect APIs from abuse
 const apiLimiter = rateLimit({
@@ -103,19 +112,26 @@ app.get('/api/user/status', async (req, res) => {
       // Auto-create user record on first access
       try {
         const firebaseUser = await admin.auth().getUser(uid);
+        const isAdmin = ADMIN_EMAILS.includes((firebaseUser.email || '').toLowerCase());
         user = await User.create({
           uid,
           email: firebaseUser.email || '',
           displayName: firebaseUser.displayName || '',
-          role: 'user',
+          role: isAdmin ? 'admin' : 'user',
           plan: 'free'
         });
       } catch {
         user = { uid, role: 'user', plan: 'free', suspended: false, maintenance: false };
       }
     } else {
-      // Update last login
-      await User.updateOne({ uid }, { lastLogin: new Date() });
+      // Auto-promote existing records if email matches admin list
+      const isAdminEmail = ADMIN_EMAILS.includes((user.email || '').toLowerCase());
+      if (isAdminEmail && user.role !== 'admin') {
+        await User.updateOne({ uid }, { role: 'admin', lastLogin: new Date() });
+        user.role = 'admin';
+      } else {
+        await User.updateOne({ uid }, { lastLogin: new Date() });
+      }
     }
 
     res.json({ success: true, status: {
@@ -318,13 +334,30 @@ app.get('/api/analysis', async (req, res) => {
 // ── Admin Stats ───────────────────────────────────────────────
 app.get('/api/admin/stats', verifyAdmin, async (req, res) => {
   try {
-    const [totalUsers, activeSignals, totalSignals, openTrades] = await Promise.all([
+    const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+    const [totalUsers, activeSignals, totalSignals, openTrades,
+           proCount, eliteCount, adminCount, newUsersToday,
+           closedSignals] = await Promise.all([
       User.countDocuments(),
       Signal.countDocuments({ active: true, status: 'ACTIVE' }),
       Signal.countDocuments(),
-      PaperTrade.countDocuments({ status: 'OPEN' })
+      PaperTrade.countDocuments({ status: 'OPEN' }),
+      User.countDocuments({ plan: 'pro' }),
+      User.countDocuments({ plan: 'elite' }),
+      User.countDocuments({ role: 'admin' }),
+      User.countDocuments({ createdAt: { $gte: todayStart } }),
+      Signal.find({ status: { $in: ['TP1_HIT','TP2_HIT','SL_HIT'] } }).select('status pnl').lean()
     ]);
-    res.json({ success: true, stats: { totalUsers, activeSignals, totalSignals, openTrades } });
+    const wins   = closedSignals.filter(s => ['TP1_HIT','TP2_HIT'].includes(s.status)).length;
+    const losses = closedSignals.filter(s => s.status === 'SL_HIT').length;
+    const total  = wins + losses;
+    const winRate = total > 0 ? ((wins/total)*100).toFixed(1) : 0;
+    const avgRR  = total > 0 ? (closedSignals.reduce((a,s)=>a+(s.pnl||0),0)/total).toFixed(2) : 0;
+    res.json({ success: true, stats: {
+      totalUsers, activeSignals, totalSignals, openTrades,
+      proCount, eliteCount, adminCount, newUsersToday,
+      wins, losses, winRate, avgRR
+    }});
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

@@ -683,6 +683,10 @@
         <div class="auth-nav-right">
             <span class="badge badge-green" style="display:flex;align-items:center;gap:5px;"><span class="live-dot"
                     style="width:6px;height:6px;"></span>Live</span>
+            <!-- Admin panel link — hidden by default, shown via JS for admin users -->
+            <a href="admin.html" id="adminPanelBtn" style="display:none;align-items:center;gap:5px;padding:6px 12px;background:rgba(240,180,41,0.15);color:#f0b429;border-radius:8px;font-size:0.8rem;font-weight:600;text-decoration:none;border:1px solid rgba(240,180,41,0.3);">
+                ⚡ Admin
+            </a>
             <a href="profile.html" class="user-chip">
                 <div class="user-avatar" id="userAvatar">U</div>
                 <span class="user-name" id="userName">User</span>
@@ -940,6 +944,11 @@
                         return;
                     }
                     window._userRole = sj.status.role || 'user';
+                    // Show admin panel link if user is admin
+                    if (sj.status.role === 'admin') {
+                        const adminBtn = document.getElementById('adminPanelBtn');
+                        if (adminBtn) adminBtn.style.display = 'inline-flex';
+                    }
                 }
             } catch (_) { }
 

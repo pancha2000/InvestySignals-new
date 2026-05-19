@@ -301,7 +301,19 @@
         try {
             const cred = await signInWithEmailAndPassword(auth, email, pw);
             sessionStorage.setItem('user', JSON.stringify({ email: cred.user.email, name: cred.user.displayName }));
-            window.location.href = cred.user.email === 'cdilrukshi52@gmail.com' ? 'admin.html' : 'dashboard.html';
+            // Check role from server to decide where to redirect
+            try {
+                const sr = await fetch('/api/user/status?uid=' + encodeURIComponent(cred.user.uid));
+                const sj = await sr.json();
+                if (sj.success && sj.status.role === 'admin') {
+                    window.location.href = 'admin.html';
+                } else {
+                    window.location.href = 'dashboard.html';
+                }
+            } catch(_) {
+                // Fallback on API error
+                window.location.href = 'dashboard.html';
+            }
         } catch(e) {
             errBox.textContent = 'Invalid email or password.';
             errBox.style.display = 'block';
