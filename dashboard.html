@@ -931,7 +931,10 @@
 
             /* Maintenance + suspend check */
             try {
-                const sr = await fetch('/api/user/status?uid=' + encodeURIComponent(u.uid));
+                const idToken = await u.getIdToken();
+                const sr = await fetch('/api/user/status?uid=' + encodeURIComponent(u.uid), {
+                    headers: { 'Authorization': 'Bearer ' + idToken }
+                });
                 const sj = await sr.json();
                 if (sj.success) {
                     if (sj.status.maintenance) {

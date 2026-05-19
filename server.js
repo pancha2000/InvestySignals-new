@@ -107,27 +107,42 @@ app.get('/api/user/status', async (req, res) => {
     const { uid } = req.query;
     if (!uid) return res.json({ success: false, error: 'uid required' });
 
+    // Extract email directly from Bearer token (most reliable source)
+    let tokenEmail = null;
+    const authHeader = req.headers.authorization || '';
+    if (authHeader.startsWith('Bearer ')) {
+      try {
+        const decoded = await admin.auth().verifyIdToken(authHeader.slice(7));
+        tokenEmail = (decoded.email || '').toLowerCase();
+      } catch(_) {}
+    }
+
     let user = await User.findOne({ uid });
     if (!user) {
-      // Auto-create user record on first access
+      // New user — create record
       try {
         const firebaseUser = await admin.auth().getUser(uid);
-        const isAdmin = ADMIN_EMAILS.includes((firebaseUser.email || '').toLowerCase());
+        const email = firebaseUser.email || tokenEmail || '';
+        const isAdmin = ADMIN_EMAILS.includes(email.toLowerCase());
         user = await User.create({
           uid,
-          email: firebaseUser.email || '',
+          email,
           displayName: firebaseUser.displayName || '',
           role: isAdmin ? 'admin' : 'user',
           plan: 'free'
         });
       } catch {
-        user = { uid, role: 'user', plan: 'free', suspended: false, maintenance: false };
+        const email = tokenEmail || '';
+        const isAdmin = ADMIN_EMAILS.includes(email);
+        user = { uid, email, role: isAdmin ? 'admin' : 'user', plan: 'free', suspended: false, maintenance: false };
       }
     } else {
-      // Auto-promote existing records if email matches admin list
-      const isAdminEmail = ADMIN_EMAILS.includes((user.email || '').toLowerCase());
+      // Existing user — use token email as source of truth for admin check
+      const checkEmail = tokenEmail || (user.email || '').toLowerCase();
+      const isAdminEmail = ADMIN_EMAILS.includes(checkEmail);
       if (isAdminEmail && user.role !== 'admin') {
-        await User.updateOne({ uid }, { role: 'admin', lastLogin: new Date() });
+        // Promote to admin and fix email if missing
+        await User.updateOne({ uid }, { role: 'admin', email: checkEmail, lastLogin: new Date() });
         user.role = 'admin';
       } else {
         await User.updateOne({ uid }, { lastLogin: new Date() });
