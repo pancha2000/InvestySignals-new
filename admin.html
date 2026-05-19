@@ -287,24 +287,6 @@
 </head>
 <body>
 
-<!-- Auth Loading Overlay — hidden once Firebase auth verifies admin -->
-<div id="adminLoadingOverlay" style="
-    position:fixed;inset:0;z-index:9999;
-    background:var(--bg,#0a0a0f);
-    display:flex;flex-direction:column;
-    align-items:center;justify-content:center;gap:16px;">
-  <div style="font-size:2rem;">◈</div>
-  <div style="font-size:0.9rem;color:var(--text-muted,#666);font-family:'JetBrains Mono',monospace;">Verifying admin access…</div>
-</div>
-
-<script>
-  // Auth-ready promise — resolves once Firebase onAuthStateChanged sets window._adminUser
-  // All API helper functions await this before calling getToken()
-  window._authReady = new Promise(function(resolve) {
-    window._authReadyResolve = resolve;
-  });
-</script>
-
 <!-- Auth Nav -->
 <nav class="auth-nav">
     <div class="auth-nav-left">
@@ -345,15 +327,11 @@
             <span class="menu-icon">⚡</span> Signals
         </button>
         <button class="menu-item" onclick="showSection('broadcast', this)">
-            <span class="menu-icon">📡</span> Broadcast
+            <span class="menu-icon">📢</span> Announcements
         </button>
-
-        <div class="sidebar-section">Engine</div>
-        <button class="menu-item" onclick="showSection('indicators', this)">
-            <span class="menu-icon">🔧</span> Indicators
-        </button>
-        <button class="menu-item" onclick="showSection('scanner', this)">
-            <span class="menu-icon">🔍</span> Scanner Config
+        <button class="menu-item" onclick="showSection('reports', this)">
+            <span class="menu-icon">🚩</span> Reports
+            <span class="menu-badge" id="reportsBadge" style="display:none;">0</span>
         </button>
 
         <div class="sidebar-section">System</div>
@@ -604,7 +582,7 @@
                     </div>
                     <div class="input-group">
                         <label>Notes / Analysis</label>
-                        <textarea class="input-control" id="f-notes" rows="3" placeholder="Signal rationale, key levels, market context..."></textarea>
+                        <textarea class="input-control" rows="3" placeholder="Signal rationale, key levels, market context..."></textarea>
                     </div>
                     <div style="display:flex;gap:10px;">
                         <button class="btn btn-gold" onclick="postSignal()">⚡ Post Signal</button>
@@ -647,134 +625,99 @@
             </div>
         </div>
 
-        <!-- ── BROADCAST ── -->
+        <!-- ── ANNOUNCEMENTS ── -->
         <div class="content-section" id="section-broadcast">
             <div class="admin-banner">
                 <div class="admin-banner-left">
-                    <div class="admin-pill">Broadcast</div>
-                    <h2>Send Announcement</h2>
-                    <p>Send messages to all users or specific segments.</p>
+                    <div class="admin-pill">Announcements</div>
+                    <h2>Manage Announcements</h2>
+                    <p>Create and manage announcements shown to all users.</p>
                 </div>
             </div>
-            <div class="data-panel">
-                <div class="panel-header"><div class="panel-title">📡 New Broadcast</div></div>
+            <!-- Create Announcement -->
+            <div class="data-panel" style="margin-bottom:20px;">
+                <div class="panel-header"><div class="panel-title">📢 New Announcement</div></div>
                 <div style="padding:22px;">
                     <div class="input-group">
-                        <label>Target Audience</label>
-                        <select class="input-control" id="bc-audience">
-                            <option>All Users</option>
-                            <option>Pro+ Members</option>
-                            <option>Free Users</option>
-                            <option>Elite Only</option>
+                        <label>Title</label>
+                        <input type="text" class="input-control" id="ann-title" placeholder="Announcement title...">
+                    </div>
+                    <div class="input-group">
+                        <label>Type</label>
+                        <select class="input-control" id="ann-type">
+                            <option value="info">ℹ️ Info</option>
+                            <option value="success">✅ Success</option>
+                            <option value="warning">⚠️ Warning</option>
+                            <option value="danger">🚨 Danger</option>
                         </select>
                     </div>
                     <div class="input-group">
-                        <label>Subject</label>
-                        <input type="text" class="input-control" id="bc-subject" placeholder="Announcement title...">
-                    </div>
-                    <div class="input-group">
                         <label>Message</label>
-                        <textarea class="input-control" id="bc-message" rows="6" placeholder="Your announcement message..."></textarea>
+                        <textarea class="input-control" rows="4" id="ann-message" placeholder="Your announcement message..."></textarea>
                     </div>
                     <div style="display:flex;gap:10px;">
-                        <button class="btn btn-gold" onclick="sendBroadcast()">📡 Send Now</button>
-                        <button class="btn btn-surface">Schedule</button>
+                        <button class="btn btn-gold" onclick="postAnnouncement()">📢 Post Announcement</button>
+                        <button class="btn btn-surface" onclick="sendBroadcastWS()">📡 WS Broadcast Only</button>
                     </div>
                 </div>
             </div>
-        </div>
-
-        <!-- ── INDICATORS ── -->
-        <div class="content-section" id="section-indicators">
-            <div class="admin-banner">
-                <div class="admin-banner-left">
-                    <div class="admin-pill">Engine Config</div>
-                    <h2>Indicator Settings</h2>
-                    <p>Configure weights and thresholds for the 16-factor analysis engine.</p>
-                </div>
-                <button class="btn btn-gold btn-sm">💾 Save Changes</button>
-            </div>
+            <!-- Announcements List -->
             <div class="data-panel">
-                <div class="panel-header"><div class="panel-title">🔧 Factor Weights</div></div>
+                <div class="panel-header">
+                    <div class="panel-title">📋 All Announcements</div>
+                    <button class="btn btn-surface btn-sm" onclick="loadAnnouncements()">🔄 Refresh</button>
+                </div>
                 <div class="table-wrap panel-body">
                     <table class="data-table">
                         <thead>
-                            <tr><th>Factor</th><th>Category</th><th>Weight</th><th>Threshold</th><th>Enabled</th></tr>
+                            <tr><th>Title</th><th>Type</th><th>Status</th><th>Date</th><th>Actions</th></tr>
                         </thead>
-                        <tbody>
-                            <tr><td>RSI</td><td><span class="badge badge-blue">Momentum</span></td><td class="mono">8</td><td class="mono">30 / 70</td><td><input type="checkbox" checked></td></tr>
-                            <tr><td>EMA Stack 20/50/200</td><td><span class="badge badge-gold">Trend</span></td><td class="mono">10</td><td class="mono">—</td><td><input type="checkbox" checked></td></tr>
-                            <tr><td>MACD</td><td><span class="badge badge-blue">Momentum</span></td><td class="mono">8</td><td class="mono">Signal cross</td><td><input type="checkbox" checked></td></tr>
-                            <tr><td>Bollinger Bands</td><td><span class="badge badge-blue">Volatility</span></td><td class="mono">6</td><td class="mono">Band touch</td><td><input type="checkbox" checked></td></tr>
-                            <tr><td>ADX</td><td><span class="badge badge-gold">Trend</span></td><td class="mono">8</td><td class="mono">&gt; 18 (gate)</td><td><input type="checkbox" checked></td></tr>
-                            <tr><td>OBV</td><td><span class="badge badge-green">Volume</span></td><td class="mono">7</td><td class="mono">Divergence</td><td><input type="checkbox" checked></td></tr>
-                            <tr><td>Funding Rate</td><td><span class="badge badge-red">Derivatives</span></td><td class="mono">9</td><td class="mono">±0.25% (gate)</td><td><input type="checkbox" checked></td></tr>
-                            <tr><td>Open Interest</td><td><span class="badge badge-red">Derivatives</span></td><td class="mono">8</td><td class="mono">OI spike</td><td><input type="checkbox" checked></td></tr>
-                            <tr><td>BOS / CHoCH</td><td><span class="badge badge-gold">SMC</span></td><td class="mono">10</td><td class="mono">Confirmed</td><td><input type="checkbox" checked></td></tr>
-                            <tr><td>Fair Value Gap</td><td><span class="badge badge-gold">SMC</span></td><td class="mono">9</td><td class="mono">Unfilled</td><td><input type="checkbox" checked></td></tr>
-                            <tr><td>Supertrend</td><td><span class="badge badge-blue">Trend</span></td><td class="mono">7</td><td class="mono">Direction</td><td><input type="checkbox" checked></td></tr>
-                            <tr><td>VWAP</td><td><span class="badge badge-green">Volume</span></td><td class="mono">6</td><td class="mono">Above/Below</td><td><input type="checkbox" checked></td></tr>
+                        <tbody id="annTableBody">
+                            <tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted);">Loading...</td></tr>
                         </tbody>
                     </table>
                 </div>
             </div>
         </div>
 
-        <!-- ── SCANNER ── -->
-        <div class="content-section" id="section-scanner">
+        <!-- ── REPORTS ── -->
+        <div class="content-section" id="section-reports">
             <div class="admin-banner">
                 <div class="admin-banner-left">
-                    <div class="admin-pill">Scanner</div>
-                    <h2>Scanner Configuration</h2>
-                    <p>Control scanner behavior, pairs list, and refresh intervals.</p>
+                    <div class="admin-pill">Reports</div>
+                    <h2>User Reports</h2>
+                    <p>Reports submitted by users — signal issues, bugs, and other feedback.</p>
                 </div>
-                <div style="display:flex;gap:10px;">
-                    <button class="btn btn-surface btn-sm" id="scannerStatus" onclick="toggleScanner(this)">⏸ Pause Scanner</button>
-                    <button class="btn btn-gold btn-sm">💾 Save</button>
-                </div>
+                <button class="btn btn-surface btn-sm" onclick="loadReports()">🔄 Refresh</button>
             </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
-                <div class="data-panel">
-                    <div class="panel-header"><div class="panel-title">⚙️ Engine Settings</div></div>
-                    <div style="padding:20px;display:flex;flex-direction:column;gap:16px;">
-                        <div class="input-group" style="margin:0;">
-                            <label>Min Score to Signal</label>
-                            <input type="number" class="input-control" value="75" min="0" max="100">
-                        </div>
-                        <div class="input-group" style="margin:0;">
-                            <label>Scan Interval (seconds)</label>
-                            <input type="number" class="input-control" value="60">
-                        </div>
-                        <div class="input-group" style="margin:0;">
-                            <label>Max Active Signals</label>
-                            <input type="number" class="input-control" value="50">
-                        </div>
-                        <div class="input-group" style="margin:0;">
-                            <label>Min ADX (hard gate)</label>
-                            <input type="number" class="input-control" value="18">
-                        </div>
-                        <div class="input-group" style="margin:0;">
-                            <label>Max Funding Rate %</label>
-                            <input type="number" class="input-control" value="0.25" step="0.01">
-                        </div>
+            <div class="stats-grid-4" style="grid-template-columns:repeat(4,1fr);margin-bottom:20px;">
+                <div class="stat-box sb-red"><div class="stat-box-lbl">Open</div><div class="stat-box-val text-red" id="repOpen">—</div></div>
+                <div class="stat-box sb-gold"><div class="stat-box-lbl">In Review</div><div class="stat-box-val text-gold" id="repReview">—</div></div>
+                <div class="stat-box sb-green"><div class="stat-box-lbl">Resolved</div><div class="stat-box-val text-green" id="repResolved">—</div></div>
+                <div class="stat-box sb-blue"><div class="stat-box-lbl">Total</div><div class="stat-box-val" style="color:var(--blue)" id="repTotal">—</div></div>
+            </div>
+            <div class="data-panel">
+                <div class="panel-header">
+                    <div class="panel-title">📋 All Reports</div>
+                    <div class="panel-controls">
+                        <select class="input-control" style="width:auto;padding:8px 12px;font-size:0.85rem;" id="repFilterStatus" onchange="loadReports()">
+                            <option value="">All Status</option>
+                            <option value="open">Open</option>
+                            <option value="in_review">In Review</option>
+                            <option value="resolved">Resolved</option>
+                            <option value="dismissed">Dismissed</option>
+                        </select>
                     </div>
                 </div>
-                <div class="data-panel">
-                    <div class="panel-header"><div class="panel-title">📋 Active Pairs</div></div>
-                    <div style="padding:16px;max-height:320px;overflow-y:auto;">
-                        <div style="display:flex;flex-wrap:wrap;gap:6px;">
-                            <script>
-                                const pairs = ['BTCUSDT','ETHUSDT','BNBUSDT','SOLUSDT','XRPUSDT','DOGEUSDT','ADAUSDT','AVAXUSDT','DOTUSDT','LINKUSDT','MATICUSDT','UNIUSDT','ATOMUSDT','LTCUSDT','NEARUSDT','APTUSDT','ARBUSDT','OPUSDT','SUIUSDT'];
-                                document.write(pairs.map(p => `<span class="badge badge-outline" style="cursor:pointer;" title="Click to disable">${p}</span>`).join(''));
-                            </script>
-                        </div>
-                    </div>
-                    <div style="padding:12px 16px;border-top:1px solid var(--border-soft);">
-                        <div style="display:flex;gap:8px;">
-                            <input type="text" class="input-control" style="flex:1;" placeholder="Add pair (e.g. INJUSDT)">
-                            <button class="btn btn-gold btn-sm">+ Add</button>
-                        </div>
-                    </div>
+                <div class="table-wrap panel-body">
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>Category</th><th>Message</th><th>Reporter</th><th>Status</th><th>Date</th><th>Actions</th></tr>
+                        </thead>
+                        <tbody id="reportsTableBody">
+                            <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted);">Loading reports...</td></tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -917,10 +860,9 @@ onAuthStateChanged(auth, async u => {
       window.location.href = 'dashboard.html'; return;
     }
   }
+  window._adminAuth = auth;
   window._adminUser = u;
-  // Signal that auth is ready — unblocks all pending getToken() calls
-  if (window._authReadyResolve) { window._authReadyResolve(); window._authReadyResolve = null; }
-  // Show admin content (remove loading overlay)
+  // Show admin content (remove loading overlay if any)
   const overlay = document.getElementById('adminLoadingOverlay');
   if (overlay) overlay.style.display = 'none';
   if (typeof loadAdminStats === 'function') loadAdminStats();
@@ -937,13 +879,16 @@ window.adminSignOut = async function() {
     // Section switching
     function showSection(id, el) {
         document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));
-        document.getElementById('section-' + id).classList.add('active');
+        const sec = document.getElementById('section-' + id);
+        if (!sec) return;
+        sec.classList.add('active');
         if(el) {
             document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
             el.classList.add('active');
         }
-        // FIX: load users table when users section is opened
-        if (id === 'users' && typeof loadUsers === 'function') loadUsers();
+        if (id === 'users'     && typeof loadUsers         === 'function') loadUsers();
+        if (id === 'reports'   && typeof loadReports        === 'function') loadReports();
+        if (id === 'broadcast' && typeof loadAnnouncements  === 'function') loadAnnouncements();
     }
 
     // Sidebar toggle (mobile)
@@ -977,9 +922,8 @@ window.adminSignOut = async function() {
     }
 
     // Activity Log — loaded from server
-    // ── Helper: get auth token — waits for Firebase auth to complete ──
+    // ── Helper: get auth token ──────────────────────────────────
     async function getToken() {
-        if (!window._adminUser) await window._authReady;
         return window._adminUser ? await window._adminUser.getIdToken() : '';
     }
 
@@ -1131,6 +1075,14 @@ window.adminSignOut = async function() {
                 set('userPro',         (s.proCount||0) + (s.eliteCount||0));
                 set('userBanned',      s.bannedCount !== undefined ? s.bannedCount : '0');
                 set('adminAlerts',     s.openTrades ? s.openTrades : '0');
+                // Update reports badge if openReports available
+                if (s.openReports !== undefined) {
+                    const badge = document.getElementById('reportsBadge');
+                    if (badge) {
+                        badge.textContent = s.openReports;
+                        badge.style.display = s.openReports > 0 ? '' : 'none';
+                    }
+                }
             }
         } catch(e) { console.warn('[Admin] Stats load failed:', e); }
 
@@ -1183,9 +1135,6 @@ window.adminSignOut = async function() {
     async function postSignal() {
         const pair = document.getElementById('f-pair').value.trim().toUpperCase();
         if(!pair) { alert('Enter a trading pair'); return; }
-        // Map human-readable plan labels to schema values
-        const planRaw = document.getElementById('f-plan').value;
-        const planMap = { 'All (Free+)': 'free', 'Pro+': 'pro', 'Elite Only': 'elite' };
         const body = {
             pair,
             direction: document.getElementById('f-dir').value,
@@ -1195,11 +1144,9 @@ window.adminSignOut = async function() {
             tp2:       parseFloat(document.getElementById('f-tp2').value)||0,
             sl:        parseFloat(document.getElementById('f-sl').value)||0,
             score:     parseInt(document.getElementById('f-score').value)||0,
-            plan:      planMap[planRaw] || 'free',
-            notes:     (document.getElementById('f-notes').value||'').trim(),
         };
         try {
-            const idToken = await getToken();
+            const idToken = window._adminUser ? await window._adminUser.getIdToken() : '';
             const res = await fetch('/api/signals', {
                 method:'POST',
                 headers:{'Content-Type':'application/json','Authorization':'Bearer '+idToken},
@@ -1207,22 +1154,22 @@ window.adminSignOut = async function() {
             });
             const j = await res.json();
             if(j.success) { alert('✅ Signal posted for '+pair+'!'); clearForm(); loadAdminStats(); }
-            else alert('❌ '+(j.error||j.message||'Failed to post signal'));
+            else alert('❌ '+(j.message||'Failed to post signal'));
         } catch(e) { alert('❌ Server error: '+e.message); }
     }
 
     async function closeSignal(id) {
         if(!id||!confirm('Close this signal?')) return;
         try {
-            const idToken = await getToken();
+            const idToken = window._adminUser ? await window._adminUser.getIdToken() : '';
             const res = await fetch('/api/signals/'+id, {
                 method:'PATCH',
                 headers:{'Content-Type':'application/json','Authorization':'Bearer '+idToken},
-                body: JSON.stringify({ status:'CANCELLED', active: false })
+                body: JSON.stringify({status:'CLOSED'})
             });
             const j = await res.json();
             if(j.success) loadAdminStats();
-            else alert('❌ '+(j.error||j.message||'Failed'));
+            else alert('❌ '+(j.message||'Failed'));
         } catch(e) { alert('❌ '+e.message); }
     }
 
@@ -1234,46 +1181,204 @@ window.adminSignOut = async function() {
         rows.forEach(row => { row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none'; });
     }
 
-    function toggleScanner(btn) {
-        if(btn.textContent.includes('Pause')) {
-            btn.textContent = '▶ Resume Scanner'; btn.className = 'btn btn-gold btn-sm';
-        } else {
-            btn.textContent = '⏸ Pause Scanner'; btn.className = 'btn btn-surface btn-sm';
+    // ── Reports (රිපෝර්ටු) ───────────────────────────────
+    async function loadReports() {
+        const tbody = document.getElementById('reportsTableBody');
+        if (!tbody) return;
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted);">Loading...</td></tr>';
+        try {
+            const idToken = await getToken();
+            const status  = document.getElementById('repFilterStatus')?.value || '';
+            const url = '/api/admin/reports' + (status ? '?status=' + status : '');
+            const data = await fetch(url, { headers: { 'Authorization': 'Bearer ' + idToken } }).then(r => r.json());
+            if (!data.success) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--red);">Failed to load reports. Check console.</td></tr>';
+                return;
+            }
+            const set = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v; };
+            const reports = data.data || [];
+            const open     = reports.filter(r => r.status === 'open').length;
+            const inReview = reports.filter(r => r.status === 'in_review').length;
+            const resolved = reports.filter(r => r.status === 'resolved').length;
+            set('repOpen',     data.openCount ?? open);
+            set('repReview',   inReview);
+            set('repResolved', resolved);
+            set('repTotal',    data.total ?? reports.length);
+            // Update sidebar badge
+            const badge = document.getElementById('reportsBadge');
+            if (badge) {
+                const openCnt = data.openCount ?? open;
+                badge.textContent = openCnt;
+                badge.style.display = openCnt > 0 ? '' : 'none';
+            }
+            if (!reports.length) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted);">No reports found.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = reports.map((r, i) => {
+                const stColor = { open:'red', in_review:'gold', resolved:'green', dismissed:'muted' }[r.status] || 'muted';
+                const date = r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
+                const msg  = (r.message || '').slice(0, 80) + (r.message?.length > 80 ? '…' : '');
+                return \`<tr>
+                    <td><span class="badge badge-outline" style="font-size:0.68rem;">\${r.category}</span></td>
+                    <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.83rem;">\${msg}</td>
+                    <td style="font-size:0.8rem;color:var(--text-muted);">\${r.reporterEmail||'anonymous'}</td>
+                    <td><span class="badge badge-\${stColor}" style="font-size:0.68rem;">\${r.status}</span></td>
+                    <td style="font-size:0.8rem;color:var(--text-muted);">\${date}</td>
+                    <td>
+                        <div style="display:flex;gap:6px;">
+                            <select class="input-control" style="width:auto;padding:4px 8px;font-size:0.75rem;" onchange="updateReportStatus('\${r._id}', this.value)">
+                                <option \${r.status==='open'?'selected':''} value="open">Open</option>
+                                <option \${r.status==='in_review'?'selected':''} value="in_review">In Review</option>
+                                <option \${r.status==='resolved'?'selected':''} value="resolved">Resolved</option>
+                                <option \${r.status==='dismissed'?'selected':''} value="dismissed">Dismissed</option>
+                            </select>
+                            <button class="btn btn-surface btn-sm" onclick="deleteReport('\${r._id}')">🗑</button>
+                        </div>
+                    </td>
+                </tr>\`;
+            }).join('');
+        } catch(e) {
+            console.error('[Admin] loadReports error:', e);
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--red);">Error: ' + e.message + '</td></tr>';
         }
     }
 
-    function clearForm() {
-        ['f-pair','f-lev','f-entry','f-tp1','f-tp2','f-sl','f-score','f-notes'].forEach(id => {
-            const el = document.getElementById(id); if(el) el.value = '';
-        });
-        const dir = document.getElementById('f-dir');   if(dir)  dir.selectedIndex  = 0;
-        const pln = document.getElementById('f-plan');  if(pln)  pln.selectedIndex  = 0;
+    async function updateReportStatus(id, status) {
+        try {
+            const idToken = await getToken();
+            await fetch('/api/admin/reports/' + id, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+                body: JSON.stringify({ status, readByAdmin: true })
+            });
+            loadReports();
+        } catch(e) { alert('❌ ' + e.message); }
     }
 
-    // ── Broadcast Send ──────────────────────────────────────────
-    async function sendBroadcast() {
-        const audience = (document.getElementById('bc-audience') || {}).value || 'All Users';
-        const subject  = ((document.getElementById('bc-subject') || {}).value || '').trim();
-        const message  = ((document.getElementById('bc-message') || {}).value || '').trim();
-        if (!message) { alert('Please enter a message'); return; }
+    async function deleteReport(id) {
+        if (!confirm('Delete this report permanently?')) return;
+        try {
+            const idToken = await getToken();
+            await fetch('/api/admin/reports/' + id, {
+                method: 'DELETE',
+                headers: { 'Authorization': 'Bearer ' + idToken }
+            });
+            loadReports();
+        } catch(e) { alert('❌ ' + e.message); }
+    }
+
+    // ── Announcements ────────────────────────────────────────────
+    async function loadAnnouncements() {
+        const tbody = document.getElementById('annTableBody');
+        if (!tbody) return;
+        try {
+            const idToken = await getToken();
+            const data = await fetch('/api/admin/announcements', {
+                headers: { 'Authorization': 'Bearer ' + idToken }
+            }).then(r => r.json());
+            const anns = data.data || [];
+            if (!anns.length) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted);">No announcements yet.</td></tr>';
+                return;
+            }
+            const typeColor = { info:'blue', warning:'gold', success:'green', danger:'red' };
+            tbody.innerHTML = anns.map(a => {
+                const tc   = typeColor[a.type] || 'blue';
+                const date = a.createdAt ? new Date(a.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
+                return \`<tr>
+                    <td style="font-weight:600;">\${a.title}</td>
+                    <td><span class="badge badge-\${tc}" style="font-size:0.68rem;">\${a.type}</span></td>
+                    <td>\${a.active ? '<span style="color:var(--green);">✓ Active</span>' : '<span style="color:var(--text-muted);">Inactive</span>'}</td>
+                    <td style="font-size:0.8rem;color:var(--text-muted);">\${date}</td>
+                    <td>
+                        <div style="display:flex;gap:6px;">
+                            <button class="btn btn-surface btn-sm" onclick="toggleAnn('\${a._id}', \${!a.active})">\${a.active ? '⏸ Deactivate' : '▶ Activate'}</button>
+                            <button class="btn btn-surface btn-sm" onclick="deleteAnn('\${a._id}')">🗑</button>
+                        </div>
+                    </td>
+                </tr>\`;
+            }).join('');
+        } catch(e) { console.error('[Admin] loadAnnouncements error:', e); }
+    }
+
+    async function postAnnouncement() {
+        const title   = document.getElementById('ann-title')?.value.trim();
+        const message = document.getElementById('ann-message')?.value.trim();
+        const type    = document.getElementById('ann-type')?.value || 'info';
+        if (!title || !message) { alert('Title and message are required'); return; }
+        try {
+            const idToken = await getToken();
+            const res = await fetch('/api/admin/announcements', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+                body: JSON.stringify({ title, message, type, active: true })
+            });
+            const j = await res.json();
+            if (j.success) {
+                alert('✅ Announcement posted and saved!');
+                document.getElementById('ann-title').value = '';
+                document.getElementById('ann-message').value = '';
+                loadAnnouncements();
+            } else {
+                alert('❌ ' + (j.error || 'Failed'));
+            }
+        } catch(e) { alert('❌ ' + e.message); }
+    }
+
+    async function toggleAnn(id, active) {
+        try {
+            const idToken = await getToken();
+            await fetch('/api/admin/announcements/' + id, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+                body: JSON.stringify({ active })
+            });
+            loadAnnouncements();
+        } catch(e) { alert('❌ ' + e.message); }
+    }
+
+    async function deleteAnn(id) {
+        if (!confirm('Delete this announcement?')) return;
+        try {
+            const idToken = await getToken();
+            await fetch('/api/admin/announcements/' + id, {
+                method: 'DELETE',
+                headers: { 'Authorization': 'Bearer ' + idToken }
+            });
+            loadAnnouncements();
+        } catch(e) { alert('❌ ' + e.message); }
+    }
+
+    // ── WS-only broadcast (no DB save) ─────────────────────────
+    async function sendBroadcastWS() {
+        const message = document.getElementById('ann-message')?.value.trim();
+        const title   = document.getElementById('ann-title')?.value.trim();
+        if (!message) { alert('Enter a message first'); return; }
         try {
             const idToken = await getToken();
             const res = await fetch('/api/admin/broadcast', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
-                body: JSON.stringify({ subject, message, audience })
+                body: JSON.stringify({ subject: title, message, saveToDb: false })
             });
             const j = await res.json();
-            if (j.success) {
-                alert('✅ Broadcast sent to all connected users!');
-                const sbj = document.getElementById('bc-subject');
-                const msg = document.getElementById('bc-message');
-                if (sbj) sbj.value = '';
-                if (msg) msg.value = '';
-            } else {
-                alert('❌ ' + (j.error || j.message || 'Failed to send broadcast'));
-            }
-        } catch(e) { alert('❌ Server error: ' + e.message); }
+            if (j.success) alert('✅ Broadcast sent to all connected users (not saved to DB)!');
+            else alert('❌ ' + (j.error || 'Failed'));
+        } catch(e) { alert('❌ ' + e.message); }
+    }
+
+    function clearForm() {
+        ['f-pair','f-lev','f-entry','f-tp1','f-tp2','f-sl','f-score'].forEach(id => {
+            const el = document.getElementById(id); if(el) el.value = '';
+        });
+    }
+
+    // ── Broadcast Send ──────────────────────────────────────────
+    // FIX: was onclick-less button — now wired to this function
+    async function sendBroadcast() {
+        // Use postAnnouncement() to save to DB, or sendBroadcastWS() for WS-only
+        await sendBroadcastWS();
     }
 
     // ── Settings Toggles (Maintenance, Engine, Registrations) ──
