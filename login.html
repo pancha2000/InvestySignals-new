@@ -246,7 +246,7 @@
                         <input type="checkbox" id="remember">
                         <label for="remember">Remember me</label>
                     </div>
-                    <a href="#" class="forgot-link">Forgot password?</a>
+                    <a href="#" class="forgot-link" id="forgotLink">Forgot password?</a>
                 </div>
                 <button class="btn btn-gold" style="width:100%;justify-content:center;" id="loginBtn" onclick="handleLogin()">
                     Sign In →
@@ -266,8 +266,8 @@
 </div>
 
 <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-    import { getAuth, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk",
@@ -322,6 +322,29 @@
 
     // Enter key submit
     document.addEventListener('keydown', e => { if(e.key === 'Enter') handleLogin(); });
+
+    // Forgot Password handler
+    document.getElementById('forgotLink').addEventListener('click', async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('email').value.trim();
+        const errBox = document.getElementById('errorBox');
+        if (!email) {
+            errBox.textContent = 'Please enter your email address first, then click Forgot password.';
+            errBox.style.display = 'block';
+            errBox.style.color = '#f0b429';
+            return;
+        }
+        try {
+            await sendPasswordResetEmail(auth, email);
+            errBox.textContent = '✅ Password reset email sent! Check your inbox.';
+            errBox.style.display = 'block';
+            errBox.style.color = '#22c55e';
+        } catch(err) {
+            errBox.textContent = 'Could not send reset email. Check your email address.';
+            errBox.style.display = 'block';
+            errBox.style.color = '#ff3d5a';
+        }
+    });
 </script>
 </body>
 </html>

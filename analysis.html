@@ -225,10 +225,10 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
 const auth = getAuth(initializeApp({
-  apiKey:"AIzaSyCUlQccwWK-UBzFPWov2GYQjecF63y6X8k",
-  authDomain:"crypto-98b33.firebaseapp.com", projectId:"crypto-98b33",
-  storageBucket:"crypto-98b33.firebasestorage.app", messagingSenderId:"619954501803",
-  appId:"1:619954501803:web:559d48b801f072abd71fee"
+  apiKey:"AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk",
+  authDomain:"investysignals-890ba.firebaseapp.com", projectId:"investysignals-890ba",
+  storageBucket:"investysignals-890ba.firebasestorage.app", messagingSenderId:"1045281522975",
+  appId:"1:1045281522975:web:534501aab2ceeb887bdc2a"
 }));
 onAuthStateChanged(auth, u => {
   if (!u) { window.location.href = 'login.html'; return; }
@@ -274,12 +274,11 @@ window.handleSignOut = async () => { await signOut(auth); window.location.href =
             document.getElementById('rsiTf').textContent     = tf;
             document.getElementById('rsiMarker').style.left  = rsi + '%';
         } catch(e) {
-            // Server doesn't have /api/analysis yet — show placeholder
-            document.getElementById('rsiValue').textContent  = 'N/A';
-            document.getElementById('rsiValue').style.color  = 'var(--text-muted)';
-            document.getElementById('rsiStatus').textContent = 'Server endpoint not yet configured';
-            document.getElementById('rsiSignal').textContent = '⚠ /api/analysis not available';
-            document.getElementById('rsiSignal').style.color = 'var(--text-muted)';
+            document.getElementById('rsiValue').textContent  = 'Error';
+            document.getElementById('rsiValue').style.color  = 'var(--red)';
+            document.getElementById('rsiStatus').textContent = 'Failed to fetch data';
+            document.getElementById('rsiSignal').textContent = '⚠ ' + (e.message || 'Analysis failed - check server');
+            document.getElementById('rsiSignal').style.color = 'var(--red)';
             document.getElementById('rsiPair').textContent   = pair;
             document.getElementById('rsiTf').textContent     = tf;
         }
