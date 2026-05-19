@@ -385,7 +385,7 @@ app.get('/api/admin/stats', verifyAdmin, async (req, res) => {
     const todayStart = new Date(); todayStart.setHours(0,0,0,0);
     const [totalUsers, activeSignals, totalSignals, openTrades,
            proCount, eliteCount, adminCount, newUsersToday,
-           closedSignals] = await Promise.all([
+           bannedCount, closedSignals] = await Promise.all([
       User.countDocuments(),
       Signal.countDocuments({ active: true, status: 'ACTIVE' }),
       Signal.countDocuments(),
@@ -394,6 +394,7 @@ app.get('/api/admin/stats', verifyAdmin, async (req, res) => {
       User.countDocuments({ plan: 'elite' }),
       User.countDocuments({ role: 'admin' }),
       User.countDocuments({ createdAt: { $gte: todayStart } }),
+      User.countDocuments({ suspended: true }),
       Signal.find({ status: { $in: ['TP1_HIT','TP2_HIT','SL_HIT'] } }).select('status pnl').lean()
     ]);
     const wins   = closedSignals.filter(s => ['TP1_HIT','TP2_HIT'].includes(s.status)).length;
@@ -404,7 +405,7 @@ app.get('/api/admin/stats', verifyAdmin, async (req, res) => {
     res.json({ success: true, stats: {
       totalUsers, activeSignals, totalSignals, openTrades,
       proCount, eliteCount, adminCount, newUsersToday,
-      wins, losses, winRate, avgRR
+      bannedCount, wins, losses, winRate, avgRR
     }});
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
