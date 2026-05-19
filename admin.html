@@ -287,6 +287,24 @@
 </head>
 <body>
 
+<!-- Auth Loading Overlay — hidden once Firebase auth verifies admin -->
+<div id="adminLoadingOverlay" style="
+    position:fixed;inset:0;z-index:9999;
+    background:var(--bg,#0a0a0f);
+    display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:16px;">
+  <div style="font-size:2rem;">◈</div>
+  <div style="font-size:0.9rem;color:var(--text-muted,#666);font-family:'JetBrains Mono',monospace;">Verifying admin access…</div>
+</div>
+
+<script>
+  // Auth-ready promise — resolves once Firebase onAuthStateChanged sets window._adminUser
+  // All API helper functions await this before calling getToken()
+  window._authReady = new Promise(function(resolve) {
+    window._authReadyResolve = resolve;
+  });
+</script>
+
 <!-- Auth Nav -->
 <nav class="auth-nav">
     <div class="auth-nav-left">
@@ -586,7 +604,7 @@
                     </div>
                     <div class="input-group">
                         <label>Notes / Analysis</label>
-                        <textarea class="input-control" rows="3" placeholder="Signal rationale, key levels, market context..."></textarea>
+                        <textarea class="input-control" id="f-notes" rows="3" placeholder="Signal rationale, key levels, market context..."></textarea>
                     </div>
                     <div style="display:flex;gap:10px;">
                         <button class="btn btn-gold" onclick="postSignal()">⚡ Post Signal</button>
@@ -643,7 +661,7 @@
                 <div style="padding:22px;">
                     <div class="input-group">
                         <label>Target Audience</label>
-                        <select class="input-control">
+                        <select class="input-control" id="bc-audience">
                             <option>All Users</option>
                             <option>Pro+ Members</option>
                             <option>Free Users</option>
@@ -652,11 +670,11 @@
                     </div>
                     <div class="input-group">
                         <label>Subject</label>
-                        <input type="text" class="input-control" placeholder="Announcement title...">
+                        <input type="text" class="input-control" id="bc-subject" placeholder="Announcement title...">
                     </div>
                     <div class="input-group">
                         <label>Message</label>
-                        <textarea class="input-control" rows="6" placeholder="Your announcement message..."></textarea>
+                        <textarea class="input-control" id="bc-message" rows="6" placeholder="Your announcement message..."></textarea>
                     </div>
                     <div style="display:flex;gap:10px;">
                         <button class="btn btn-gold" onclick="sendBroadcast()">📡 Send Now</button>
@@ -899,9 +917,10 @@ onAuthStateChanged(auth, async u => {
       window.location.href = 'dashboard.html'; return;
     }
   }
-  window._adminAuth = auth;
   window._adminUser = u;
-  // Show admin content (remove loading overlay if any)
+  // Signal that auth is ready — unblocks all pending getToken() calls
+  if (window._authReadyResolve) { window._authReadyResolve(); window._authReadyResolve = null; }
+  // Show admin content (remove loading overlay)
   const overlay = document.getElementById('adminLoadingOverlay');
   if (overlay) overlay.style.display = 'none';
   if (typeof loadAdminStats === 'function') loadAdminStats();
@@ -958,8 +977,9 @@ window.adminSignOut = async function() {
     }
 
     // Activity Log — loaded from server
-    // ── Helper: get auth token ──────────────────────────────────
+    // ── Helper: get auth token — waits for Firebase auth to complete ──
     async function getToken() {
+        if (!window._adminUser) await window._authReady;
         return window._adminUser ? await window._adminUser.getIdToken() : '';
     }
 
@@ -1163,6 +1183,9 @@ window.adminSignOut = async function() {
     async function postSignal() {
         const pair = document.getElementById('f-pair').value.trim().toUpperCase();
         if(!pair) { alert('Enter a trading pair'); return; }
+        // Map human-readable plan labels to schema values
+        const planRaw = document.getElementById('f-plan').value;
+        const planMap = { 'All (Free+)': 'free', 'Pro+': 'pro', 'Elite Only': 'elite' };
         const body = {
             pair,
             direction: document.getElementById('f-dir').value,
@@ -1172,9 +1195,11 @@ window.adminSignOut = async function() {
             tp2:       parseFloat(document.getElementById('f-tp2').value)||0,
             sl:        parseFloat(document.getElementById('f-sl').value)||0,
             score:     parseInt(document.getElementById('f-score').value)||0,
+            plan:      planMap[planRaw] || 'free',
+            notes:     (document.getElementById('f-notes').value||'').trim(),
         };
         try {
-            const idToken = window._adminUser ? await window._adminUser.getIdToken() : '';
+            const idToken = await getToken();
             const res = await fetch('/api/signals', {
                 method:'POST',
                 headers:{'Content-Type':'application/json','Authorization':'Bearer '+idToken},
@@ -1182,23 +1207,24 @@ window.adminSignOut = async function() {
             });
             const j = await res.json();
             if(j.success) { alert('✅ Signal posted for '+pair+'!'); clearForm(); loadAdminStats(); }
-            else alert('❌ '+(j.message||'Failed to post signal'));
+            else alert('❌ '+(j.error||j.message||'Failed to post signal'));
         } catch(e) { alert('❌ Server error: '+e.message); }
     }
 
     async function closeSignal(id) {
         if(!id||!confirm('Close this signal?')) return;
         try {
-            const idToken = window._adminUser ? await window._adminUser.getIdToken() : '';
+            const idToken = await getToken();
             const res = await fetch('/api/signals/'+id, {
                 method:'PATCH',
                 headers:{'Content-Type':'application/json','Authorization':'Bearer '+idToken},
-                body: JSON.stringify({status:'CLOSED'})
+                body: JSON.stringify({ status:'CANCELLED', active: false })
             });
             const j = await res.json();
             if(j.success) loadAdminStats();
-            else alert('❌ '+(j.message||'Failed'));
+            else alert('❌ '+(j.error||j.message||'Failed'));
         } catch(e) { alert('❌ '+e.message); }
+    }
     }
 
     function confirmLogout() { if(typeof adminSignOut==='function') adminSignOut(); else window.location.href='login.html'; }
@@ -1218,18 +1244,18 @@ window.adminSignOut = async function() {
     }
 
     function clearForm() {
-        ['f-pair','f-lev','f-entry','f-tp1','f-tp2','f-sl','f-score'].forEach(id => {
+        ['f-pair','f-lev','f-entry','f-tp1','f-tp2','f-sl','f-score','f-notes'].forEach(id => {
             const el = document.getElementById(id); if(el) el.value = '';
         });
+        const dir = document.getElementById('f-dir');   if(dir)  dir.selectedIndex  = 0;
+        const pln = document.getElementById('f-plan');  if(pln)  pln.selectedIndex  = 0;
     }
 
     // ── Broadcast Send ──────────────────────────────────────────
-    // FIX: was onclick-less button — now wired to this function
     async function sendBroadcast() {
-        const inputs = document.querySelectorAll('#section-broadcast .input-control');
-        const audience = inputs[0] ? inputs[0].value : 'All Users';
-        const subject  = inputs[1] ? inputs[1].value.trim() : '';
-        const message  = inputs[2] ? inputs[2].value.trim() : '';
+        const audience = (document.getElementById('bc-audience') || {}).value || 'All Users';
+        const subject  = ((document.getElementById('bc-subject') || {}).value || '').trim();
+        const message  = ((document.getElementById('bc-message') || {}).value || '').trim();
         if (!message) { alert('Please enter a message'); return; }
         try {
             const idToken = await getToken();
@@ -1241,10 +1267,12 @@ window.adminSignOut = async function() {
             const j = await res.json();
             if (j.success) {
                 alert('✅ Broadcast sent to all connected users!');
-                inputs[1].value = '';
-                inputs[2].value = '';
+                const sbj = document.getElementById('bc-subject');
+                const msg = document.getElementById('bc-message');
+                if (sbj) sbj.value = '';
+                if (msg) msg.value = '';
             } else {
-                alert('❌ ' + (j.error || 'Failed to send broadcast'));
+                alert('❌ ' + (j.error || j.message || 'Failed to send broadcast'));
             }
         } catch(e) { alert('❌ Server error: ' + e.message); }
     }
