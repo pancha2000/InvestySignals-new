@@ -665,6 +665,7 @@
     </div>
 
     <!-- Auth Nav -->
+    <div class="nav-backdrop" id="navBackdrop"></div>
     <nav class="auth-nav">
         <div class="auth-nav-left">
             <button class="auth-hamburger" id="authHamburger">☰</button>
@@ -679,18 +680,27 @@
             <a href="analysis.html" class="auth-nav-link">🧠 Analysis</a>
             <a href="live-signals.html" class="auth-nav-link">📝 Paper Trades</a>
             <a href="profile.html" class="auth-nav-link">👤 Profile</a>
+            <a href="admin.html" id="adminNavLink" class="auth-nav-link" style="display:none;color:#f0b429;">⚡ Admin Panel</a>
+            <div class="nav-divider"></div>
+            <a class="auth-nav-link" style="color:var(--red,#ff4d4f);cursor:pointer;" id="sidebarLogout">🔓 Log Out</a>
         </nav>
         <div class="auth-nav-right">
             <span class="badge badge-green" style="display:flex;align-items:center;gap:5px;"><span class="live-dot"
                     style="width:6px;height:6px;"></span>Live</span>
-            <!-- Admin panel link — hidden by default, shown via JS for admin users -->
-            <a href="admin.html" id="adminPanelBtn" style="display:none;align-items:center;gap:5px;padding:6px 12px;background:rgba(240,180,41,0.15);color:#f0b429;border-radius:8px;font-size:0.8rem;font-weight:600;text-decoration:none;border:1px solid rgba(240,180,41,0.3);">
-                ⚡ Admin
-            </a>
-            <a href="profile.html" class="user-chip">
-                <div class="user-avatar" id="userAvatar">U</div>
-                <span class="user-name" id="userName">User</span>
-            </a>
+            <!-- User chip with dropdown -->
+            <div class="user-chip-wrap" id="userChipWrap">
+                <div class="user-chip" id="userChipBtn" style="cursor:pointer;">
+                    <div class="user-avatar" id="userAvatar">U</div>
+                    <span class="user-name" id="userName">User</span>
+                    <span style="font-size:0.65rem;color:var(--text-muted);margin-left:2px;">▾</span>
+                </div>
+                <div class="user-dropdown" id="userDropdown">
+                    <a href="profile.html" class="ud-item">👤 Profile</a>
+                    <a href="admin.html" id="adminDropBtn" class="ud-item" style="display:none;color:#f0b429;">⚡ Admin Panel</a>
+                    <div style="height:1px;background:var(--border-soft);margin:4px 0;"></div>
+                    <a class="ud-item ud-danger" id="dropdownLogout">🔓 Log Out</a>
+                </div>
+            </div>
         </div>
     </nav>
 
@@ -949,8 +959,10 @@
                     window._userRole = sj.status.role || 'user';
                     // Show admin panel link if user is admin
                     if (sj.status.role === 'admin') {
-                        const adminBtn = document.getElementById('adminPanelBtn');
-                        if (adminBtn) adminBtn.style.display = 'inline-flex';
+                        ['adminDropBtn','adminNavLink'].forEach(id => {
+                            const el = document.getElementById(id);
+                            if (el) el.style.display = id === 'adminNavLink' ? 'flex' : 'flex';
+                        });
                     }
                 }
             } catch (_) { }
@@ -1018,9 +1030,47 @@
         setInterval(tick, 1000); tick();
 
         /* ── Mobile nav ── */
-        const _ham = document.getElementById('authHamburger');
-        const _menu = document.getElementById('authNavMenu');
-        if (_ham && _menu) _ham.addEventListener('click', () => _menu.classList.toggle('open'));
+        const _ham      = document.getElementById('authHamburger');
+        const _menu     = document.getElementById('authNavMenu');
+        const _backdrop = document.getElementById('navBackdrop');
+
+        function closeNav() {
+            _menu && _menu.classList.remove('open');
+            _backdrop && _backdrop.classList.remove('open');
+        }
+        if (_ham && _menu) {
+            _ham.addEventListener('click', () => {
+                const open = _menu.classList.toggle('open');
+                _backdrop && _backdrop.classList.toggle('open', open);
+            });
+        }
+        _backdrop && _backdrop.addEventListener('click', closeNav);
+
+        /* ── Sidebar logout ── */
+        const _slogout = document.getElementById('sidebarLogout');
+        if (_slogout) _slogout.addEventListener('click', async () => {
+            closeNav();
+            try { await signOut(auth); } catch(_) {}
+            window.location.href = 'index.html';
+        });
+
+        /* ── User dropdown ── */
+        const _chip    = document.getElementById('userChipBtn');
+        const _ddrop   = document.getElementById('userDropdown');
+        if (_chip && _ddrop) {
+            _chip.addEventListener('click', (e) => {
+                e.stopPropagation();
+                _ddrop.classList.toggle('open');
+            });
+            document.addEventListener('click', () => _ddrop.classList.remove('open'));
+        }
+
+        /* ── Dropdown logout ── */
+        const _dlogout = document.getElementById('dropdownLogout');
+        if (_dlogout) _dlogout.addEventListener('click', async () => {
+            try { await signOut(auth); } catch(_) {}
+            window.location.href = 'index.html';
+        });
 
         /* ── Fade-up observer ── */
         const _obs = new IntersectionObserver(entries => {

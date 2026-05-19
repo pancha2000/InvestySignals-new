@@ -113,9 +113,17 @@
     </nav>
     <div class="auth-nav-right">
         <span class="badge badge-green live-dot">Live</span>
-        <div class="user-chip" id="userChip">
-            <div class="user-avatar" id="userAvatar">U</div>
-            <span class="user-name" id="userName">User</span>
+        <div class="user-chip-wrap" id="userChipWrap">
+            <div class="user-chip" id="userChipBtn" style="cursor:pointer;">
+                <div class="user-avatar" id="userAvatar">U</div>
+                <span class="user-name" id="userName">User</span>
+                <span style="font-size:0.65rem;color:var(--text-muted);margin-left:2px;">▾</span>
+            </div>
+            <div class="user-dropdown" id="userDropdown">
+                <a href="profile.html" class="ud-item">👤 Profile</a>
+                <div style="height:1px;background:var(--border-soft);margin:4px 0;"></div>
+                <a class="ud-item ud-danger" id="dropdownLogout">🔓 Log Out</a>
+            </div>
         </div>
         <button id="logoutBtn" class="btn btn-surface btn-sm">Logout</button>
     </div>
@@ -277,6 +285,19 @@
     };
 
     loadSignals();
+
+        /* ── User dropdown ── */
+        const _chip  = document.getElementById('userChipBtn');
+        const _ddrop = document.getElementById('userDropdown');
+        if (_chip && _ddrop) {
+            _chip.addEventListener('click', e => { e.stopPropagation(); _ddrop.classList.toggle('open'); });
+            document.addEventListener('click', () => _ddrop.classList.remove('open'));
+        }
+        const _dlogout = document.getElementById('dropdownLogout');
+        if (_dlogout) _dlogout.addEventListener('click', async () => {
+            try { await signOut(auth); } catch(_) {}
+            window.location.href = 'index.html';
+        });
 </script>
 </body>
 </html>

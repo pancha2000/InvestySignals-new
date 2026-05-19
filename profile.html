@@ -199,10 +199,18 @@
             <a href="profile.html" class="auth-nav-link active">👤 Profile</a>
         </div>
         <div class="auth-nav-right">
-            <a href="profile.html" class="user-chip" id="userChip" style="display: flex;">
-                <div class="user-avatar" id="userAvatar">U</div>
-                <div class="user-name" id="userName" style="display: block;">User</div>
-            </a>
+            <div class="user-chip-wrap" id="userChipWrap">
+                <div class="user-chip" id="userChipBtn" style="cursor:pointer;display:flex;">
+                    <div class="user-avatar" id="userAvatar">U</div>
+                    <div class="user-name" id="userName" style="display:block;">User</div>
+                    <span style="font-size:0.65rem;color:var(--text-muted);margin-left:2px;">▾</span>
+                </div>
+                <div class="user-dropdown" id="userDropdown">
+                    <a href="profile.html" class="ud-item">👤 Profile</a>
+                    <div style="height:1px;background:var(--border-soft);margin:4px 0;"></div>
+                    <a class="ud-item ud-danger" id="dropdownLogout">🔓 Log Out</a>
+                </div>
+            </div>
             <button id="logoutBtn" class="btn btn-ghost" style="padding: 6px 12px; font-size: 0.875rem;">Logout</button>
         </div>
     </nav>
@@ -478,7 +486,20 @@
         document.querySelectorAll('.auth-nav-link').forEach(link => {
             link.addEventListener('click', () => authNavMenu.classList.remove('open'));
         });
-    </script>
+    
+        /* ── User dropdown ── */
+        const _chip  = document.getElementById('userChipBtn');
+        const _ddrop = document.getElementById('userDropdown');
+        if (_chip && _ddrop) {
+            _chip.addEventListener('click', e => { e.stopPropagation(); _ddrop.classList.toggle('open'); });
+            document.addEventListener('click', () => _ddrop.classList.remove('open'));
+        }
+        const _dlogout = document.getElementById('dropdownLogout');
+        if (_dlogout) _dlogout.addEventListener('click', async () => {
+            try { await signOut(auth); } catch(_) {}
+            window.location.href = 'index.html';
+        });
+</script>
 
 </body>
 </html>

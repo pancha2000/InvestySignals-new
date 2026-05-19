@@ -101,7 +101,14 @@
         @media (max-width: 600px) {
             .indicator-grid { grid-template-columns: repeat(2, 1fr); }
             .levels-row { grid-template-columns: 1fr; }
-            .controls-panel { flex-direction: column; }
+            .controls-panel {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .controls-panel .ctrl-group { flex: unset; width: 100%; }
+            .controls-panel .btn { width: 100%; justify-content: center; }
+            .page-wrap { padding: 80px 16px 40px; }
+            .results-panel { padding: 20px 16px; }
             .results-panel { padding: 18px; }
         }
     </style>
