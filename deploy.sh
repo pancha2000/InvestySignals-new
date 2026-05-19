@@ -11,13 +11,12 @@
 
 set -e
 
-# ── Config ───────────────────────────────────────────────────
 REPO_URL="https://github.com/pancha2000/InvestySignals-new.git"
 APP_DIR="/var/www/investysignals"
 APP_NAME="investysignals"
 NODE_VERSION="20"
+VPS_IP=$(hostname -I | awk '{print $1}')
 
-# ── Colors ───────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -27,18 +26,11 @@ NC='\033[0m'
 
 log()     { echo -e "${GREEN}[✓]${NC} $1"; }
 warn()    { echo -e "${YELLOW}[!]${NC} $1"; }
-error()   { echo -e "${RED}[✗] ERROR: $1${NC}"; exit 1; }
+error()   { echo -e "${RED}[✗] $1${NC}"; exit 1; }
 info()    { echo -e "${CYAN}[→]${NC} $1"; }
-section() {
-  echo ""
-  echo -e "${BLUE}╔══════════════════════════════════════════╗${NC}"
-  printf "${BLUE}║  %-40s║${NC}\n" "$1"
-  echo -e "${BLUE}╚══════════════════════════════════════════╝${NC}"
-}
+section() { echo -e "\n${BLUE}╔══════════════════════════════════════════╗${NC}"; printf "${BLUE}║  %-40s║${NC}\n" "$1"; echo -e "${BLUE}╚══════════════════════════════════════════╝${NC}"; }
 
-check_root() {
-  [ "$EUID" -eq 0 ] || error "Root access required. Run: sudo bash deploy.sh $1"
-}
+check_root() { [ "$EUID" -eq 0 ] || error "Run as root: sudo bash deploy.sh $1"; }
 
 # ================================================================
 #  INSTALL
@@ -48,14 +40,14 @@ cmd_install() {
   section "InvestySignals - Fresh VPS Install"
 
   # ── 1. System Packages ──────────────────────────────────────
-  section "Step 1/7 - System Packages"
+  section "Step 1/8 - System Packages"
   apt-get update -qq
   apt-get install -y curl gnupg git unzip software-properties-common \
-                     ca-certificates lsb-release ufw nginx
+                     ca-certificates lsb-release ufw nginx openssl
   log "System packages ready"
 
   # ── 2. Node.js ──────────────────────────────────────────────
-  section "Step 2/7 - Node.js ${NODE_VERSION}"
+  section "Step 2/8 - Node.js ${NODE_VERSION}"
   if command -v node &>/dev/null && \
      [ "$(node -v | sed 's/v//' | cut -d. -f1)" -ge "${NODE_VERSION}" ]; then
     log "Node.js $(node -v) already installed"
@@ -67,43 +59,55 @@ cmd_install() {
   fi
 
   # ── 3. MongoDB ──────────────────────────────────────────────
-  section "Step 3/7 - MongoDB 7"
+  section "Step 3/8 - MongoDB"
   if command -v mongod &>/dev/null; then
     log "MongoDB already installed"
   else
-    info "Installing MongoDB 7..."
-    # Ubuntu version detect කරලා correct repo use කරනවා
+    info "Detecting Ubuntu version..."
     UBUNTU_VER=$(lsb_release -rs)
+    UBUNTU_CS=$(lsb_release -cs)
+    info "Ubuntu $UBUNTU_VER ($UBUNTU_CS) detected"
+
+    # Remove any broken repo files first
+    rm -f /etc/apt/sources.list.d/mongodb-org-*.list
+
     if [[ "$UBUNTU_VER" == "24.04" ]]; then
-      # Ubuntu 24.04 (Noble) — MongoDB 8.0 use කරනවා
+      info "Installing MongoDB 8.0 for Ubuntu 24.04..."
       curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc \
         | gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg --dearmor
       echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/8.0 multiverse" \
         > /etc/apt/sources.list.d/mongodb-org-8.0.list
     else
-      # Ubuntu 22.04 (Jammy) හා older — MongoDB 7.0
+      info "Installing MongoDB 7.0 for Ubuntu $UBUNTU_VER..."
       curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc \
         | gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
       echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" \
         > /etc/apt/sources.list.d/mongodb-org-7.0.list
     fi
+
     apt-get update -qq
     apt-get install -y mongodb-org
     log "MongoDB installed"
   fi
+
   systemctl enable mongod
   systemctl start mongod
   sleep 2
   systemctl is-active --quiet mongod && log "MongoDB running" || error "MongoDB failed to start"
 
   # ── 4. PM2 ──────────────────────────────────────────────────
-  section "Step 4/7 - PM2"
-  command -v pm2 &>/dev/null && log "PM2 already installed" || { npm install -g pm2; log "PM2 installed"; }
+  section "Step 4/8 - PM2"
+  if command -v pm2 &>/dev/null; then
+    log "PM2 already installed"
+  else
+    npm install -g pm2
+    log "PM2 installed"
+  fi
 
-  # ── 5. Clone Repo ───────────────────────────────────────────
-  section "Step 5/7 - Clone Repository"
+  # ── 5. Clone Repository ─────────────────────────────────────
+  section "Step 5/8 - Clone Repository"
   if [ -d "$APP_DIR/.git" ]; then
-    warn "$APP_DIR exists - pulling latest"
+    warn "$APP_DIR exists — pulling latest"
     cd "$APP_DIR" && git pull
   else
     git clone "$REPO_URL" "$APP_DIR"
@@ -113,32 +117,60 @@ cmd_install() {
   # serviceAccount.json check
   if [ ! -f "$APP_DIR/serviceAccount.json" ]; then
     echo ""
-    warn "serviceAccount.json NOT FOUND!"
-    warn "ඔබේ computer හි run කරන්න:"
-    warn "  scp serviceAccount.json root@$(hostname -I | awk '{print $1}'):${APP_DIR}/"
+    warn "══════════════════════════════════════════"
+    warn "  serviceAccount.json NOT FOUND!"
+    warn "  ඔබේ computer හි නව terminal එකක run කරන්න:"
     warn ""
-    read -p "Upload කළාද? (y/n): " SA_DONE
+    warn "  scp serviceAccount.json root@${VPS_IP}:${APP_DIR}/"
+    warn ""
+    warn "══════════════════════════════════════════"
+    read -p "  Upload කළාද? (y/n): " SA_DONE
     [[ "$SA_DONE" =~ ^[Yy]$ ]] || error "serviceAccount.json required"
     [ -f "$APP_DIR/serviceAccount.json" ] || error "File not found at $APP_DIR/serviceAccount.json"
   fi
   log "serviceAccount.json found"
 
-  # .env
   [ -f "$APP_DIR/.env" ] || cp "$APP_DIR/.env.example" "$APP_DIR/.env"
   log ".env ready"
 
-  # npm install
+  info "Installing npm packages..."
   cd "$APP_DIR"
   npm install --production
   log "npm packages installed"
 
-  # ── 6. Nginx ────────────────────────────────────────────────
-  section "Step 6/7 - Nginx"
-  SERVER_IP=$(hostname -I | awk '{print $1}')
+  # ── 6. SSL Certificate ──────────────────────────────────────
+  section "Step 6/8 - SSL Certificate (Self-Signed)"
+  if [ ! -f /etc/ssl/certs/investysignals.crt ]; then
+    info "Creating self-signed SSL certificate..."
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+      -keyout /etc/ssl/private/investysignals.key \
+      -out /etc/ssl/certs/investysignals.crt \
+      -subj "/C=LK/ST=WP/L=Colombo/O=InvestySignals/CN=${VPS_IP}" \
+      2>/dev/null
+    log "SSL certificate created"
+  else
+    log "SSL certificate already exists"
+  fi
+
+  # ── 7. Nginx ────────────────────────────────────────────────
+  section "Step 7/8 - Nginx"
   cat > /etc/nginx/sites-available/investysignals << NGINXEOF
+# HTTP → HTTPS redirect
 server {
     listen 80;
-    server_name ${SERVER_IP} _;
+    server_name _;
+    return 301 https://\$host\$request_uri;
+}
+
+# HTTPS
+server {
+    listen 443 ssl;
+    server_name _;
+
+    ssl_certificate     /etc/ssl/certs/investysignals.crt;
+    ssl_certificate_key /etc/ssl/private/investysignals.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
 
     location / {
         proxy_pass         http://127.0.0.1:3000;
@@ -148,6 +180,7 @@ server {
         proxy_set_header   Host \$host;
         proxy_set_header   X-Real-IP \$remote_addr;
         proxy_set_header   X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto https;
         proxy_read_timeout 86400;
     }
 
@@ -162,7 +195,7 @@ NGINXEOF
   ln -sf /etc/nginx/sites-available/investysignals /etc/nginx/sites-enabled/investysignals
   rm -f /etc/nginx/sites-enabled/default
   nginx -t && systemctl reload nginx
-  log "Nginx configured"
+  log "Nginx configured with HTTPS"
 
   # Firewall
   ufw allow OpenSSH      2>/dev/null || true
@@ -170,8 +203,8 @@ NGINXEOF
   ufw --force enable     2>/dev/null || true
   log "Firewall configured"
 
-  # ── 7. Start App ────────────────────────────────────────────
-  section "Step 7/7 - Start Application"
+  # ── 8. Start App ────────────────────────────────────────────
+  section "Step 8/8 - Start Application"
   cd "$APP_DIR"
   pm2 delete "$APP_NAME" 2>/dev/null || true
   pm2 start server.js --name "$APP_NAME" --restart-delay=3000 --max-restarts=10 --time
@@ -179,21 +212,19 @@ NGINXEOF
   PM2_CMD=$(pm2 startup systemd -u root --hp /root 2>/dev/null | grep "sudo" | tail -1)
   [ -n "$PM2_CMD" ] && eval "$PM2_CMD" 2>/dev/null || true
   pm2 save
-  log "App started with PM2"
+  log "App started"
 
   # ── Done ────────────────────────────────────────────────────
   echo ""
-  echo -e "${GREEN}╔══════════════════════════════════════╗${NC}"
-  echo -e "${GREEN}║    ✅  Installation Complete!        ║${NC}"
-  echo -e "${GREEN}╚══════════════════════════════════════╝${NC}"
+  echo -e "${GREEN}╔══════════════════════════════════════════════╗${NC}"
+  echo -e "${GREEN}║        ✅  Installation Complete!            ║${NC}"
+  echo -e "${GREEN}╚══════════════════════════════════════════════╝${NC}"
   echo ""
-  echo -e "  🌐 Website : ${CYAN}http://${SERVER_IP}${NC}"
-  echo -e "  📋 Logs    : sudo bash deploy.sh logs"
-  echo -e "  📊 Status  : sudo bash deploy.sh status"
+  echo -e "  🌐 Website : ${CYAN}https://${VPS_IP}${NC}"
+  echo -e "  ${YELLOW}(Browser warning එකදී: Advanced → Proceed)${NC}"
   echo ""
-  echo -e "  ${YELLOW}Domain + SSL (optional):${NC}"
-  echo -e "  ${YELLOW}  apt install certbot python3-certbot-nginx${NC}"
-  echo -e "  ${YELLOW}  certbot --nginx -d yourdomain.com${NC}"
+  echo -e "  📋 Logs    : sudo bash /var/www/investysignals/deploy.sh logs"
+  echo -e "  📊 Status  : sudo bash /var/www/investysignals/deploy.sh status"
   echo ""
   pm2 status
 }
@@ -204,32 +235,26 @@ NGINXEOF
 cmd_update() {
   check_root update
   section "InvestySignals - Update"
-
   [ -d "$APP_DIR" ] || error "$APP_DIR not found. Run install first."
 
-  # Backup secrets
   info "Backing up config files..."
   cp "$APP_DIR/.env"                /tmp/.investy_env_bak 2>/dev/null || true
   cp "$APP_DIR/serviceAccount.json" /tmp/.investy_sa_bak  2>/dev/null || true
 
-  # Pull latest code
   info "Pulling from GitHub..."
   cd "$APP_DIR"
   git fetch origin
   git reset --hard origin/main
   log "Code updated"
 
-  # Restore secrets
   cp /tmp/.investy_env_bak  "$APP_DIR/.env"                2>/dev/null || true
   cp /tmp/.investy_sa_bak   "$APP_DIR/serviceAccount.json" 2>/dev/null || true
   log "Config files preserved"
 
-  # Update packages
   info "Updating npm packages..."
   npm install --production
   log "npm updated"
 
-  # Restart
   info "Restarting..."
   pm2 restart "$APP_NAME" --update-env || \
     pm2 start server.js --name "$APP_NAME" --restart-delay=3000
@@ -244,7 +269,7 @@ cmd_update() {
 }
 
 # ================================================================
-#  STATUS
+#  STATUS / LOGS / RESTART / STOP
 # ================================================================
 cmd_status() {
   section "InvestySignals - Status"
@@ -258,17 +283,13 @@ cmd_status() {
       || echo -e "  ${RED}[✗]${NC} $svc  STOPPED"
   done
   echo ""
-  echo -e "${CYAN}── Network ───────────────────────────${NC}"
-  echo -e "  IP : ${CYAN}$(hostname -I | awk '{print $1}')${NC}"
-  ss -tlnp 2>/dev/null | grep -E ':80|:443|:3000|:27017' | awk '{print "  Port: "$4}' || true
+  echo -e "${CYAN}── URL ───────────────────────────────${NC}"
+  echo -e "  ${CYAN}https://$(hostname -I | awk '{print $1}')${NC}"
 }
 
-# ================================================================
-#  LOGS / RESTART / STOP
-# ================================================================
 cmd_logs()    { pm2 logs "$APP_NAME" --lines 100; }
 cmd_restart() { check_root restart; pm2 restart "$APP_NAME"; pm2 status; }
-cmd_stop()    { check_root stop;    pm2 stop    "$APP_NAME"; pm2 status; }
+cmd_stop()    { check_root stop; pm2 stop "$APP_NAME"; pm2 status; }
 
 # ================================================================
 #  MAIN
@@ -286,7 +307,7 @@ case "${1:-help}" in
   *)
     echo "  Usage: sudo bash deploy.sh [command]"
     echo ""
-    echo "  install  — Fresh VPS: Node, MongoDB, Nginx, PM2, App"
+    echo "  install  — Fresh VPS: Node, MongoDB, Nginx, SSL, PM2, App"
     echo "  update   — GitHub pull + npm update + restart"
     echo "  status   — All services status"
     echo "  logs     — Live logs"
