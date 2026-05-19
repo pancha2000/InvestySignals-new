@@ -659,7 +659,7 @@
                         <textarea class="input-control" rows="6" placeholder="Your announcement message..."></textarea>
                     </div>
                     <div style="display:flex;gap:10px;">
-                        <button class="btn btn-gold">📡 Send Now</button>
+                        <button class="btn btn-gold" onclick="sendBroadcast()">📡 Send Now</button>
                         <button class="btn btn-surface">Schedule</button>
                     </div>
                 </div>
@@ -923,6 +923,8 @@ window.adminSignOut = async function() {
             document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
             el.classList.add('active');
         }
+        // FIX: load users table when users section is opened
+        if (id === 'users' && typeof loadUsers === 'function') loadUsers();
     }
 
     // Sidebar toggle (mobile)
@@ -956,24 +958,125 @@ window.adminSignOut = async function() {
     }
 
     // Activity Log — loaded from server
+    // ── Helper: get auth token ──────────────────────────────────
+    async function getToken() {
+        return window._adminUser ? await window._adminUser.getIdToken() : '';
+    }
+
+    // ── Load Users ──────────────────────────────────────────────
+    async function loadUsers() {
+        const tbody = document.getElementById('userTableBody');
+        if (!tbody) return;
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text-muted);">Loading users…</td></tr>';
+        try {
+            const idToken = await getToken();
+            const res  = await fetch('/api/admin/users', { headers: { 'Authorization': 'Bearer ' + idToken } });
+            const data = await res.json();
+            if (!data.success || !Array.isArray(data.users)) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--red);">Failed to load users. Check console.</td></tr>';
+                return;
+            }
+            const users = data.users;
+            // Update mini stats
+            const set = (id, v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+            set('userTotal',  users.length);
+            set('userActive', users.filter(u => !u.suspended).length);
+            set('userPro',    users.filter(u => u.plan==='pro'||u.plan==='elite').length);
+            set('userBanned', users.filter(u => u.suspended).length);
+            if (!users.length) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text-muted);">No users registered yet.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = users.map((u, i) => {
+                const planColor = { free:'outline', pro:'gold', elite:'purple' }[u.plan] || 'outline';
+                const joined = u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
+                const statusBadge = u.suspended
+                    ? '<span class="badge badge-red" style="font-size:0.68rem;">Suspended</span>'
+                    : u.role==='admin'
+                        ? '<span class="badge badge-red" style="font-size:0.68rem;">Admin</span>'
+                        : '<span class="badge badge-green" style="font-size:0.68rem;">Active</span>';
+                return `<tr>
+                    <td class="mono" style="color:var(--text-muted);font-size:0.8rem;">${i+1}</td>
+                    <td>${u.displayName||'—'}</td>
+                    <td style="font-size:0.82rem;">${u.email||'—'}</td>
+                    <td><span class="badge badge-${planColor}" style="font-size:0.68rem;text-transform:uppercase;">${u.plan||'free'}</span></td>
+                    <td style="font-size:0.8rem;color:var(--text-muted);">${joined}</td>
+                    <td>${statusBadge}</td>
+                    <td>
+                        <div style="display:flex;gap:6px;">
+                            <button class="btn btn-surface btn-sm" onclick="toggleSuspend('${u.uid}', ${!u.suspended}, '${(u.displayName||u.email||'').replace(/'/g,'')}')">
+                                ${u.suspended ? '✅ Unsuspend' : '🚫 Suspend'}
+                            </button>
+                            <select class="input-control" style="width:auto;padding:4px 8px;font-size:0.78rem;" onchange="changePlan('${u.uid}', this.value)">
+                                <option ${u.plan==='free'?'selected':''}>free</option>
+                                <option ${u.plan==='pro'?'selected':''}>pro</option>
+                                <option ${u.plan==='elite'?'selected':''}>elite</option>
+                            </select>
+                        </div>
+                    </td>
+                </tr>`;
+            }).join('');
+        } catch(e) {
+            console.error('[Admin] loadUsers error:', e);
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--red);">Error: ' + e.message + '</td></tr>';
+        }
+    }
+
+    async function toggleSuspend(uid, suspend, name) {
+        if (!confirm((suspend ? 'Suspend' : 'Unsuspend') + ' user ' + name + '?')) return;
+        try {
+            const idToken = await getToken();
+            const res  = await fetch('/api/admin/users/' + uid, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+                body: JSON.stringify({ suspended: suspend, suspendReason: suspend ? 'Suspended by admin' : '' })
+            });
+            const j = await res.json();
+            if (j.success) loadUsers();
+            else alert('❌ ' + (j.error || 'Failed'));
+        } catch(e) { alert('❌ ' + e.message); }
+    }
+
+    async function changePlan(uid, plan) {
+        try {
+            const idToken = await getToken();
+            const res  = await fetch('/api/admin/users/' + uid, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+                body: JSON.stringify({ plan })
+            });
+            const j = await res.json();
+            if (!j.success) alert('❌ ' + (j.error || 'Failed to update plan'));
+        } catch(e) { alert('❌ ' + e.message); }
+    }
+
+    // ── Load Stats ──────────────────────────────────────────────
     async function loadAdminStats() {
         try {
-            const [sigR, repR] = await Promise.all([
-                fetch('/api/signals').then(r => r.json()),
-                fetch('/api/reports').then(r => r.json()).catch(()=>({success:false})),
+            // FIX: include auth token + use correct endpoints
+            const idToken = await getToken();
+            const headers = { 'Authorization': 'Bearer ' + idToken };
+            const [sigR, statsR] = await Promise.all([
+                fetch('/api/signals',       { headers }).then(r => r.json()),
+                fetch('/api/admin/stats',   { headers }).then(r => r.json()).catch(() => ({ success: false })),
             ]);
-            if (sigR.success && Array.isArray(sigR.data)) {
-                const all    = sigR.data;
-                const active = all.filter(s => s.status === 'ACTIVE' || s.status === 'WAITING');
-                const closed = all.filter(s => s.result === 'WIN' || s.result === 'LOSS');
-                const wins   = all.filter(s => s.result === 'WIN');
+
+            // FIX: server returns { signals: [...] } not { data: [...] }
+            if (sigR.success && Array.isArray(sigR.signals)) {
+                const all    = sigR.signals;
+                const active = all.filter(s => s.status === 'ACTIVE');
+                const tp1    = all.filter(s => s.status === 'TP1_HIT');
+                const tp2    = all.filter(s => s.status === 'TP2_HIT');
+                const sl     = all.filter(s => s.status === 'SL_HIT');
+                const wins   = tp1.length + tp2.length;
+                const closed = wins + sl.length;
                 const el_a   = document.getElementById('adminActiveSignals'); if(el_a) el_a.textContent = active.length;
                 const el_s   = document.getElementById('adminSignalSub');     if(el_s) el_s.textContent = all.length + ' total';
                 const el_b   = document.getElementById('adminSignalBadge');   if(el_b) el_b.textContent = active.length + ' Active';
-                if (closed.length) {
-                    const wr = Math.round(wins.length / closed.length * 100);
+                if (closed) {
+                    const wr = Math.round(wins / closed * 100);
                     const el_w  = document.getElementById('adminWinRate'); if(el_w)  el_w.textContent  = wr + '%';
-                    const el_ws = document.getElementById('adminWinSub');  if(el_ws) el_ws.textContent = wins.length+'W / '+(closed.length-wins.length)+'L';
+                    const el_ws = document.getElementById('adminWinSub');  if(el_ws) el_ws.textContent = wins+'W / '+sl.length+'L';
                     const dv = document.querySelector('.donut-val'); if(dv) dv.textContent = wr + '%';
                 }
                 const tbody = document.getElementById('adminSignalsBody');
@@ -981,47 +1084,69 @@ window.adminSignOut = async function() {
                     tbody.innerHTML = active.length === 0
                         ? '<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--text-muted);">No active signals. Post a new signal above.</td></tr>'
                         : active.map(s => `<tr>
-                            <td class="mono">${s.pair||s.coin||'—'}</td>
+                            <td class="mono">${s.pair||'—'}</td>
                             <td><span class="badge badge-${s.direction==='LONG'?'green':'red'}" style="font-size:0.7rem;">${s.direction}</span></td>
                             <td class="mono">${s.entry||'—'}</td>
                             <td class="mono" style="color:var(--green)">${s.tp1||'—'}</td>
                             <td class="mono" style="color:var(--red)">${s.sl||'—'}</td>
                             <td class="mono">${s.score||'—'}</td>
-                            <td><span class="badge badge-outline" style="font-size:0.68rem;">${s.status||'Active'}</span></td>
+                            <td><span class="badge badge-outline" style="font-size:0.68rem;">${s.status||'ACTIVE'}</span></td>
                             <td style="color:var(--text-muted);font-size:0.8rem;">${s.plan||'All'}</td>
-                            <td><button class="btn btn-surface btn-sm" onclick="closeSignal('${s._id||s.id}')">Close</button></td>
+                            <td><button class="btn btn-surface btn-sm" onclick="closeSignal('${s._id}')">Close</button></td>
                           </tr>`).join('');
                 }
             }
-            if (repR.success && repR.data) {
-                const r = repR.data;
+            // FIX: use /api/admin/stats, response key is statsR.stats (not repR.data)
+            if (statsR.success && statsR.stats) {
+                const s = statsR.stats;
                 const set = (id, val) => { const el=document.getElementById(id); if(el) el.textContent=val; };
-                set('adminTotalUsers', r.totalUsers||'—');
-                set('adminUserSub',    (r.newUsersToday||0)+' new today');
-                set('adminProCount',   r.proCount||'—');
-                set('adminEliteCount', r.eliteCount||'—');
-                set('adminMRR',        r.mrr?'$'+r.mrr:'—');
-                set('adminAvgRR',      r.avgRR?r.avgRR+'×':'—');
-                set('userTotal',       r.totalUsers||'—');
-                set('userActive',      r.activeUsers||'—');
-                set('userPro',         (r.proCount||0)+(r.eliteCount||0));
-                set('userBanned',      r.bannedCount||'0');
+                set('adminTotalUsers', s.totalUsers !== undefined ? s.totalUsers : '—');
+                set('adminUserSub',    (s.newUsersToday||0) + ' new today');
+                set('adminProCount',   s.proCount !== undefined ? s.proCount : '—');
+                set('adminEliteCount', s.eliteCount !== undefined ? s.eliteCount : '—');
+                set('adminMRR',        '—'); // not in DB yet
+                set('adminAvgRR',      s.avgRR ? s.avgRR + '×' : '—');
+                set('userTotal',       s.totalUsers !== undefined ? s.totalUsers : '—');
+                set('userActive',      s.totalUsers !== undefined ? s.totalUsers - (s.bannedCount||0) : '—');
+                set('userPro',         (s.proCount||0) + (s.eliteCount||0));
+                set('userBanned',      s.bannedCount !== undefined ? s.bannedCount : '0');
+                set('adminAlerts',     s.openTrades ? s.openTrades : '0');
             }
         } catch(e) { console.warn('[Admin] Stats load failed:', e); }
-        // Activity log
+
+        // Activity log — FIX: auth token + correct key logR.trades (not logR.data)
         try {
-            const logR = await fetch('/api/reports/activity').then(r=>r.json()).catch(()=>({success:false}));
-            if (logR.success && logR.data) {
-                const html = logR.data.slice(0,10).map(l => `
+            const idToken = await getToken();
+            const logR = await fetch('/api/reports/activity', {
+                headers: { 'Authorization': 'Bearer ' + idToken }
+            }).then(r => r.json()).catch(() => ({ success: false }));
+            if (logR.success && Array.isArray(logR.trades)) {
+                const html = logR.trades.slice(0, 10).map(t => `
                     <div class="log-item">
-                        <div class="log-dot" style="background:var(--${l.color||'text-muted'})"></div>
+                        <div class="log-dot" style="background:var(--blue)"></div>
                         <div class="log-msg">
-                            <div>${l.message||l.msg||'—'}</div>
-                            <div class="log-time">${l.time||l.createdAt||'—'}</div>
+                            <div>Paper trade: <strong>${t.pair||'?'}</strong> ${t.direction||''} @ ${t.entry||'?'} — <span style="color:${t.status==='OPEN'?'var(--green)':'var(--text-muted)'}">${t.status||'?'}</span></div>
+                            <div class="log-time">${t.openedAt ? new Date(t.openedAt).toLocaleString() : '—'}</div>
                         </div>
                     </div>`).join('');
-                const lc = document.getElementById('activityLog'); if(lc) lc.innerHTML = html;
-                const ra = document.getElementById('recentActivity'); if(ra) ra.innerHTML = html;
+                const lc = document.getElementById('activityLog');   if(lc) lc.innerHTML = html || '<div style="padding:24px;text-align:center;color:var(--text-muted);">No activity yet.</div>';
+                const ra = document.getElementById('recentActivity'); if(ra) ra.innerHTML = html || '<div style="padding:24px;text-align:center;color:var(--text-muted);">No activity yet.</div>';
+            }
+        } catch(_) {}
+
+        // Load settings (maintenance state)
+        try {
+            const idToken = await getToken();
+            const setR = await fetch('/api/admin/settings', {
+                headers: { 'Authorization': 'Bearer ' + idToken }
+            }).then(r => r.json()).catch(() => ({ success: false }));
+            if (setR.success && setR.settings) {
+                const mt = document.getElementById('maintToggle');
+                if (mt) mt.checked = !!setR.settings.maintenance;
+                const et = document.getElementById('engineToggle');
+                if (et) et.checked = !!setR.settings.autoEngine;
+                const rt = document.getElementById('regToggle');
+                if (rt) rt.checked = !!setR.settings.allowRegistrations;
             }
         } catch(_) {}
     }
@@ -1030,6 +1155,9 @@ window.adminSignOut = async function() {
         document.querySelectorAll('.stat-box-val').forEach(v => { v.style.opacity = '0.4'; });
         await loadAdminStats();
         document.querySelectorAll('.stat-box-val').forEach(v => { v.style.opacity = '1'; });
+        // Also reload users if users section is visible
+        const userSec = document.getElementById('section-users');
+        if (userSec && userSec.classList.contains('active')) loadUsers();
     }
 
     async function postSignal() {
@@ -1094,6 +1222,59 @@ window.adminSignOut = async function() {
             const el = document.getElementById(id); if(el) el.value = '';
         });
     }
+
+    // ── Broadcast Send ──────────────────────────────────────────
+    // FIX: was onclick-less button — now wired to this function
+    async function sendBroadcast() {
+        const inputs = document.querySelectorAll('#section-broadcast .input-control');
+        const audience = inputs[0] ? inputs[0].value : 'All Users';
+        const subject  = inputs[1] ? inputs[1].value.trim() : '';
+        const message  = inputs[2] ? inputs[2].value.trim() : '';
+        if (!message) { alert('Please enter a message'); return; }
+        try {
+            const idToken = await getToken();
+            const res = await fetch('/api/admin/broadcast', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+                body: JSON.stringify({ subject, message, audience })
+            });
+            const j = await res.json();
+            if (j.success) {
+                alert('✅ Broadcast sent to all connected users!');
+                inputs[1].value = '';
+                inputs[2].value = '';
+            } else {
+                alert('❌ ' + (j.error || 'Failed to send broadcast'));
+            }
+        } catch(e) { alert('❌ Server error: ' + e.message); }
+    }
+
+    // ── Settings Toggles (Maintenance, Engine, Registrations) ──
+    // FIX: maintToggle had no event listener — wires all three toggles to API
+    async function saveToggleSetting(key, value) {
+        try {
+            const idToken = await getToken();
+            const res = await fetch('/api/admin/settings', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+                body: JSON.stringify({ [key]: value })
+            });
+            const j = await res.json();
+            if (!j.success) alert('❌ Failed to save setting: ' + (j.error || ''));
+        } catch(e) { alert('❌ ' + e.message); }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const mt = document.getElementById('maintToggle');
+        if (mt) mt.addEventListener('change', () => saveToggleSetting('maintenance', mt.checked));
+
+        const et = document.getElementById('engineToggle');
+        if (et) et.addEventListener('change', () => saveToggleSetting('autoEngine', et.checked));
+
+        const rt = document.getElementById('regToggle');
+        if (rt) rt.addEventListener('change', () => saveToggleSetting('allowRegistrations', rt.checked));
+    });
+
 </script>
 </body>
 </html>

@@ -20,6 +20,7 @@ const admin      = require('firebase-admin');
 const Signal     = require('./models/Signal');
 const User       = require('./models/User');
 const PaperTrade = require('./models/PaperTrade');
+const Settings   = require('./models/Settings');
 
 // ── Firebase Admin Init ─────────────────────────────────────
 try {
@@ -33,7 +34,10 @@ try {
 
 // ── MongoDB Connect ──────────────────────────────────────────
 mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/investysignals')
-  .then(() => console.log('✅ MongoDB connected'))
+  .then(async () => {
+    console.log('✅ MongoDB connected');
+    await loadSettingsFromDB();
+  })
   .catch(err => { console.error('❌ MongoDB error:', err.message); process.exit(1); });
 
 // ── Admin Emails (auto-promoted to 'admin' role on first login) ──
@@ -41,6 +45,29 @@ const ADMIN_EMAILS = [
   'cdilrukshi52@gmail.com',
   // Add more admin emails here if needed
 ];
+
+// ── Global Platform Settings (MongoDB-backed — survives restarts) ──
+const SETTINGS_DEFAULTS = {
+  maintenance:        false,
+  maintenanceMsg:     'We are making improvements. Please check back shortly.',
+  allowRegistrations: true,
+  autoEngine:         true
+};
+let globalSettings = { ...SETTINGS_DEFAULTS };
+
+async function loadSettingsFromDB() {
+  try {
+    const docs = await Settings.find({});
+    docs.forEach(d => { globalSettings[d.key] = d.value; });
+    console.log('⚙️  Platform settings loaded from DB');
+  } catch(e) {
+    console.warn('⚠️  Could not load settings from DB, using defaults:', e.message);
+  }
+}
+
+async function saveSettingToDB(key, value) {
+  await Settings.findOneAndUpdate({ key }, { value }, { upsert: true, new: true });
+}
 
 // ── Express Setup ────────────────────────────────────────────
 const app = express();
@@ -149,13 +176,19 @@ app.get('/api/user/status', async (req, res) => {
       }
     }
 
+    // BUG FIX: check global maintenance first, then per-user
+    const isMaintenance = globalSettings.maintenance || user.maintenance;
+    const maintMsg = globalSettings.maintenance
+      ? globalSettings.maintenanceMsg
+      : (user.maintenanceMsg || '');
+
     res.json({ success: true, status: {
       role:           user.role,
       plan:           user.plan,
       suspended:      user.suspended,
       suspendReason:  user.suspendReason,
-      maintenance:    user.maintenance,
-      maintenanceMsg: user.maintenanceMsg,
+      maintenance:    isMaintenance,
+      maintenanceMsg: maintMsg,
       paperBalance:   user.paperBalance
     }});
   } catch (err) {
@@ -405,7 +438,12 @@ app.patch('/api/admin/users/:uid', verifyAdmin, async (req, res) => {
 // ── Admin: Create Signal ──────────────────────────────────────
 app.post('/api/signals', verifyAdmin, async (req, res) => {
   try {
-    const signal = await Signal.create(req.body);
+    // BUG FIX: parse leverage — admin form sends "10x" string, model expects Number
+    const body = { ...req.body };
+    if (body.leverage) {
+      body.leverage = parseInt(String(body.leverage).replace(/[^0-9]/g, '')) || 10;
+    }
+    const signal = await Signal.create(body);
     // Broadcast new signal via WebSocket
     broadcastToAll({ type: 'new_signal', signal });
     res.json({ success: true, signal });
@@ -430,6 +468,48 @@ app.delete('/api/signals/:id', verifyAdmin, async (req, res) => {
   try {
     await Signal.findByIdAndUpdate(req.params.id, { active: false });
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── Admin: Global Settings (Maintenance Mode etc.) ──────────
+app.get('/api/admin/settings', verifyAdmin, (req, res) => {
+  res.json({ success: true, settings: globalSettings });
+});
+
+app.patch('/api/admin/settings', verifyAdmin, async (req, res) => {
+  try {
+    const allowed = ['maintenance', 'maintenanceMsg', 'allowRegistrations', 'autoEngine'];
+    const saves = [];
+    allowed.forEach(k => {
+      if (req.body[k] !== undefined) {
+        globalSettings[k] = req.body[k];
+        saves.push(saveSettingToDB(k, req.body[k]));
+      }
+    });
+    await Promise.all(saves);
+    console.log('⚙️  Global settings updated & saved to DB:', globalSettings);
+    res.json({ success: true, settings: globalSettings });
+  } catch(err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── Admin: Broadcast Announcement ─────────────────────────────
+app.post('/api/admin/broadcast', verifyAdmin, async (req, res) => {
+  try {
+    const { subject, message, audience } = req.body;
+    if (!message) return res.json({ success: false, error: 'Message is required' });
+    broadcastToAll({
+      type:     'announcement',
+      subject:  subject || 'Platform Announcement',
+      message,
+      audience: audience || 'All Users',
+      time:     new Date().toISOString()
+    });
+    console.log(`📡 Broadcast sent to [${audience || 'All'}]: ${subject}`);
+    res.json({ success: true, message: 'Broadcast sent to all connected clients' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

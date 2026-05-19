@@ -462,19 +462,7 @@
     </script>
 
     <script>
-        
-        const logoutBtn = document.getElementById('logoutBtn');
-        if (logoutBtn) {
-            logoutBtn.addEventListener('click', () => {
-                import("https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js").then(({ getAuth, signOut }) => {
-                    const auth = getAuth();
-                    signOut(auth).then(() => {
-                        sessionStorage.removeItem('user');
-                        window.location.href = 'index.html';
-                    });
-                });
-            });
-        }
+        // FIX: removed duplicate logoutBtn handler that used firebase 10.8.1 (conflicts with 11.6.0 above)
 
         const authHamburger = document.getElementById('authHamburger');
         const authNavMenu = document.getElementById('authNavMenu');

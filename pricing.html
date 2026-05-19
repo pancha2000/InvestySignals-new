@@ -124,9 +124,9 @@
             <a href="pricing.html" class="active" style="color:var(--text);">Pricing</a>
             <a href="contact.html">Contact</a>
         </div>
-        <div class="nav-actions">
-            <a href="login.html" class="btn btn-ghost btn-sm">Log In</a>
-            <a href="register.html" class="btn btn-gold btn-sm">Get Started →</a>
+        <div class="nav-actions" id="navActions">
+            <a href="login.html" class="btn btn-ghost btn-sm" id="navLoginBtn">Log In</a>
+            <a href="register.html" class="btn btn-gold btn-sm" id="navRegisterBtn">Get Started →</a>
         </div>
         <button class="hamburger" id="hamburger">☰</button>
     </div>
@@ -145,10 +145,12 @@
         <a href="pricing.html">💎 Pricing</a>
         <a href="contact.html">✉️ Contact</a>
         <div class="drawer-divider"></div>
-        <a href="login.html">🔑 Log In</a>
+        <a href="login.html" id="drawerLoginLink">🔑 Log In</a>
+        <a href="dashboard.html" id="drawerDashLink" style="display:none;">📊 Dashboard</a>
     </div>
     <div class="drawer-actions">
-        <a href="register.html" class="btn btn-gold" style="width:100%;justify-content:center;">Create Free Account →</a>
+        <a href="register.html" class="btn btn-gold" style="width:100%;justify-content:center;" id="drawerRegisterBtn">Create Free Account →</a>
+        <a href="dashboard.html" class="btn btn-gold" style="width:100%;justify-content:center;display:none;" id="drawerDashBtn">Go to Dashboard →</a>
     </div>
 </div>
 <div class="drawer-overlay" id="drawerOverlay"></div>
@@ -183,7 +185,7 @@
                 <li class="no"><span class="fi">–</span> Advanced filters</li>
                 <li class="no"><span class="fi">–</span> Telegram group</li>
             </ul>
-            <a href="register.html" class="btn btn-ghost" style="width:100%;justify-content:center;">Start Free →</a>
+            <a href="register.html" class="btn btn-ghost plan-cta" data-plan="free" style="width:100%;justify-content:center;">Start Free →</a>
         </div>
         <div class="plan-card featured">
             <div class="plan-badge">Most Popular</div>
@@ -201,7 +203,7 @@
                 <li class="no"><span class="fi">–</span> Private Telegram group</li>
                 <li class="no"><span class="fi">–</span> 1-on-1 onboarding</li>
             </ul>
-            <a href="register.html" class="btn btn-gold" style="width:100%;justify-content:center;">Get Pro →</a>
+            <a href="register.html" class="btn btn-gold plan-cta" data-plan="pro" style="width:100%;justify-content:center;">Get Pro →</a>
         </div>
         <div class="plan-card">
             <div class="plan-tier">Elite Plan</div>
@@ -218,7 +220,7 @@
                 <li class="yes"><span class="fi">✓</span> Monthly strategy calls</li>
                 <li class="yes"><span class="fi">✓</span> Custom alerts</li>
             </ul>
-            <a href="register.html" class="btn btn-surface" style="width:100%;justify-content:center;">Get Elite →</a>
+            <a href="register.html" class="btn btn-surface plan-cta" data-plan="elite" style="width:100%;justify-content:center;">Get Elite →</a>
         </div>
     </div>
 </section>
@@ -330,6 +332,83 @@
         entries.forEach(e => { if(e.isIntersecting){ e.target.classList.add('visible'); obs.unobserve(e.target); } });
     }, { threshold: 0.08 });
     document.querySelectorAll('.fade-up').forEach(el => obs.observe(el));
+</script>
+
+<!-- Auth-aware nav + plan buttons -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
+
+const auth = getAuth(initializeApp({
+    apiKey: "AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk",
+    authDomain: "investysignals-890ba.firebaseapp.com",
+    projectId: "investysignals-890ba",
+    storageBucket: "investysignals-890ba.firebasestorage.app",
+    messagingSenderId: "1045281522975",
+    appId: "1:1045281522975:web:534501aab2ceeb887bdc2a"
+}));
+
+onAuthStateChanged(auth, async u => {
+    if (u) {
+        // ── Logged-in state ──────────────────────────────────
+        // Get user plan from server
+        let plan = 'free';
+        let role = 'user';
+        try {
+            const tok = await u.getIdToken();
+            const r = await fetch('/api/user/status?uid=' + encodeURIComponent(u.uid), {
+                headers: { 'Authorization': 'Bearer ' + tok }
+            });
+            const j = await r.json();
+            if (j.success) { plan = j.status.plan; role = j.status.role; }
+        } catch(_) {}
+
+        // Update desktop nav
+        const loginBtn    = document.getElementById('navLoginBtn');
+        const registerBtn = document.getElementById('navRegisterBtn');
+        if (loginBtn)    { loginBtn.textContent = '📊 Dashboard'; loginBtn.href = 'dashboard.html'; loginBtn.className = 'btn btn-surface btn-sm'; }
+        if (registerBtn) { registerBtn.textContent = 'Log Out'; registerBtn.href = '#'; registerBtn.className = 'btn btn-ghost btn-sm';
+            registerBtn.addEventListener('click', async e => { e.preventDefault(); await signOut(auth); window.location.reload(); }); }
+
+        // Update mobile drawer
+        const dLogin = document.getElementById('drawerLoginLink');
+        const dDash  = document.getElementById('drawerDashLink');
+        const dReg   = document.getElementById('drawerRegisterBtn');
+        const dDashB = document.getElementById('drawerDashBtn');
+        if (dLogin) dLogin.style.display = 'none';
+        if (dDash)  dDash.style.display  = '';
+        if (dReg)   dReg.style.display   = 'none';
+        if (dDashB) dDashB.style.display  = '';
+
+        // Update plan CTA buttons based on current plan
+        document.querySelectorAll('.plan-cta').forEach(btn => {
+            const btnPlan = btn.getAttribute('data-plan');
+            if (btnPlan === plan) {
+                btn.textContent = '✓ Current Plan';
+                btn.style.opacity = '0.5';
+                btn.style.pointerEvents = 'none';
+            } else {
+                // Upgrade/downgrade goes to profile
+                btn.href = 'profile.html';
+                btn.textContent = btnPlan === 'free' ? 'Switch to Free' : (btnPlan === 'pro' ? 'Upgrade to Pro →' : 'Upgrade to Elite →');
+            }
+        });
+
+        // Admin shortcut
+        if (role === 'admin') {
+            const navActions = document.getElementById('navActions');
+            if (navActions) {
+                const adminLink = document.createElement('a');
+                adminLink.href = 'admin.html';
+                adminLink.className = 'btn btn-surface btn-sm';
+                adminLink.style.color = '#f0b429';
+                adminLink.textContent = '⚡ Admin';
+                navActions.insertBefore(adminLink, navActions.firstChild);
+            }
+        }
+    }
+    // If not logged in — default static nav is already correct
+});
 </script>
 </body>
 </html>

@@ -128,6 +128,8 @@
         <a href="analysis.html" class="auth-nav-link active">🧠 Analysis</a>
         <a href="live-signals.html" class="auth-nav-link">📝 Paper Trades</a>
         <a href="profile.html" class="auth-nav-link">👤 Profile</a>
+        <div class="nav-divider"></div>
+        <a class="auth-nav-link" style="color:var(--red,#ff4d4f);cursor:pointer;" id="navLogout">🔓 Log Out</a>
     </nav>
     <div class="auth-nav-right">
         <a href="profile.html" class="user-chip">
@@ -244,6 +246,9 @@ onAuthStateChanged(auth, u => {
   const un = document.getElementById('userName');   if(un) un.textContent = name;
 });
 window.handleSignOut = async () => { await signOut(auth); window.location.href = 'index.html'; };
+    // FIX: wire logout in hamburger nav
+    const navLogout = document.getElementById('navLogout');
+    if (navLogout) navLogout.addEventListener('click', window.handleSignOut);
 </script>
 
 <script>
