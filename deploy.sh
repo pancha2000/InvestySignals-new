@@ -72,10 +72,21 @@ cmd_install() {
     log "MongoDB already installed"
   else
     info "Installing MongoDB 7..."
-    curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc \
-      | gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
-    echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu $(lsb_release -cs)/mongodb-org/7.0 multiverse" \
-      > /etc/apt/sources.list.d/mongodb-org-7.0.list
+    # Ubuntu version detect කරලා correct repo use කරනවා
+    UBUNTU_VER=$(lsb_release -rs)
+    if [[ "$UBUNTU_VER" == "24.04" ]]; then
+      # Ubuntu 24.04 (Noble) — MongoDB 8.0 use කරනවා
+      curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc \
+        | gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg --dearmor
+      echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/8.0 multiverse" \
+        > /etc/apt/sources.list.d/mongodb-org-8.0.list
+    else
+      # Ubuntu 22.04 (Jammy) හා older — MongoDB 7.0
+      curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc \
+        | gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
+      echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" \
+        > /etc/apt/sources.list.d/mongodb-org-7.0.list
+    fi
     apt-get update -qq
     apt-get install -y mongodb-org
     log "MongoDB installed"
