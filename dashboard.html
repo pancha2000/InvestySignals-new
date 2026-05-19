@@ -992,7 +992,7 @@
         });
 
         window.handleSignOut = async () => {
-            await signOut(auth);
+            try { await signOut(auth); } catch(e) {}
             window.location.href = 'index.html';
         };
     </script>
@@ -1050,8 +1050,8 @@
         const _slogout = document.getElementById('sidebarLogout');
         if (_slogout) _slogout.addEventListener('click', async () => {
             closeNav();
-            try { await signOut(auth); } catch(_) {}
-            window.location.href = 'index.html';
+            if (typeof window.handleSignOut === 'function') await window.handleSignOut();
+            else window.location.href = 'index.html';
         });
 
         /* ── User dropdown ── */
@@ -1068,8 +1068,8 @@
         /* ── Dropdown logout ── */
         const _dlogout = document.getElementById('dropdownLogout');
         if (_dlogout) _dlogout.addEventListener('click', async () => {
-            try { await signOut(auth); } catch(_) {}
-            window.location.href = 'index.html';
+            if (typeof window.handleSignOut === 'function') await window.handleSignOut();
+            else window.location.href = 'index.html';
         });
 
         /* ── Fade-up observer ── */

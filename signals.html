@@ -96,7 +96,8 @@
     </style>
 </head>
 <body>
-<nav class="auth-nav">
+<div class="nav-backdrop" id="navBackdrop"></div>
+    <nav class="auth-nav">
     <div class="auth-nav-left">
         <button class="auth-hamburger" id="authHamburger">☰</button>
         <a href="index.html" class="logo" style="font-size:0.9rem;">
@@ -171,7 +172,8 @@
     import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
     const app = initializeApp({ apiKey:"AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk", authDomain:"investysignals-890ba.firebaseapp.com", projectId:"investysignals-890ba", storageBucket:"investysignals-890ba.firebasestorage.app", messagingSenderId:"1045281522975", appId:"1:1045281522975:web:534501aab2ceeb887bdc2a" });
     const auth = getAuth(app);
-    onAuthStateChanged(auth, u => {
+    window.handleSignOut = async () => { try { await signOut(auth); } catch(e) {} window.location.href = 'index.html'; };
+        onAuthStateChanged(auth, u => {
         if (!u) { window.location.href = 'login.html'; return; }
         const n = u.displayName || u.email.split('@')[0];
         document.getElementById('userName').textContent = n;
@@ -181,8 +183,26 @@
 </script>
 
 <script>
-    document.getElementById('authHamburger').addEventListener('click', () => {
-        document.getElementById('authNavMenu').classList.toggle('open');
+    const _authHamburger = document.getElementById('authHamburger');
+    const _authNavMenu = document.getElementById('authNavMenu');
+    const _navBackdrop = document.getElementById('navBackdrop');
+    
+    function closeNavMenu() {
+        if (_authNavMenu) _authNavMenu.classList.remove('open');
+        if (_navBackdrop) _navBackdrop.classList.remove('open');
+    }
+    
+    if (_authHamburger) {
+        _authHamburger.addEventListener('click', () => {
+            const isOpen = _authNavMenu.classList.toggle('open');
+            if (_navBackdrop) _navBackdrop.classList.toggle('open', isOpen);
+        });
+    }
+    if (_navBackdrop) {
+        _navBackdrop.addEventListener('click', closeNavMenu);
+    }
+    document.querySelectorAll('.auth-nav-link').forEach(link => {
+        link.addEventListener('click', closeNavMenu);
     });
 
     let signalData = [];
@@ -295,8 +315,8 @@
         }
         const _dlogout = document.getElementById('dropdownLogout');
         if (_dlogout) _dlogout.addEventListener('click', async () => {
-            try { await signOut(auth); } catch(_) {}
-            window.location.href = 'index.html';
+            if (typeof window.handleSignOut === 'function') await window.handleSignOut();
+            else window.location.href = 'index.html';
         });
 </script>
 </body>

@@ -348,7 +348,8 @@ const auth = getAuth(initializeApp({
     appId: "1:1045281522975:web:534501aab2ceeb887bdc2a"
 }));
 
-onAuthStateChanged(auth, async u => {
+window.handleSignOut = async () => { try { await signOut(auth); } catch(e) {} window.location.href = 'index.html'; };
+        onAuthStateChanged(auth, async u => {
     if (u) {
         // ── Logged-in state ──────────────────────────────────
         // Get user plan from server
@@ -368,7 +369,7 @@ onAuthStateChanged(auth, async u => {
         const registerBtn = document.getElementById('navRegisterBtn');
         if (loginBtn)    { loginBtn.textContent = '📊 Dashboard'; loginBtn.href = 'dashboard.html'; loginBtn.className = 'btn btn-surface btn-sm'; }
         if (registerBtn) { registerBtn.textContent = 'Log Out'; registerBtn.href = '#'; registerBtn.className = 'btn btn-ghost btn-sm';
-            registerBtn.addEventListener('click', async e => { e.preventDefault(); await signOut(auth); window.location.reload(); }); }
+            registerBtn.addEventListener('click', async e => { e.preventDefault(); if(typeof window.handleSignOut === 'function') await window.handleSignOut(); else window.location.reload(); }); }
 
         // Update mobile drawer
         const dLogin = document.getElementById('drawerLoginLink');
