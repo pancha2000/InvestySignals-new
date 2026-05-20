@@ -224,6 +224,15 @@
         document.getElementById('togglePw2').textContent = pw.type === 'text' ? 'Hide' : 'Show';
     });
 
+    // FIX #10: Check server-side allowRegistrations before attempting Firebase registration
+    async function checkRegistrationsOpen() {
+        try {
+            const r = await fetch('/api/registration-status');
+            const j = await r.json();
+            return j.open !== false;
+        } catch(_) { return true; } // fail open if server unreachable
+    }
+
     window.handleRegister = async function() {
         const first  = document.getElementById('firstName').value.trim();
         const last   = document.getElementById('lastName').value.trim();
@@ -243,6 +252,14 @@
         const btn = document.getElementById('registerBtn');
         btn.textContent = 'Creating account...'; btn.style.opacity = '0.7'; btn.style.pointerEvents = 'none';
         try {
+            // FIX #10: Server-side registration gate check
+            const open = await checkRegistrationsOpen();
+            if (!open) {
+                errBox.textContent = 'New registrations are currently closed. Please try again later.';
+                errBox.style.display = 'block';
+                btn.textContent = 'Create Free Account →'; btn.style.opacity = ''; btn.style.pointerEvents = '';
+                return;
+            }
             const cred = await createUserWithEmailAndPassword(auth, email, pw);
             await updateProfile(cred.user, { displayName: `${first} ${last}` });
             okBox.style.display = 'block';
@@ -256,6 +273,13 @@
 
     window.handleGoogle = async function() {
         try {
+            // FIX #10: Server-side registration gate check for Google sign-up too
+            const open = await checkRegistrationsOpen();
+            if (!open) {
+                document.getElementById('errorBox').textContent = 'New registrations are currently closed.';
+                document.getElementById('errorBox').style.display = 'block';
+                return;
+            }
             const cred = await signInWithPopup(auth, provider);
             window.location.href = 'dashboard.html';
         } catch(e) {

@@ -392,7 +392,7 @@
             try {
                 // FIX: send Bearer token so server can verify identity and promote admin
                 const idToken = await user.getIdToken();
-                const sr = await fetch('/api/user/status?uid=' + encodeURIComponent(user.uid), {
+                const sr = await fetch('/api/user/status', {
                   headers: { 'Authorization': 'Bearer ' + idToken }
                 });
                 const sj = await sr.json();

@@ -301,10 +301,10 @@
         try {
             const cred = await signInWithEmailAndPassword(auth, email, pw);
             sessionStorage.setItem('user', JSON.stringify({ email: cred.user.email, name: cred.user.displayName }));
-            // Get ID token and send with status check so server can verify admin email
+            // FIX #3: uid is now derived from token server-side — no uid query param
             try {
                 const idToken = await cred.user.getIdToken();
-                const sr = await fetch('/api/user/status?uid=' + encodeURIComponent(cred.user.uid), {
+                const sr = await fetch('/api/user/status', {
                     headers: { 'Authorization': 'Bearer ' + idToken }
                 });
                 const sj = await sr.json();

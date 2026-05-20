@@ -1,5 +1,5 @@
 // ============================================================
-//  InvestySignals — Backend Server (Fixed)
+//  InvestySignals — Backend Server (Security Fixed v2)
 //  Node.js + Express + MongoDB + Firebase Admin + WebSocket
 // ============================================================
 
@@ -17,12 +17,12 @@ const path       = require('path');
 const admin      = require('firebase-admin');
 
 // ── Models ──────────────────────────────────────────────────
-const Signal      = require('./models/Signal');
-const User        = require('./models/User');
-const PaperTrade  = require('./models/PaperTrade');
-const Settings    = require('./models/Settings');
+const Signal       = require('./models/Signal');
+const User         = require('./models/User');
+const PaperTrade   = require('./models/PaperTrade');
+const Settings     = require('./models/Settings');
 const Announcement = require('./models/Announcement');
-const Report      = require('./models/Report');
+const Report       = require('./models/Report');
 
 // ── Firebase Admin Init ─────────────────────────────────────
 try {
@@ -77,10 +77,19 @@ app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false
 }));
+
+// FIX #8: CORS — use explicit origin from env, never wildcard true
+const allowedOrigin = process.env.ALLOWED_ORIGIN;
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGIN || true,
+  origin: allowedOrigin
+    ? (origin, cb) => {
+        if (!origin || origin === allowedOrigin) cb(null, true);
+        else cb(new Error('Not allowed by CORS'));
+      }
+    : true, // fallback for local dev only — set ALLOWED_ORIGIN in production
   credentials: true
 }));
+
 app.use(express.json({ limit: '5mb' }));
 
 // ── Rate Limiters ─────────────────────────────────────────────
@@ -92,7 +101,6 @@ const apiLimiter = rateLimit({
   message: { success: false, error: 'Too many requests, please try again later.' }
 });
 
-// FIX: Admin routes get a higher limit so bulk operations don't get throttled
 const adminLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 1000,
@@ -101,12 +109,13 @@ const adminLimiter = rateLimit({
   message: { success: false, error: 'Too many requests.' }
 });
 
-// FIX: Register admin limiter BEFORE the general /api/ limiter
+// Register admin limiter BEFORE the general /api/ limiter
 app.use('/api/admin/', adminLimiter);
 app.use('/api/', apiLimiter);
 
-// FIX: Block sensitive files from being served as static assets
-const BLOCKED_STATIC = ['.env', 'serviceAccount.json', 'package.json', '.gitignore'];
+// FIX #1 (partial): Block sensitive files from being served as static assets
+// serviceAccount.json, .env, package.json must never be served
+const BLOCKED_STATIC = ['.env', 'serviceAccount.json', 'package.json', '.gitignore', 'deploy.sh'];
 app.use((req, res, next) => {
   const basename = path.basename(req.path);
   if (BLOCKED_STATIC.includes(basename)) {
@@ -150,36 +159,37 @@ async function ensureAdminPromotion(uid, emailFromToken) {
 }
 
 // ── verifyToken middleware ───────────────────────────────────
+// FIX #5: Also checks suspended status
 async function verifyToken(req, res, next) {
   const auth = req.headers.authorization || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
   if (!token) return res.status(401).json({ success: false, error: 'Unauthorized' });
   try {
     req.user = await admin.auth().verifyIdToken(token);
+    // FIX #5: Block suspended users
+    const dbUser = await User.findOne({ uid: req.user.uid });
+    if (dbUser && dbUser.suspended) {
+      return res.status(403).json({ success: false, error: 'Account suspended', reason: dbUser.suspendReason });
+    }
+    req.dbUser = dbUser;
     next();
   } catch (e) {
     res.status(401).json({ success: false, error: 'Invalid token' });
   }
 }
 
-// ── verifyAdmin middleware (FIXED — no broken callback wrapping) ──
+// ── verifyAdmin middleware ────────────────────────────────────
 async function verifyAdmin(req, res, next) {
   const auth = req.headers.authorization || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
   if (!token) return res.status(401).json({ success: false, error: 'Unauthorized' });
   try {
-    // 1. Verify Firebase token
     req.user = await admin.auth().verifyIdToken(token);
     const email = (req.user.email || '').toLowerCase();
-
-    // 2. Get/create user record, auto-promote admin emails
     const u = await ensureAdminPromotion(req.user.uid, email);
-
-    // 3. Check admin role
     if (!u || u.role !== 'admin') {
       return res.status(403).json({ success: false, error: 'Admin access required' });
     }
-
     req.dbUser = u;
     next();
   } catch (e) {
@@ -187,6 +197,10 @@ async function verifyAdmin(req, res, next) {
     res.status(401).json({ success: false, error: 'Authentication failed' });
   }
 }
+
+// ── Plan level helper ─────────────────────────────────────────
+const PLAN_LEVEL = { free: 0, pro: 1, elite: 2, admin: 99 };
+function planLevel(plan) { return PLAN_LEVEL[plan] ?? 0; }
 
 // ============================================================
 //  API ROUTES
@@ -200,9 +214,9 @@ app.get('/api/health', (req, res) => {
 // ── Analysis — RSI from Binance klines ───────────────────────
 app.get('/api/analysis', async (req, res) => {
   try {
-    const pair      = (req.query.pair || 'BTCUSDT').toUpperCase().replace(/[^A-Z0-9]/g, '');
-    const tf        = (req.query.tf   || '1h').replace(/[^a-zA-Z0-9]/g, '');
-    const limit     = 100; // need at least 14+1 candles for RSI
+    const pair  = (req.query.pair || 'BTCUSDT').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const tf    = (req.query.tf   || '1h').replace(/[^a-zA-Z0-9]/g, '');
+    const limit = 100;
 
     const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${pair}&interval=${tf}&limit=${limit}`;
     const response = await fetch(url);
@@ -215,10 +229,9 @@ app.get('/api/analysis', async (req, res) => {
       return res.status(502).json({ success: false, error: 'Not enough candle data' });
     }
 
-    // Closing prices
     const closes = klines.map(k => parseFloat(k[4]));
 
-    // ── RSI(14) ──
+    // RSI(14)
     const period = 14;
     let gains = 0, losses = 0;
     for (let i = 1; i <= period; i++) {
@@ -237,7 +250,7 @@ app.get('/api/analysis', async (req, res) => {
     const rs  = avgLoss === 0 ? 100 : avgGain / avgLoss;
     const rsi = parseFloat((100 - 100 / (1 + rs)).toFixed(2));
 
-    // ── MACD(12,26,9) ──
+    // MACD(12,26,9)
     function ema(data, n) {
       const k = 2 / (n + 1);
       let val = data.slice(0, n).reduce((a, b) => a + b, 0) / n;
@@ -256,7 +269,7 @@ app.get('/api/analysis', async (req, res) => {
     const macdSig  = parseFloat(signal9[signal9.length - 1].toFixed(4));
     const macdHist = parseFloat((macd - macdSig).toFixed(4));
 
-    // ── Bollinger Bands(20, 2σ) ──
+    // Bollinger Bands(20, 2σ)
     const bbPeriod = 20;
     const bbCloses = closes.slice(-bbPeriod);
     const bbMiddle = bbCloses.reduce((a, b) => a + b, 0) / bbPeriod;
@@ -283,25 +296,15 @@ app.get('/api/analysis', async (req, res) => {
 });
 
 // ── User Status ──────────────────────────────────────────────
-app.get('/api/user/status', async (req, res) => {
+// FIX #3 & #9: uid always taken from verified token — never from query param
+app.get('/api/user/status', verifyToken, async (req, res) => {
   try {
-    const { uid } = req.query;
-    if (!uid) return res.json({ success: false, error: 'uid required' });
+    const uid   = req.user.uid;
+    const email = (req.user.email || '').toLowerCase();
 
-    // Get email from Bearer token
-    let tokenEmail = '';
-    const authHeader = req.headers.authorization || '';
-    if (authHeader.startsWith('Bearer ')) {
-      try {
-        const decoded = await admin.auth().verifyIdToken(authHeader.slice(7));
-        tokenEmail = (decoded.email || '').toLowerCase();
-      } catch(_) {}
-    }
-
-    const user = await ensureAdminPromotion(uid, tokenEmail);
+    const user = await ensureAdminPromotion(uid, email);
     if (!user) return res.status(500).json({ success: false, error: 'Could not load user' });
 
-    // FIX: track last login time
     await User.updateOne({ uid }, { lastLogin: new Date() });
 
     const isMaintenance = globalSettings.maintenance || user.maintenance;
@@ -324,10 +327,20 @@ app.get('/api/user/status', async (req, res) => {
   }
 });
 
-// ── Signals (public) ─────────────────────────────────────────
-app.get('/api/signals', async (req, res) => {
+// ── Signals (auth required + plan gating) ────────────────────
+// FIX #4: verifyToken required; signals filtered by user plan
+app.get('/api/signals', verifyToken, async (req, res) => {
   try {
-    const signals = await Signal.find({ active: true })
+    const user = req.dbUser;
+    const userPlan = user ? user.plan : 'free';
+    const userRole = user ? user.role : 'user';
+
+    // Admin sees everything; others see only signals at or below their plan level
+    const planFilter = userRole === 'admin'
+      ? {}
+      : { plan: { $in: Object.keys(PLAN_LEVEL).filter(p => planLevel(p) <= planLevel(userPlan)) } };
+
+    const signals = await Signal.find({ active: true, ...planFilter })
       .sort({ createdAt: -1 })
       .limit(50);
     res.json({ success: true, signals, data: signals });
@@ -379,25 +392,32 @@ app.get('/api/paper/balance', verifyToken, async (req, res) => {
 app.post('/api/paper/trade', verifyToken, async (req, res) => {
   try {
     const { signalId, size } = req.body;
+
+    // FIX #2: Validate trade size — must be positive and within limits
+    const tradeSize = parseFloat(size);
+    if (!tradeSize || tradeSize <= 0 || tradeSize > 100000 || !isFinite(tradeSize)) {
+      return res.status(400).json({ success: false, error: 'Invalid trade size. Must be between 1 and 100,000.' });
+    }
+
     const signal = await Signal.findById(signalId);
     if (!signal) return res.json({ success: false, error: 'Signal not found' });
+
     const user = await User.findOne({ uid: req.user.uid });
-    const tradeSize = parseFloat(size) || 100;
     if (user && user.paperBalance < tradeSize) {
       return res.json({ success: false, error: 'Insufficient paper balance' });
     }
     const trade = await PaperTrade.create({
-      userUid: req.user.uid,
-      signalId: signal._id,
-      pair: signal.pair,
+      userUid:   req.user.uid,
+      signalId:  signal._id,
+      pair:      signal.pair,
       direction: signal.direction,
-      entry: signal.entry,
-      tp1: signal.tp1,
-      tp2: signal.tp2,
-      sl: signal.sl,
-      leverage: signal.leverage,
-      size: tradeSize,
-      status: 'OPEN'
+      entry:     signal.entry,
+      tp1:       signal.tp1,
+      tp2:       signal.tp2,
+      sl:        signal.sl,
+      leverage:  signal.leverage,
+      size:      tradeSize,
+      status:    'OPEN'
     });
     if (user) {
       await User.updateOne({ uid: req.user.uid }, { $inc: { paperBalance: -tradeSize } });
@@ -408,7 +428,7 @@ app.post('/api/paper/trade', verifyToken, async (req, res) => {
   }
 });
 
-// FIX: Paper trade CLOSE endpoint — was missing; open trades stuck forever
+// Paper trade CLOSE endpoint
 app.patch('/api/paper/trade/:id/close', verifyToken, async (req, res) => {
   try {
     const trade = await PaperTrade.findOne({ _id: req.params.id, userUid: req.user.uid });
@@ -417,9 +437,13 @@ app.patch('/api/paper/trade/:id/close', verifyToken, async (req, res) => {
       return res.json({ success: false, error: 'Trade is already closed' });
     }
 
-    // closePrice from body, or fall back to current entry price
-    const closePrice = parseFloat(req.body.closePrice) || trade.entry;
-    const priceDiff  = trade.direction === 'LONG'
+    // FIX #12: Validate closePrice — must be a positive finite number
+    const closePrice = parseFloat(req.body.closePrice);
+    if (!closePrice || closePrice <= 0 || !isFinite(closePrice)) {
+      return res.status(400).json({ success: false, error: 'Invalid close price. Must be a positive number.' });
+    }
+
+    const priceDiff = trade.direction === 'LONG'
       ? closePrice - trade.entry
       : trade.entry - closePrice;
     const pnlPct = (priceDiff / trade.entry) * trade.leverage * 100;
@@ -440,10 +464,11 @@ app.patch('/api/paper/trade/:id/close', verifyToken, async (req, res) => {
   }
 });
 
-// ── User Report Submission (public — no auth required) ────────
+// ── User Report Submission ─────────────────────────────────────
+// FIX #6: reporterUid/Email taken from token when available, never trusted from body
 app.post('/api/reports', async (req, res) => {
   try {
-    const { category, message, context, reporterUid, reporterEmail } = req.body;
+    const { category, message, context } = req.body;
     if (!category || !message || message.trim().length < 3) {
       return res.status(400).json({ success: false, error: 'Category and message are required' });
     }
@@ -451,14 +476,26 @@ app.post('/api/reports', async (req, res) => {
     if (!allowed.includes(category)) {
       return res.status(400).json({ success: false, error: 'Invalid category' });
     }
+
+    // Try to get identity from token (optional auth)
+    let reporterUid   = 'anonymous';
+    let reporterEmail = '';
+    const authHeader = req.headers.authorization || '';
+    if (authHeader.startsWith('Bearer ')) {
+      try {
+        const decoded = await admin.auth().verifyIdToken(authHeader.slice(7));
+        reporterUid   = decoded.uid || 'anonymous';
+        reporterEmail = (decoded.email || '').toLowerCase();
+      } catch(_) {}
+    }
+
     const report = await Report.create({
       category,
       message: message.trim().slice(0, 2000),
       context: (context || '').slice(0, 500),
-      reporterUid:   reporterUid  || 'anonymous',
-      reporterEmail: reporterEmail || '',
+      reporterUid,
+      reporterEmail,
     });
-    // Notify admin via WebSocket
     broadcastToAll({ type: 'new_report', reportId: report._id, category: report.category });
     res.json({ success: true, message: 'Report submitted. Thank you.' });
   } catch (err) {
@@ -469,13 +506,18 @@ app.post('/api/reports', async (req, res) => {
 // ── User's own reports ────────────────────────────────────────
 app.get('/api/my-reports', verifyToken, async (req, res) => {
   try {
-    // FIX: use token UID instead of trusting query param uid
     const data = await Report.find({ reporterUid: req.user.uid })
       .sort({ createdAt: -1 }).limit(20);
     res.json({ success: true, data });
   } catch(err) {
     res.status(500).json({ success: false, error: err.message });
   }
+});
+
+// ── Check Registration Status (public) ───────────────────────
+// FIX #10: Client can check if registrations are open
+app.get('/api/registration-status', (req, res) => {
+  res.json({ success: true, open: globalSettings.allowRegistrations !== false });
 });
 
 // ============================================================
@@ -500,9 +542,9 @@ app.get('/api/admin/stats', verifyAdmin, async (req, res) => {
       Signal.find({ status: { $in: ['TP1_HIT','TP2_HIT','SL_HIT'] } }).select('status pnl').lean(),
       Report.countDocuments({ status: 'open' }),
     ]);
-    const wins   = closedSignals.filter(s => ['TP1_HIT','TP2_HIT'].includes(s.status)).length;
-    const losses = closedSignals.filter(s => s.status === 'SL_HIT').length;
-    const total  = wins + losses;
+    const wins    = closedSignals.filter(s => ['TP1_HIT','TP2_HIT'].includes(s.status)).length;
+    const losses  = closedSignals.filter(s => s.status === 'SL_HIT').length;
+    const total   = wins + losses;
     const winRate = total > 0 ? ((wins/total)*100).toFixed(1) : 0;
     res.json({ success: true, stats: {
       totalUsers, activeSignals, totalSignals, openTrades,
@@ -520,7 +562,7 @@ app.get('/api/admin/users', verifyAdmin, async (req, res) => {
     const { skip=0, limit=200, plan, suspended } = req.query;
     const filter = {};
     if (plan) filter.plan = plan;
-    if (suspended === 'true') filter.suspended = true;
+    if (suspended === 'true')  filter.suspended = true;
     if (suspended === 'false') filter.suspended = { $ne: true };
     const [users, total] = await Promise.all([
       User.find(filter).sort({ createdAt: -1 }).skip(+skip).limit(+limit),
@@ -538,9 +580,18 @@ app.patch('/api/admin/users/:uid', verifyAdmin, async (req, res) => {
     const allowed = ['role','plan','suspended','suspendReason','maintenance','maintenanceMsg','paperBalance'];
     const update  = {};
     allowed.forEach(k => { if (req.body[k] !== undefined) update[k] = req.body[k]; });
+
+    // FIX #13: paperBalance must be a non-negative finite number
+    if (update.paperBalance !== undefined) {
+      const bal = parseFloat(update.paperBalance);
+      if (!isFinite(bal) || bal < 0) {
+        return res.status(400).json({ success: false, error: 'Invalid paperBalance value.' });
+      }
+      update.paperBalance = bal;
+    }
+
     const user = await User.findOneAndUpdate({ uid: req.params.uid }, update, { new: true });
     if (!user) return res.json({ success: false, error: 'User not found' });
-    // Sync suspend state to Firebase Auth
     if (update.suspended !== undefined) {
       try {
         await admin.auth().updateUser(req.params.uid, { disabled: update.suspended });
@@ -565,9 +616,22 @@ app.delete('/api/admin/users/:uid', verifyAdmin, async (req, res) => {
 });
 
 // ── Admin: Signals ────────────────────────────────────────────
+// Allowed fields whitelist for signal create/update
+const SIGNAL_ALLOWED_FIELDS = [
+  'pair','direction','entry','tp1','tp2','sl','leverage',
+  'timeframe','notes','score','plan','status','pnl','winRate','active','closedAt'
+];
+
+function pickSignalFields(body) {
+  const obj = {};
+  SIGNAL_ALLOWED_FIELDS.forEach(k => { if (body[k] !== undefined) obj[k] = body[k]; });
+  return obj;
+}
+
 app.post('/api/signals', verifyAdmin, async (req, res) => {
   try {
-    const body = { ...req.body };
+    // FIX #7: Whitelist fields — no mass assignment
+    const body = pickSignalFields(req.body);
     if (body.leverage) {
       body.leverage = parseInt(String(body.leverage).replace(/[^0-9]/g, '')) || 10;
     }
@@ -581,7 +645,9 @@ app.post('/api/signals', verifyAdmin, async (req, res) => {
 
 app.patch('/api/signals/:id', verifyAdmin, async (req, res) => {
   try {
-    const signal = await Signal.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    // FIX #7: Whitelist fields — no mass assignment
+    const update = pickSignalFields(req.body);
+    const signal = await Signal.findByIdAndUpdate(req.params.id, update, { new: true });
     if (!signal) return res.status(404).json({ success: false, error: 'Signal not found' });
     broadcastToAll({ type: 'signal_update', signal });
     res.json({ success: true, signal });
@@ -615,7 +681,6 @@ app.patch('/api/admin/settings', verifyAdmin, async (req, res) => {
       }
     });
     await Promise.all(saves);
-    // Push maintenance changes to all clients
     if (req.body.maintenance !== undefined) {
       broadcastToAll({ type: 'maintenance', active: globalSettings.maintenance, message: globalSettings.maintenanceMsg });
     }
@@ -626,6 +691,13 @@ app.patch('/api/admin/settings', verifyAdmin, async (req, res) => {
 });
 
 // ── Admin: Announcements CRUD ─────────────────────────────────
+const ANNOUNCEMENT_ALLOWED = ['title','message','type','active','showFrom','showUntil','audience'];
+function pickAnnouncementFields(body) {
+  const obj = {};
+  ANNOUNCEMENT_ALLOWED.forEach(k => { if (body[k] !== undefined) obj[k] = body[k]; });
+  return obj;
+}
+
 app.get('/api/admin/announcements', verifyAdmin, async (req, res) => {
   try {
     const data = await Announcement.find().sort({ createdAt: -1 });
@@ -637,8 +709,8 @@ app.get('/api/admin/announcements', verifyAdmin, async (req, res) => {
 
 app.post('/api/admin/announcements', verifyAdmin, async (req, res) => {
   try {
-    const ann = await Announcement.create({ ...req.body, createdBy: req.dbUser.email || 'admin' });
-    // Push to all connected clients
+    const fields = pickAnnouncementFields(req.body);
+    const ann = await Announcement.create({ ...fields, createdBy: req.dbUser.email || 'admin' });
     if (ann.active) {
       broadcastToAll({ type: 'announcement', data: ann });
     }
@@ -648,9 +720,11 @@ app.post('/api/admin/announcements', verifyAdmin, async (req, res) => {
   }
 });
 
+// FIX #15: Whitelist fields on announcement update — no mass assignment
 app.put('/api/admin/announcements/:id', verifyAdmin, async (req, res) => {
   try {
-    const ann = await Announcement.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const update = pickAnnouncementFields(req.body);
+    const ann = await Announcement.findByIdAndUpdate(req.params.id, update, { new: true });
     if (!ann) return res.status(404).json({ success: false, error: 'Not found' });
     res.json({ success: true, data: ann });
   } catch (err) {
@@ -667,10 +741,11 @@ app.delete('/api/admin/announcements/:id', verifyAdmin, async (req, res) => {
   }
 });
 
-// ── Admin: Broadcast (WebSocket only — instant push) ─────────
+// ── Admin: Broadcast ──────────────────────────────────────────
+// FIX #11: Always save broadcast to DB (audit trail); saveToDb flag removed
 app.post('/api/admin/broadcast', verifyAdmin, async (req, res) => {
   try {
-    const { subject, message, audience, saveToDb } = req.body;
+    const { subject, message, audience } = req.body;
     if (!message) return res.json({ success: false, error: 'Message is required' });
     broadcastToAll({
       type:     'announcement',
@@ -679,16 +754,14 @@ app.post('/api/admin/broadcast', verifyAdmin, async (req, res) => {
       audience: audience || 'All Users',
       time:     new Date().toISOString()
     });
-    // Also persist to DB if requested
-    if (saveToDb !== false) {
-      await Announcement.create({
-        title:     subject || 'Platform Announcement',
-        message,
-        audience:  audience || 'All Users',
-        active:    true,
-        createdBy: req.dbUser.email || 'admin'
-      });
-    }
+    // FIX #11: Always persist to DB for audit trail
+    await Announcement.create({
+      title:     subject || 'Platform Announcement',
+      message,
+      audience:  audience || 'All Users',
+      active:    true,
+      createdBy: req.dbUser.email || 'admin'
+    });
     res.json({ success: true, message: 'Broadcast sent' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -696,8 +769,6 @@ app.post('/api/admin/broadcast', verifyAdmin, async (req, res) => {
 });
 
 // ── Admin: Reports CRUD ───────────────────────────────────────
-// FIX: /unread-count MUST be registered BEFORE /:id — otherwise Express matches
-// "unread-count" as the :id param and this route is never reached.
 app.get('/api/admin/reports/unread-count', verifyAdmin, async (req, res) => {
   try {
     const count = await Report.countDocuments({ status: 'open', readByAdmin: false });
@@ -726,9 +797,9 @@ app.put('/api/admin/reports/:id', verifyAdmin, async (req, res) => {
   try {
     const { status, adminNote, adminReply, readByAdmin } = req.body;
     const update = {};
-    if (status)              update.status      = status;
-    if (adminNote  !== undefined) update.adminNote   = adminNote;
-    if (adminReply !== undefined) update.adminReply  = adminReply;
+    if (status)                    update.status      = status;
+    if (adminNote  !== undefined)  update.adminNote   = adminNote;
+    if (adminReply !== undefined)  update.adminReply  = adminReply;
     if (readByAdmin !== undefined) update.readByAdmin = readByAdmin;
     if (status === 'resolved' || status === 'dismissed') {
       update.resolvedBy = req.dbUser.email || 'admin';
@@ -763,7 +834,7 @@ app.get('/api/reports/activity', verifyAdmin, async (req, res) => {
 
 // ── Catch-all: serve HTML pages ───────────────────────────────
 app.get('*', (req, res) => {
-  const file = req.path.replace('/', '') || 'index.html';
+  const file     = req.path.replace('/', '') || 'index.html';
   const safeName = path.basename(file);
   const fullPath = path.join(__dirname, safeName);
   res.sendFile(fullPath, err => {
@@ -835,21 +906,58 @@ function connectBinance() {
 }
 
 // ── Client WebSocket ──────────────────────────────────────────
-wss.on('connection', async ws => {
-  console.log('Client connected. Total:', wss.clients.size);
-  try {
-    const signals = await Signal.find({ active: true }).sort({ createdAt: -1 }).limit(20);
-    ws.send(JSON.stringify({ type: 'signals_update', signals }));
-    // Send active announcement
-    const now = new Date();
-    const ann = await Announcement.findOne({
-      active: true,
-      showFrom: { $lte: now },
-      $or: [{ showUntil: null }, { showUntil: { $gte: now } }]
-    }).sort({ createdAt: -1 });
-    if (ann) ws.send(JSON.stringify({ type: 'announcement', data: ann }));
-  } catch(_) {}
-  ws.on('close', () => { console.log('Client disconnected. Total:', wss.clients.size); });
+// FIX #14: Authenticate WebSocket connections via token in query param
+wss.on('connection', async (ws, req) => {
+  // Parse token from ?token=... query string
+  const urlParams = new URLSearchParams(req.url.replace(/^.*\?/, ''));
+  const wsToken   = urlParams.get('token');
+
+  let wsUser = null;
+  if (wsToken) {
+    try {
+      wsUser = await admin.auth().verifyIdToken(wsToken);
+    } catch(_) {}
+  }
+
+  // Only send signals_update if authenticated
+  if (wsUser) {
+    console.log('Authenticated WS client connected. Total:', wss.clients.size);
+    try {
+      // Load user plan to filter signals
+      const dbUser   = await User.findOne({ uid: wsUser.uid });
+      const userPlan = dbUser ? dbUser.plan : 'free';
+      const userRole = dbUser ? dbUser.role : 'user';
+
+      const planFilter = userRole === 'admin'
+        ? {}
+        : { plan: { $in: Object.keys(PLAN_LEVEL).filter(p => planLevel(p) <= planLevel(userPlan)) } };
+
+      const signals = await Signal.find({ active: true, ...planFilter }).sort({ createdAt: -1 }).limit(20);
+      ws.send(JSON.stringify({ type: 'signals_update', signals }));
+
+      // Send active announcement
+      const now = new Date();
+      const ann = await Announcement.findOne({
+        active: true,
+        showFrom: { $lte: now },
+        $or: [{ showUntil: null }, { showUntil: { $gte: now } }]
+      }).sort({ createdAt: -1 });
+      if (ann) ws.send(JSON.stringify({ type: 'announcement', data: ann }));
+    } catch(_) {}
+  } else {
+    // Unauthenticated — send only public announcements, no signals
+    console.log('Unauthenticated WS client. Total:', wss.clients.size);
+    try {
+      const now = new Date();
+      const ann = await Announcement.findOne({
+        active: true, showFrom: { $lte: now },
+        $or: [{ showUntil: null }, { showUntil: { $gte: now } }]
+      }).sort({ createdAt: -1 });
+      if (ann) ws.send(JSON.stringify({ type: 'announcement', data: ann }));
+    } catch(_) {}
+  }
+
+  ws.on('close', () => { console.log('WS client disconnected. Total:', wss.clients.size); });
   ws.on('error', () => {});
 });
 
@@ -863,11 +971,5 @@ server.listen(PORT, () => {
   connectBinance();
 });
 
-process.on('SIGTERM', () => {
-  server.close(() => process.exit(0));
-});
-
-// FIX: also handle Ctrl+C in dev (SIGINT)
-process.on('SIGINT', () => {
-  server.close(() => process.exit(0));
-});
+process.on('SIGTERM', () => { server.close(() => process.exit(0)); });
+process.on('SIGINT',  () => { server.close(() => process.exit(0)); });

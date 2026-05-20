@@ -942,7 +942,7 @@
             /* Maintenance + suspend check */
             try {
                 const idToken = await u.getIdToken();
-                const sr = await fetch('/api/user/status?uid=' + encodeURIComponent(u.uid), {
+                const sr = await fetch('/api/user/status', {
                     headers: { 'Authorization': 'Bearer ' + idToken }
                 });
                 const sj = await sr.json();
@@ -983,7 +983,10 @@
             /* Poll every 15s for maintenance/suspension changes */
             setInterval(async () => {
                 try {
-                    const r = await fetch('/api/user/status?uid=' + encodeURIComponent(u.uid));
+                    const tok = await u.getIdToken();
+                    const r = await fetch('/api/user/status', {
+                        headers: { 'Authorization': 'Bearer ' + tok }
+                    });
                     const j = await r.json();
                     if (!j.success) return;
                     if (j.status.maintenance || j.status.suspended) window.location.reload();

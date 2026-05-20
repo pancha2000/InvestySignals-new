@@ -906,7 +906,7 @@ onAuthStateChanged(auth, async u => {
   if (!u) { window.location.href = 'login.html'; return; }
   try {
     const idToken = await u.getIdToken();
-    const sr = await fetch('/api/user/status?uid=' + encodeURIComponent(u.uid), {
+    const sr = await fetch('/api/user/status', {
       headers: { 'Authorization': 'Bearer ' + idToken }
     });
     const sj = await sr.json();
@@ -919,7 +919,7 @@ onAuthStateChanged(auth, async u => {
     await new Promise(r => setTimeout(r, 2000));
     try {
       const idToken2 = await u.getIdToken(true);
-      const sr2 = await fetch('/api/user/status?uid=' + encodeURIComponent(u.uid), {
+      const sr2 = await fetch('/api/user/status', {
         headers: { 'Authorization': 'Bearer ' + idToken2 }
       });
       const sj2 = await sr2.json();

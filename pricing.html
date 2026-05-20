@@ -357,7 +357,7 @@ window.handleSignOut = async () => { try { await signOut(auth); } catch(e) {} wi
         let role = 'user';
         try {
             const tok = await u.getIdToken();
-            const r = await fetch('/api/user/status?uid=' + encodeURIComponent(u.uid), {
+            const r = await fetch('/api/user/status', {
                 headers: { 'Authorization': 'Bearer ' + tok }
             });
             const j = await r.json();
