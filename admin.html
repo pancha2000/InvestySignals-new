@@ -11,7 +11,8 @@
             min-height: 100vh;
             padding-top: 64px;
             position: relative;
-            z-index: 1;
+            /* FIX: removed z-index:1 — this was creating stacking context issues on mobile.
+               The fixed sidebar (z-index:100) and backdrop (z-index:99) handle their own stacking */
         }
 
         /* ── Sidebar ── */
@@ -281,19 +282,58 @@
         @media (max-width: 900px) {
             .admin-sidebar {
                 transform: translateX(-100%);
+                /* FIX: prevent off-screen sidebar from blocking touch events on iOS/Safari */
+                pointer-events: none;
             }
             .admin-sidebar.open {
                 transform: translateX(0);
+                pointer-events: auto;
             }
-            .admin-main { margin-left: 0; }
+            .admin-main {
+                margin-left: 0;
+                /* FIX: ensure main content is always above backdrop when sidebar closed */
+                position: relative;
+                z-index: 1;
+            }
             .signal-form-grid { grid-template-columns: 1fr 1fr; }
             /* Show hamburger at the admin sidebar breakpoint */
             .auth-hamburger { display: block !important; }
+        }
+        @media (max-width: 768px) {
+            /* FIX: hide crowded nav-right items that overflow 64px nav height
+               and block touch events on main content below */
+            .admin-nav-badge { display: none !important; }
+            .admin-exit-text { display: none; }
+            .admin-exit-btn::after { content: '✕'; }
+            .admin-exit-btn { padding: 6px 10px !important; min-width: 0; }
+
+            /* FIX: clip nav overflow so items can't spill below and block content */
+            .auth-nav {
+                overflow: hidden;
+            }
+            .auth-nav-right {
+                gap: 8px;
+            }
+            .user-chip {
+                padding: 5px 8px 5px 5px;
+            }
+
+            /* Settings grid: stack on mobile */
+            #section-settings > div[style*="grid-template-columns:1fr 1fr"] {
+                display: flex !important;
+                flex-direction: column !important;
+                gap: 16px !important;
+            }
         }
         @media (max-width: 600px) {
             .stats-grid-4 { grid-template-columns: 1fr 1fr; }
             .admin-main { padding: 16px; }
             .signal-form-grid { grid-template-columns: 1fr; }
+            /* FIX: allow table to scroll horizontally without blocking vertical scroll */
+            .table-wrap {
+                -webkit-overflow-scrolling: touch;
+                touch-action: pan-x pan-y;
+            }
         }
         @media (max-width: 400px) {
             .stats-grid-4 { grid-template-columns: 1fr; }
@@ -313,12 +353,16 @@
         <span class="page-title">ADMIN PANEL</span>
     </div>
     <div class="auth-nav-right">
-        <span class="badge badge-red live-dot">ADMIN ACCESS</span>
+        <!-- FIX: hide this badge on small screens — it overflows nav and blocks content -->
+        <span class="badge badge-red live-dot admin-nav-badge">ADMIN ACCESS</span>
         <div class="user-chip">
             <div class="user-avatar">A</div>
             <span class="user-name">Admin</span>
         </div>
-        <a href="index.html" class="btn btn-surface btn-sm">← Exit Admin</a>
+        <!-- FIX: on mobile, compress to icon-only via CSS -->
+        <a href="index.html" class="btn btn-surface btn-sm admin-exit-btn">
+            <span class="admin-exit-text">← Exit Admin</span>
+        </a>
     </div>
 </nav>
 
@@ -913,12 +957,39 @@ window.adminSignOut = async function() {
     const sidebar  = document.getElementById('adminSidebar');
     const backdrop = document.getElementById('adminBackdrop');
 
-    function openSidebar()  { sidebar.classList.add('open');    backdrop.classList.add('open');    document.body.style.overflow = 'hidden'; }
-    function closeSidebar() { sidebar.classList.remove('open'); backdrop.classList.remove('open'); document.body.style.overflow = ''; }
+    function openSidebar()  {
+        sidebar.classList.add('open');
+        backdrop.classList.add('open');
+        document.body.style.overflow = 'hidden';
+        // FIX: ensure sidebar is interactive when open
+        sidebar.style.pointerEvents = 'auto';
+    }
+    function closeSidebar() {
+        sidebar.classList.remove('open');
+        backdrop.classList.remove('open');
+        document.body.style.overflow = '';
+        // FIX: disable pointer events when sidebar slides off-screen (iOS fix)
+        // Use timeout to match transition duration (0.3s)
+        setTimeout(() => {
+            if (!sidebar.classList.contains('open')) {
+                sidebar.style.pointerEvents = '';
+            }
+        }, 320);
+    }
     function toggleSidebar(){ sidebar.classList.contains('open') ? closeSidebar() : openSidebar(); }
 
     document.getElementById('sidebarToggle').addEventListener('click', toggleSidebar);
+    // FIX: also handle touchend for better mobile response
+    document.getElementById('sidebarToggle').addEventListener('touchend', function(e) {
+        e.preventDefault();
+        toggleSidebar();
+    }, { passive: false });
+
     backdrop.addEventListener('click', closeSidebar);
+    backdrop.addEventListener('touchend', function(e) {
+        e.preventDefault();
+        closeSidebar();
+    }, { passive: false });
 
     // Close sidebar when a menu item is selected on mobile
     document.querySelectorAll('.admin-sidebar .menu-item').forEach(function(item) {
