@@ -60,6 +60,13 @@
   box-sizing: border-box;
 }
 
+/* Global mobile touch fix: prevent 300ms tap delay on all interactive elements */
+a, button, input, select, textarea, label,
+[onclick], [role="button"] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
 html {
   scroll-behavior: smooth;
 }
@@ -69,7 +76,14 @@ body {
   background-color: var(--bg);
   color: var(--text);
   line-height: 1.6;
-  overflow-x: hidden;
+  /* FIXED: overflow-x:hidden on body breaks position:fixed touch events on iOS Safari.
+     Moving horizontal overflow control to html{overflow-x:clip} instead. */
+  overflow-x: visible;
+}
+
+html {
+  /* clip does NOT create a scroll container (unlike hidden), so iOS fixed elements work */
+  overflow-x: clip;
 }
 
 /* Grid noise overlay — must stay BEHIND all interactive content */
@@ -81,8 +95,8 @@ body::after {
     linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
   background-size: 40px 40px;
-  pointer-events: none;
-  z-index: 0;
+  pointer-events: none !important; /* NEVER block touch/click */
+  z-index: -1; /* push below all page content */
 }
 
 h1,
