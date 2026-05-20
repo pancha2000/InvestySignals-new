@@ -370,9 +370,13 @@ async function getPaperTrades(req, res) {
     const token = (req.headers.authorization || '').slice(7);
     if (!token) return res.status(401).json({ success: false });
     const decoded = await admin.auth().verifyIdToken(token);
+    const dbUser = await User.findOne({ uid: decoded.uid });
+    if (dbUser && dbUser.suspended) {
+      return res.status(403).json({ success: false, error: 'Account suspended' });
+    }
     const trades = await PaperTrade.find({ userUid: decoded.uid })
       .sort({ openedAt: -1 }).limit(100);
-    res.json({ success: true, trades });
+    res.json({ success: true, trades, data: trades });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -530,7 +534,7 @@ app.get('/api/admin/stats', verifyAdmin, async (req, res) => {
     const todayStart = new Date(); todayStart.setHours(0,0,0,0);
     const [totalUsers, activeSignals, totalSignals, openTrades,
            proCount, eliteCount, adminCount, newUsersToday,
-           closedSignals, openReports] = await Promise.all([
+           closedSignals, openReports, suspendedCount] = await Promise.all([
       User.countDocuments(),
       Signal.countDocuments({ active: true, status: 'ACTIVE' }),
       Signal.countDocuments(),
@@ -541,6 +545,7 @@ app.get('/api/admin/stats', verifyAdmin, async (req, res) => {
       User.countDocuments({ createdAt: { $gte: todayStart } }),
       Signal.find({ status: { $in: ['TP1_HIT','TP2_HIT','SL_HIT'] } }).select('status pnl').lean(),
       Report.countDocuments({ status: 'open' }),
+      User.countDocuments({ suspended: true }),
     ]);
     const wins    = closedSignals.filter(s => ['TP1_HIT','TP2_HIT'].includes(s.status)).length;
     const losses  = closedSignals.filter(s => s.status === 'SL_HIT').length;
@@ -549,7 +554,9 @@ app.get('/api/admin/stats', verifyAdmin, async (req, res) => {
     res.json({ success: true, stats: {
       totalUsers, activeSignals, totalSignals, openTrades,
       proCount, eliteCount, adminCount, newUsersToday,
-      wins, losses, winRate, openReports
+      wins, losses, winRate, openReports,
+      bannedCount: suspendedCount,   // alias used by admin.html
+      suspendedCount
     }});
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -659,6 +666,7 @@ app.patch('/api/signals/:id', verifyAdmin, async (req, res) => {
 app.delete('/api/signals/:id', verifyAdmin, async (req, res) => {
   try {
     await Signal.findByIdAndUpdate(req.params.id, { active: false });
+    broadcastToAll({ type: 'signal_deleted', signalId: req.params.id });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -747,16 +755,16 @@ app.post('/api/admin/broadcast', verifyAdmin, async (req, res) => {
   try {
     const { subject, message, audience } = req.body;
     if (!message) return res.json({ success: false, error: 'Message is required' });
+    const annTitle = subject || 'Platform Announcement';
+    // FIX 2: include 'data' field so dashboard WS handler (d.data) receives it correctly
     broadcastToAll({
-      type:     'announcement',
-      subject:  subject || 'Platform Announcement',
-      message,
-      audience: audience || 'All Users',
-      time:     new Date().toISOString()
+      type: 'announcement',
+      data: { title: annTitle, message, type: 'info', audience: audience || 'All Users' },
+      time: new Date().toISOString()
     });
     // FIX #11: Always persist to DB for audit trail
     await Announcement.create({
-      title:     subject || 'Platform Announcement',
+      title:     annTitle,
       message,
       audience:  audience || 'All Users',
       active:    true,

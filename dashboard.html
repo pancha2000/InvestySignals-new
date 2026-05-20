@@ -1118,7 +1118,13 @@
         let allSignals = [];
         async function loadSignals() {
             try {
-                const j = await (await fetch('/api/signals')).json();
+                // FIX A: Include Authorization header — /api/signals requires auth
+                const user = window._currentUser;
+                const headers = {};
+                if (user) {
+                    try { headers['Authorization'] = 'Bearer ' + await user.getIdToken(); } catch(_) {}
+                }
+                const j = await (await fetch('/api/signals', { headers })).json();
                 if (!j.success) return;
                 if (j.source === 'hardcoded') {
                     document.getElementById('stat-active').textContent = '—';
@@ -1129,11 +1135,12 @@
                     renderSignals('all');
                     return;
                 }
-                const all = j.data;
+                const all = j.signals || j.data || [];
                 allSignals = all;
                 const active = all.filter(s => s.status === 'ACTIVE');
-                const waiting = all.filter(s => s.status === 'WAITING');
-                const closed = all.filter(s => s.result === 'WIN' || s.result === 'LOSS');
+                // FIX E: Signal model has no 'WAITING' status — use active filter only
+                const waiting = []; // placeholder kept for layout compatibility
+                const closed = all.filter(s => ['TP1_HIT','TP2_HIT','SL_HIT','CANCELLED'].includes(s.status));
                 const wins = all.filter(s => s.result === 'WIN');
                 document.getElementById('stat-active').textContent = active.length;
                 document.getElementById('stat-active-sub').textContent = waiting.length ? `+${waiting.length} waiting` : `${all.length} total`;
@@ -1156,8 +1163,9 @@
                 if (filter === 'all') return true;
                 if (filter === 'long') return s.direction === 'LONG';
                 if (filter === 'short') return s.direction === 'SHORT';
-                if (filter === 'open') return s.status === 'OPEN' || s.status === 'ACTIVE' || s.status === 'WAITING';
-                if (filter === 'tp') return s.result === 'WIN';
+                // FIX E: Signal model statuses are ACTIVE, TP1_HIT, TP2_HIT, SL_HIT, CANCELLED
+                if (filter === 'open') return s.status === 'ACTIVE';
+                if (filter === 'tp') return s.status === 'TP1_HIT' || s.status === 'TP2_HIT';
                 return true;
             });
             if (filtered.length === 0) {
@@ -1172,8 +1180,8 @@
                 const isLong = s.direction === 'LONG';
                 const score = s.score || 0;
                 const scoreColor = score >= 85 ? 'var(--green)' : score >= 70 ? 'var(--gold)' : 'var(--text-muted)';
-                const statusLbl = s.status === 'TP1_HIT' ? 'TP1 Hit' : s.status === 'TP2_HIT' ? 'TP2 Hit' : s.status === 'ACTIVE' ? 'Active' : s.status === 'WAITING' ? 'Waiting' : s.status || 'Live';
-                const statusCls = (s.result === 'WIN') ? 'badge-gold' : s.status === 'ACTIVE' ? 'badge-green' : 'badge-outline';
+                const statusLbl = s.status === 'TP1_HIT' ? 'TP1 Hit' : s.status === 'TP2_HIT' ? 'TP2 Hit' : s.status === 'SL_HIT' ? 'SL Hit' : s.status === 'CANCELLED' ? 'Cancelled' : s.status === 'ACTIVE' ? 'Active' : s.status || 'Live';
+                const statusCls = (s.status === 'TP1_HIT' || s.status === 'TP2_HIT') ? 'badge-gold' : s.status === 'ACTIVE' ? 'badge-green' : 'badge-outline';
                 const timeStr = s.createdAt ? new Date(s.createdAt).toLocaleTimeString() : '—';
                 return `<div class="sig-card sig-${s.direction.toLowerCase()}">
       <div class="sig-top">
@@ -1270,15 +1278,22 @@
         function connectWS() {
             setWsStatus('connecting');
             try {
-                _ws = new WebSocket(`${_wsProto}//${location.host}`);
-                _ws.onopen = () => { _wsRetry = 1000; setWsStatus('connected'); };
-                _ws.onmessage = e => {
+                // FIX D: Pass auth token in WS URL so server can authenticate
+                const user = window._currentUser;
+                const connect = async () => {
+                    let wsUrl = `${_wsProto}//${location.host}`;
+                    if (user) {
+                        try { wsUrl += '?token=' + encodeURIComponent(await user.getIdToken()); } catch(_) {}
+                    }
+                    _ws = new WebSocket(wsUrl);
+                    _ws.onopen = () => { _wsRetry = 1000; setWsStatus('connected'); };
+                    _ws.onmessage = e => {
                     try {
                         const d = JSON.parse(e.data);
                         if (d.type === 'market_update') {
                             if (d.ticker) updatePrices(d.ticker);
                         }
-                        if (d.type === 'signal_update') {
+                        if (d.type === 'signal_update' || d.type === 'new_signal' || d.type === 'signal_deleted') {
                             loadSignals();
                             addAct('sig', '📡 New signal published!');
                             showToast('sig', '📡 New Signal!', 'A new signal was just published.', () => location.href = 'analysis.html');
@@ -1293,9 +1308,11 @@
                             document.body.innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0a0e1a;flex-direction:column;gap:16px;font-family:'Space Grotesk',sans-serif;text-align:center;padding:24px"><div style="font-size:3rem">🔧</div><div style="font-size:1.8rem;font-weight:700;color:#f0f0f0">Under Maintenance</div><div style="color:#6b7280;font-size:.95rem;max-width:400px;margin-top:8px">${d.message || 'We are making improvements. Please check back shortly.'}</div></div>`;
                         }
                     } catch (_) { }
+                    };
+                    _ws.onclose = () => { setWsStatus('disconnected'); setTimeout(connectWS, _wsRetry = Math.min(_wsRetry * 1.5, 15000)); };
+                    _ws.onerror = () => setWsStatus('disconnected');
                 };
-                _ws.onclose = () => { setWsStatus('disconnected'); setTimeout(connectWS, _wsRetry = Math.min(_wsRetry * 1.5, 15000)); };
-                _ws.onerror = () => setWsStatus('disconnected');
+                connect();
             } catch (_) { setWsStatus('disconnected'); }
         }
 

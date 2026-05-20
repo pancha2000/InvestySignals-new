@@ -173,11 +173,38 @@
     const app = initializeApp({ apiKey:"AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk", authDomain:"investysignals-890ba.firebaseapp.com", projectId:"investysignals-890ba", storageBucket:"investysignals-890ba.firebasestorage.app", messagingSenderId:"1045281522975", appId:"1:1045281522975:web:534501aab2ceeb887bdc2a" });
     const auth = getAuth(app);
     window.handleSignOut = async () => { try { await signOut(auth); } catch(e) {} window.location.href = 'index.html'; };
-        onAuthStateChanged(auth, u => {
+        onAuthStateChanged(auth, async u => {
         if (!u) { window.location.href = 'login.html'; return; }
+        // FIX B: Store user so loadSignals can get token
+        window._signalsUser = u;
         const n = u.displayName || u.email.split('@')[0];
         document.getElementById('userName').textContent = n;
         document.getElementById('userAvatar').textContent = n.charAt(0).toUpperCase();
+
+        // FIX 3: Check maintenance/suspend on load
+        try {
+            const tok = await u.getIdToken();
+            const sj = await fetch('/api/user/status', { headers: { 'Authorization': 'Bearer ' + tok } }).then(r => r.json());
+            if (sj.success) {
+                if (sj.status.suspended) { window.location.href = 'login.html?suspended=1'; return; }
+                if (sj.status.maintenance) { document.body.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0a0e1a;flex-direction:column;gap:16px;font-family:Space Grotesk,sans-serif;text-align:center;padding:24px"><div style="font-size:3rem">🔧</div><div style="font-size:1.8rem;font-weight:700;color:#f0f0f0">Under Maintenance</div><div style="color:#6b7280;font-size:.95rem;max-width:400px;margin-top:8px">' + (sj.status.maintenanceMsg || 'We are making improvements.') + '</div></div>'; return; }
+            }
+        } catch(_) {}
+
+        // FIX B: Trigger load after auth is confirmed
+        if (typeof loadSignals === 'function') loadSignals();
+
+        // Auto-refresh signals every 60s (no WebSocket on this page)
+        setInterval(() => { if (typeof loadSignals === 'function') loadSignals(); }, 60000);
+
+        // FIX 3: Poll every 30s for maintenance/suspend changes
+        setInterval(async () => {
+            try {
+                const tok = await u.getIdToken();
+                const j = await fetch('/api/user/status', { headers: { 'Authorization': 'Bearer ' + tok } }).then(r => r.json());
+                if (j.success && (j.status.maintenance || j.status.suspended)) window.location.reload();
+            } catch(_) {}
+        }, 30000);
     });
     document.getElementById('logoutBtn').addEventListener('click', () => signOut(auth).then(() => window.location.href = 'index.html'));
 </script>
@@ -210,7 +237,12 @@
 
     async function loadSignals() {
         try {
-            const res = await fetch('/api/signals');
+            // FIX B: Include auth token — /api/signals requires authentication
+            const headers = {};
+            if (window._signalsUser) {
+                try { headers['Authorization'] = 'Bearer ' + await window._signalsUser.getIdToken(); } catch(_) {}
+            }
+            const res = await fetch('/api/signals', { headers });
             if (res.ok) {
                 const data = await res.json();
                 signalData = (data.signals || []).map(s => ({
@@ -304,7 +336,8 @@
         renderSignals(filter);
     };
 
-    loadSignals();
+    // FIX B: loadSignals() is now called from onAuthStateChanged after token is ready
+    // Do NOT call it here directly — it would run without a token and get 401
 
         /* ── User dropdown ── */
         const _chip  = document.getElementById('userChipBtn');

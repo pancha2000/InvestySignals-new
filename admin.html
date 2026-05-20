@@ -936,6 +936,32 @@ onAuthStateChanged(auth, async u => {
   const overlay = document.getElementById('adminLoadingOverlay');
   if (overlay) overlay.style.display = 'none';
   if (typeof loadAdminStats === 'function') loadAdminStats();
+
+  // FIX 4: WebSocket for real-time admin notifications
+  try {
+    const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const tok = await u.getIdToken();
+    const adminWs = new WebSocket(`${wsProto}//${location.host}?token=${encodeURIComponent(tok)}`);
+    adminWs.onmessage = e => {
+      try {
+        const d = JSON.parse(e.data);
+        // New signal posted (from another admin session) or signal changed
+        if (d.type === 'new_signal' || d.type === 'signal_update' || d.type === 'signal_deleted') {
+          if (typeof loadAdminStats === 'function') loadAdminStats();
+        }
+        // New report submitted by a user - update badge
+        if (d.type === 'new_report') {
+          const badge = document.getElementById('reportsBadge');
+          if (badge) {
+            const cur = parseInt(badge.textContent) || 0;
+            badge.textContent = cur + 1;
+            badge.style.display = '';
+          }
+        }
+      } catch(_) {}
+    };
+    adminWs.onerror = () => {};
+  } catch(_) {}
 });
 window.adminSignOut = async function() {
   if(confirm('Are you sure you want to logout from admin?')) {
