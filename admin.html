@@ -253,20 +253,6 @@
             white-space: nowrap;
             font-family: 'JetBrains Mono', monospace;
         }
-        .donut-chart {
-            position: relative; width: 120px; height: 120px; margin: 0 auto;
-        }
-        .donut-chart svg { transform: rotate(-90deg); }
-        .donut-center {
-            position: absolute; inset: 0;
-            display: flex; flex-direction: column;
-            align-items: center; justify-content: center;
-        }
-        .donut-val {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 1.4rem; font-weight: 700; color: var(--green);
-        }
-        .donut-lbl { font-size: 0.65rem; color: var(--text-muted); }
 
         /* ── Alert / Log items ── */
         .log-item {
@@ -445,11 +431,7 @@
                     <div class="stat-box-val text-green" id="adminActiveSignals">—</div>
                     <div class="stat-box-sub" id="adminSignalSub">Loading...</div>
                 </div>
-                <div class="stat-box sb-blue">
-                    <div class="stat-box-lbl">Win Rate (30d)</div>
-                    <div class="stat-box-val" style="color:var(--blue)" id="adminWinRate">—</div>
-                    <div class="stat-box-sub" id="adminWinSub">Loading...</div>
-                </div>
+
                 <div class="stat-box sb-red">
                     <div class="stat-box-lbl">System Alerts</div>
                     <div class="stat-box-val text-red" id="adminAlerts">0</div>
@@ -466,30 +448,6 @@
                     <div style="display:flex;gap:16px;margin-top:8px;">
                         <span style="font-size:0.78rem;color:var(--text-muted);">Total this week: <strong style="color:var(--text)">183</strong></span>
                         <span style="font-size:0.78rem;color:var(--text-muted);">Avg/day: <strong style="color:var(--text)">26.1</strong></span>
-                    </div>
-                </div>
-                <div class="chart-box">
-                    <div class="chart-box-title">// Win / Loss Rate</div>
-                    <div class="donut-chart">
-                        <svg width="120" height="120" viewBox="0 0 120 120">
-                            <circle cx="60" cy="60" r="48" fill="none" stroke="var(--surface3)" stroke-width="14"/>
-                            <circle cx="60" cy="60" r="48" fill="none" stroke="var(--green)" stroke-width="14"
-                                stroke-dasharray="301.6" stroke-dashoffset="70" stroke-linecap="round"/>
-                        </svg>
-                        <div class="donut-center">
-                            <span class="donut-val">77%</span>
-                            <span class="donut-lbl">Win Rate</span>
-                        </div>
-                    </div>
-                    <div style="margin-top:16px;display:flex;flex-direction:column;gap:8px;">
-                        <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.8rem;">
-                            <span style="display:flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;"></span>Wins</span>
-                            <span class="mono" style="color:var(--green)">77.2%</span>
-                        </div>
-                        <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.8rem;">
-                            <span style="display:flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--red);display:inline-block;"></span>Losses</span>
-                            <span class="mono" style="color:var(--red)">22.8%</span>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -569,8 +527,7 @@
                         <thead>
                             <tr>
                                 <th>#</th>
-                                <th>User</th>
-                                <th>Email</th>
+                                <th>User / Email</th>
                                 <th>Plan</th>
                                 <th>Joined</th>
                                 <th>Status</th>
@@ -579,7 +536,7 @@
                         </thead>
                         <tbody id="userTableBody">
                             <tr>
-                                <td colspan="7" style="text-align:center;padding:32px;color:var(--text-muted);">
+                                <td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted);">
                                     Loading users from database...
                                 </td>
                             </tr>
@@ -985,7 +942,8 @@ window.adminSignOut = async function() {
         if (id === 'users'     && typeof loadUsers         === 'function') loadUsers();
         if (id === 'reports'   && typeof loadReports        === 'function') loadReports();
         if (id === 'broadcast' && typeof loadAnnouncements  === 'function') loadAnnouncements();
-        if (id === 'signals'   && typeof loadAdminStats       === 'function') loadAdminStats();
+        if (id === 'signals'   && typeof loadAdminStats     === 'function') loadAdminStats();
+        if (id === 'settings'  && typeof loadAdminStats     === 'function') loadAdminStats();
     }
 
     // Sidebar toggle (mobile)
@@ -1067,13 +1025,13 @@ window.adminSignOut = async function() {
     async function loadUsers() {
         const tbody = document.getElementById('userTableBody');
         if (!tbody) return;
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text-muted);">Loading users…</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted);">Loading users…</td></tr>';
         try {
             const idToken = await getToken();
             const res  = await fetch('/api/admin/users', { headers: { 'Authorization': 'Bearer ' + idToken } });
             const data = await res.json();
             if (!data.success || !Array.isArray(data.users)) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--red);">Failed to load users. Check console.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--red);">Failed to load users. Check console.</td></tr>';
                 return;
             }
             const users = data.users;
@@ -1084,7 +1042,7 @@ window.adminSignOut = async function() {
             set('userPro',    users.filter(u => u.plan==='pro'||u.plan==='elite').length);
             set('userBanned', users.filter(u => u.suspended).length);
             if (!users.length) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text-muted);">No users registered yet.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted);">No users registered yet.</td></tr>';
                 return;
             }
             tbody.innerHTML = users.map((u, i) => {
@@ -1095,30 +1053,36 @@ window.adminSignOut = async function() {
                     : u.role==='admin'
                         ? '<span class="badge badge-red" style="font-size:0.68rem;">Admin</span>'
                         : '<span class="badge badge-green" style="font-size:0.68rem;">Active</span>';
+                const safeName = (u.displayName||u.email||'').replace(/'/g,'').replace(/"/g,'');
                 return `<tr>
                     <td class="mono" style="color:var(--text-muted);font-size:0.8rem;">${i+1}</td>
-                    <td>${u.displayName||'—'}</td>
-                    <td style="font-size:0.82rem;">${u.email||'—'}</td>
+                    <td>
+                        <div style="font-weight:600;font-size:0.875rem;">${u.displayName||'—'}</div>
+                        <div style="font-size:0.75rem;color:var(--text-muted);">${u.email||'—'}</div>
+                    </td>
                     <td><span class="badge badge-${planColor}" style="font-size:0.68rem;text-transform:uppercase;">${u.plan||'free'}</span></td>
                     <td style="font-size:0.8rem;color:var(--text-muted);">${joined}</td>
                     <td>${statusBadge}</td>
                     <td>
-                        <div style="display:flex;gap:6px;">
-                            <button class="btn btn-surface btn-sm" onclick="toggleSuspend('${u.uid}', ${!u.suspended}, '${(u.displayName||u.email||'').replace(/'/g,'')}')">
+                        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+                            <button class="btn btn-surface btn-sm" onclick="toggleSuspend('${u.uid}', ${!u.suspended}, '${safeName}')">
                                 ${u.suspended ? '✅ Unsuspend' : '🚫 Suspend'}
                             </button>
                             <select class="input-control" style="width:auto;padding:4px 8px;font-size:0.78rem;" onchange="changePlan('${u.uid}', this.value)">
-                                <option ${u.plan==='free'?'selected':''}>free</option>
-                                <option ${u.plan==='pro'?'selected':''}>pro</option>
-                                <option ${u.plan==='elite'?'selected':''}>elite</option>
+                                <option ${u.plan==='free'?'selected':''} value="free">Free</option>
+                                <option ${u.plan==='pro'?'selected':''} value="pro">Pro</option>
+                                <option ${u.plan==='elite'?'selected':''} value="elite">Elite</option>
                             </select>
+                            <button class="btn btn-sm" style="background:rgba(255,61,90,0.12);color:var(--red,#ff3d5a);border:1px solid rgba(255,61,90,0.3);" onclick="deleteUser('${u.uid}', '${safeName}')">
+                                🗑 Delete
+                            </button>
                         </div>
                     </td>
                 </tr>`;
             }).join('');
         } catch(e) {
             console.error('[Admin] loadUsers error:', e);
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--red);">Error: ' + e.message + '</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--red);">Error: ' + e.message + '</td></tr>';
         }
     }
 
@@ -1146,7 +1110,22 @@ window.adminSignOut = async function() {
                 body: JSON.stringify({ plan })
             });
             const j = await res.json();
-            if (!j.success) alert('❌ ' + (j.error || 'Failed to update plan'));
+            if (j.success) { loadUsers(); }
+            else alert('❌ ' + (j.error || 'Failed to update plan'));
+        } catch(e) { alert('❌ ' + e.message); }
+    }
+
+    async function deleteUser(uid, name) {
+        if (!confirm(`⚠️ Permanently delete user "${name}"?\n\nThis will remove them from the database and Firebase. This cannot be undone.`)) return;
+        try {
+            const idToken = await getToken();
+            const res = await fetch('/api/admin/users/' + uid, {
+                method: 'DELETE',
+                headers: { 'Authorization': 'Bearer ' + idToken }
+            });
+            const j = await res.json();
+            if (j.success) { loadUsers(); loadAdminStats(); }
+            else alert('❌ ' + (j.error || 'Failed to delete user'));
         } catch(e) { alert('❌ ' + e.message); }
     }
 
@@ -1177,9 +1156,7 @@ window.adminSignOut = async function() {
                     const wr = Math.round(wins / closed * 100);
                     const el_w  = document.getElementById('adminWinRate'); if(el_w)  el_w.textContent  = wr + '%';
                     const el_ws = document.getElementById('adminWinSub');  if(el_ws) el_ws.textContent = wins+'W / '+sl.length+'L';
-                    const dv = document.querySelector('.donut-val'); if(dv) dv.textContent = wr + '%';
                     const circle = document.querySelector('.donut-chart circle:last-child');
-                    if (circle) {
                         const circ = 2 * Math.PI * 48;
                         circle.setAttribute('stroke-dasharray', circ.toFixed(1));
                         circle.setAttribute('stroke-dashoffset', (circ * (1 - wr/100)).toFixed(1));

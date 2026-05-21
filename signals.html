@@ -111,6 +111,7 @@
         <a href="analysis.html" class="auth-nav-link">🧠 Analysis</a>
         <a href="live-signals.html" class="auth-nav-link">🔴 Live</a>
         <a href="profile.html" class="auth-nav-link">👤 Profile</a>
+        <a class="auth-nav-link" style="color:var(--red,#ff4d4f);cursor:pointer;" id="sidebarLogout">🔓 Log Out</a>
     </nav>
     <div class="auth-nav-right">
         <span class="badge badge-green live-dot">Live</span>
@@ -207,6 +208,8 @@
         }, 30000);
     });
     document.getElementById('logoutBtn').addEventListener('click', () => signOut(auth).then(() => window.location.href = 'index.html'));
+    const _slo = document.getElementById('sidebarLogout');
+    if (_slo) _slo.addEventListener('click', () => signOut(auth).then(() => window.location.href = 'index.html'));
 </script>
 
 <script>

@@ -179,6 +179,7 @@
             <a href="analysis.html" class="auth-nav-link">🧠 Analysis</a>
             <a href="live-signals.html" class="auth-nav-link active">📝 Paper Trading</a>
             <a href="profile.html" class="auth-nav-link">👤 Profile</a>
+            <a class="auth-nav-link" style="color:var(--red,#ff4d4f);cursor:pointer;" id="sidebarLogout">🔓 Log Out</a>
         </nav>
         <div class="auth-nav-right">
             <div class="user-chip-wrap" id="userChipWrap">
@@ -372,6 +373,8 @@
             _chip.addEventListener('click', e => { e.stopPropagation(); _ddrop.classList.toggle('open'); });
             document.addEventListener('click', () => _ddrop.classList.remove('open'));
         }
+        const _slo2 = document.getElementById('sidebarLogout');
+        if (_slo2) _slo2.addEventListener('click', () => { if(typeof window.handleSignOut==='function') window.handleSignOut(); else window.location.href='index.html'; });
         const _dlogout = document.getElementById('dropdownLogout');
         if (_dlogout) _dlogout.addEventListener('click', async () => {
             if (typeof window.handleSignOut === 'function') await window.handleSignOut();

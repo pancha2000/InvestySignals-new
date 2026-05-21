@@ -198,6 +198,7 @@
             <a href="analysis.html" class="auth-nav-link">🧠 Analysis</a>
             <a href="live-signals.html" class="auth-nav-link">📝 Paper Trading</a>
             <a href="profile.html" class="auth-nav-link active">👤 Profile</a>
+            <a class="auth-nav-link" style="color:var(--red,#ff4d4f);cursor:pointer;" id="sidebarLogout">🔓 Log Out</a>
         </div>
         <div class="auth-nav-right">
             <div class="user-chip-wrap" id="userChipWrap">
@@ -220,9 +221,22 @@
         <div class="profile-layout">
             
             <div class="sidebar-menu">
+                <!-- User info card at top of sidebar -->
+                <div style="padding:16px 12px 20px;border-bottom:1px solid var(--border-soft);margin-bottom:8px;">
+                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+                        <div id="profileAvatarBig" style="width:44px;height:44px;border-radius:50%;background:var(--gold);color:#000;display:flex;align-items:center;justify-content:center;font-size:1.2rem;font-weight:800;flex-shrink:0;">U</div>
+                        <div style="min-width:0;">
+                            <div id="profileNameDisplay" style="font-weight:700;font-size:0.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">—</div>
+                            <div id="profileEmailDisplay" style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">—</div>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <span id="profilePlanBadge" class="badge badge-outline" style="font-size:0.7rem;">Free</span>
+                        <a href="upgrade.html" class="badge badge-gold" style="font-size:0.7rem;text-decoration:none;cursor:pointer;">⬆ Upgrade</a>
+                    </div>
+                </div>
                 <div class="menu-item active" data-target="tab-info">Account Info</div>
                 <div class="menu-item" data-target="tab-security">Security</div>
-                <div class="menu-item" data-target="tab-trading">Trading Preferences</div>
                 <div class="menu-item" data-target="tab-stats">Statistics</div>
             </div>
 
@@ -295,45 +309,6 @@
                     </form>
                 </div>
 
-                <!-- Tab 3: Trading Preferences -->
-                <div class="tab-content" id="tab-trading">
-                    <div class="content-header">
-                        <h2 class="content-title">Trading Preferences</h2>
-                        <p class="content-desc">Customize how analysis is displayed by default.</p>
-                    </div>
-                    
-                    <form id="prefsForm">
-                        <div class="input-group">
-                            <label>Default Timeframe</label>
-                            <select class="input-control">
-                                <option value="15m">15m</option>
-                                <option value="1h" selected>1h</option>
-                                <option value="4h">4h</option>
-                                <option value="1d">1d</option>
-                            </select>
-                        </div>
-                        <div class="input-group">
-                            <label>Default Risk % per Trade</label>
-                            <input type="number" class="input-control" value="2" min="1" max="10">
-                        </div>
-                        
-                        <div class="input-group">
-                            <label>Watchlist Pairs</label>
-                            <div class="chips-container" id="watchlist">
-                                <div class="chip selected">BTCUSDT</div>
-                                <div class="chip selected">ETHUSDT</div>
-                                <div class="chip">SOLUSDT</div>
-                                <div class="chip">BNBUSDT</div>
-                                <div class="chip selected">XRPUSDT</div>
-                                <div class="chip">ADAUSDT</div>
-                                <div class="chip">DOGEUSDT</div>
-                            </div>
-                        </div>
-                        
-                        <button type="submit" class="btn btn-gold" style="margin-top: 16px;">Save Preferences</button>
-                    </form>
-                </div>
-
                 <!-- Tab 4: Stats -->
                 <div class="tab-content" id="tab-stats">
                     <div class="content-header">
@@ -401,12 +376,28 @@
 
             document.getElementById('userChip').style.display = 'flex';
             const name = user.displayName || user.email?.split('@')[0] || 'Trader';
-            document.getElementById('userAvatar').textContent = name.charAt(0).toUpperCase();
+            const ini  = name.charAt(0).toUpperCase();
+            document.getElementById('userAvatar').textContent = ini;
             document.getElementById('userName').textContent = name;
             document.getElementById('displayName').value = name;
             document.getElementById('email').value = user.email || '';
+            // Populate sidebar profile card
+            const bigAv = document.getElementById('profileAvatarBig'); if(bigAv) bigAv.textContent = ini;
+            const nd = document.getElementById('profileNameDisplay');  if(nd) nd.textContent = name;
+            const ed = document.getElementById('profileEmailDisplay'); if(ed) ed.textContent = user.email || '';
             const joined = user.metadata.creationTime ? new Date(user.metadata.creationTime).toLocaleDateString() : 'Recently';
             document.getElementById('joinDate').textContent = `Joined: ${joined}`;
+
+            // Load plan from server
+            try {
+                const tok = await user.getIdToken();
+                const sj  = await fetch('/api/user/status', { headers: { 'Authorization': 'Bearer ' + tok } }).then(r=>r.json());
+                if (sj.success) {
+                    const pl = sj.status.plan || 'free';
+                    const pb = document.getElementById('profilePlanBadge');
+                    if (pb) { pb.textContent = pl.charAt(0).toUpperCase() + pl.slice(1); pb.className = pl === 'elite' ? 'badge badge-purple' : pl === 'pro' ? 'badge badge-gold' : 'badge badge-outline'; }
+                }
+            } catch(_) {}
 
             document.getElementById('logoutBtn').addEventListener('click', () =>
                 signOut(auth).then(() => window.location.href = 'index.html')
@@ -499,6 +490,8 @@
             _chip.addEventListener('click', e => { e.stopPropagation(); _ddrop.classList.toggle('open'); });
             document.addEventListener('click', () => _ddrop.classList.remove('open'));
         }
+        const _slo3 = document.getElementById('sidebarLogout');
+        if (_slo3) _slo3.addEventListener('click', () => { if(typeof window.handleSignOut==='function') window.handleSignOut(); else window.location.href='index.html'; });
         const _dlogout = document.getElementById('dropdownLogout');
         if (_dlogout) _dlogout.addEventListener('click', async () => {
             if (typeof window.handleSignOut === 'function') await window.handleSignOut();
