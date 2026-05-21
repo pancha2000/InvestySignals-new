@@ -1205,7 +1205,7 @@ window.adminSignOut = async function() {
             }
         } catch(e) { console.warn('[Admin] Stats load failed:', e); }
 
-        // Activity log — FIX: auth token + correct key logR.trades (not logR.data)
+        // Activity log
         try {
             const idToken = await getToken();
             const logR = await fetch('/api/reports/activity', {
@@ -1227,9 +1227,9 @@ window.adminSignOut = async function() {
 
         // Load settings (maintenance state)
         try {
-            const idToken = await getToken();
+            const idToken2 = await getToken();
             const setR = await fetch('/api/admin/settings', {
-                headers: { 'Authorization': 'Bearer ' + idToken }
+                headers: { 'Authorization': 'Bearer ' + idToken2 }
             }).then(r => r.json()).catch(() => ({ success: false }));
             if (setR.success && setR.settings) {
                 const mt = document.getElementById('maintToggle');
@@ -1240,7 +1240,6 @@ window.adminSignOut = async function() {
                 if (rt) rt.checked = !!setR.settings.allowRegistrations;
             }
         } catch(_) {}
-    }
 
     async function refreshStats() {
         document.querySelectorAll('.stat-box-val').forEach(v => { v.style.opacity = '0.4'; });

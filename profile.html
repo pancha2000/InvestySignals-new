@@ -374,7 +374,6 @@
                 if (sj.success && (sj.status.maintenance || sj.status.suspended)) { window.location.href = 'dashboard.html'; return; }
             } catch(_) {}
 
-            document.getElementById('userChip').style.display = 'flex';
             const name = user.displayName || user.email?.split('@')[0] || 'Trader';
             const ini  = name.charAt(0).toUpperCase();
             document.getElementById('userAvatar').textContent = ini;
