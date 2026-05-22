@@ -219,6 +219,24 @@
     @media (max-width: 400px) {
         .stats-grid-4 { grid-template-columns: 1fr; }
     }
+
+    /* ── Toggle Switch ── */
+    .toggle-switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .toggle-slider {
+        position: absolute; inset: 0;
+        background: var(--surface); border-radius: 24px;
+        cursor: pointer; transition: 0.3s;
+        border: 1px solid var(--border-soft);
+    }
+    .toggle-slider::before {
+        content: '';
+        position: absolute; left: 3px; top: 3px;
+        width: 16px; height: 16px; border-radius: 50%;
+        background: var(--text-muted); transition: 0.3s;
+    }
+    .toggle-switch input:checked + .toggle-slider { background: var(--gold); border-color: var(--gold); }
+    .toggle-switch input:checked + .toggle-slider::before { transform: translateX(20px); background: #000; }
 </style>
 </head>
 <body>
@@ -255,11 +273,6 @@
         <button class="menu-item active" onclick="showSection('overview', this)">
             <span class="menu-icon">📊</span> Dashboard
         </button>
-        <button class="menu-item" onclick="showSection('activity', this)">
-            <span class="menu-icon">📋</span> Activity Log
-            <span class="menu-badge">12</span>
-        </button>
-
         <div class="sidebar-section">Management</div>
         <button class="menu-item" onclick="showSection('users', this)">
             <span class="menu-icon">👤</span> Users
@@ -365,8 +378,7 @@
             <div class="data-panel">
                 <div class="panel-header">
                     <div class="panel-title">📋 Recent Activity</div>
-                    <button class="btn btn-surface btn-sm" onclick="showSection('activity', null)">View All →</button>
-                </div>
+                    </div>
                 <div class="panel-body" id="recentActivity">
                     <div style="padding:32px;text-align:center;color:var(--text-muted);font-size:0.88rem;">
                         No recent activity yet. Activity will appear here once signals are posted.
@@ -634,28 +646,6 @@
             </div>
         </div>
 
-        <!-- ── ACTIVITY ── -->
-        <div class="content-section" id="section-activity">
-            <div class="admin-banner">
-                <div class="admin-banner-left">
-                    <div class="admin-pill">Logs</div>
-                    <h2>Activity Log</h2>
-                    <p>Full system event history.</p>
-                </div>
-                <button class="btn btn-danger btn-sm" onclick="if(confirm('Clear all logs?')){ const lc=document.getElementById('activityLog'); if(lc) lc.innerHTML='<div style=\"padding:24px;text-align:center;color:var(--text-muted);\">Logs cleared.</div>'; }">🗑 Clear Logs</button>
-            </div>
-            <div class="data-panel">
-                <div class="panel-header">
-                    <div class="panel-title">📋 System Events</div>
-                    <div class="search-wrap">
-                        <span class="search-icon">🔍</span>
-                        <input type="text" class="search-box" placeholder="Filter logs..." oninput="filterActivityLog(this.value)">
-                    </div>
-                </div>
-                <div id="activityLog"></div>
-            </div>
-        </div>
-
         <!-- ── SETTINGS ── -->
         <div class="content-section" id="section-settings">
             <div class="admin-banner">
@@ -716,24 +706,7 @@
     </main>
 </div>
 
-<!-- Toggle Switch CSS (inline for self-contained) -->
-<style>
-.toggle-switch { position: relative; display: inline-block; width: 44px; height: 24px; }
-.toggle-switch input { opacity: 0; width: 0; height: 0; }
-.toggle-slider {
-    position: absolute; inset: 0;
-    background: var(--surface3); border-radius: 24px;
-    cursor: pointer; transition: var(--transition);
-}
-.toggle-slider::before {
-    content: '';
-    position: absolute; left: 3px; top: 3px;
-    width: 18px; height: 18px; border-radius: 50%;
-    background: var(--text-muted); transition: var(--transition);
-}
-input:checked + .toggle-slider { background: rgba(0,217,126,0.25); }
-input:checked + .toggle-slider::before { transform: translateX(20px); background: var(--green); }
-</style>
+
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
@@ -1081,25 +1054,7 @@ window.adminSignOut = async function() {
             }
         } catch(e) { console.warn('[Admin] Stats load failed:', e); }
 
-        // Activity log
-        try {
-            const idToken = await getToken();
-            const logR = await fetch('/api/reports/activity', {
-                headers: { 'Authorization': 'Bearer ' + idToken }
-            }).then(r => r.json()).catch(() => ({ success: false }));
-            if (logR.success && Array.isArray(logR.trades)) {
-                const html = logR.trades.slice(0, 10).map(t => `
-                    <div class="log-item">
-                        <div class="log-dot" style="background:var(--blue)"></div>
-                        <div class="log-msg">
-                            <div>Paper trade: <strong>${t.pair||'?'}</strong> ${t.direction||''} @ ${t.entry||'?'} — <span style="color:${t.status==='OPEN'?'var(--green)':'var(--text-muted)'}">${t.status||'?'}</span></div>
-                            <div class="log-time">${t.openedAt ? new Date(t.openedAt).toLocaleString() : '—'}</div>
-                        </div>
-                    </div>`).join('');
-                const lc = document.getElementById('activityLog');   if(lc) lc.innerHTML = html || '<div style="padding:24px;text-align:center;color:var(--text-muted);">No activity yet.</div>';
-                const ra = document.getElementById('recentActivity'); if(ra) ra.innerHTML = html || '<div style="padding:24px;text-align:center;color:var(--text-muted);">No activity yet.</div>';
-            }
-        } catch(_) {}
+
 
         // Load settings (maintenance state)
         try {
@@ -1415,14 +1370,7 @@ window.adminSignOut = async function() {
         });
     }
 
-    // ── Activity log text filter ─────────────────────────────
-    function filterActivityLog(query) {
-        const items = document.querySelectorAll('#activityLog .log-item');
-        const q = query.toLowerCase();
-        items.forEach(item => {
-            item.style.display = item.textContent.toLowerCase().includes(q) ? '' : 'none';
-        });
-    }
+
 
 
 </script>
