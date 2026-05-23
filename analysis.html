@@ -6,116 +6,207 @@
     <title>Analysis Engine | InvestySignals</title>
     <link rel="stylesheet" href="style.css">
     <style>
-        .page-wrap { padding: 88px 24px 48px; max-width: 1000px; margin: 0 auto; width: 100%; }
-        .controls-panel {
-            background: var(--bg2); border: 1px solid var(--border-soft);
-            border-radius: var(--radius); padding: 18px 20px;
-            display: flex; gap: 14px; align-items: flex-end;
-            flex-wrap: wrap; margin-bottom: 20px;
-        }
-        .ctrl-group { flex: 1; min-width: 130px; }
-        .ctrl-group label { display: block; margin-bottom: 6px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
-        .ctrl-select { width: 100%; background: var(--surface); border: 1px solid var(--border-soft); color: var(--text); padding: 11px 14px; border-radius: var(--radius-sm); outline: none; font-family: 'Space Grotesk', sans-serif; font-size: 0.9rem; transition: var(--transition); cursor: pointer; }
-        .ctrl-select:focus { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-subtle); }
+        .page-wrap { padding: 88px 24px 80px; max-width: 1000px; margin: 0 auto; width: 100%; }
 
-        .results-panel {
-            background: var(--bg2); border: 1px solid var(--border-soft);
-            border-radius: var(--radius); padding: 32px;
-            min-height: 360px; display: flex; flex-direction: column;
-        }
-        .empty-placeholder { margin: auto; text-align: center; color: var(--text-muted); }
-        .ep-icon { font-size: 2.5rem; margin-bottom: 14px; opacity: 0.35; }
-        .ep-title { font-size: 1.1rem; color: var(--text); margin-bottom: 6px; }
-        .ep-sub { font-size: 0.85rem; max-width: 300px; }
-
-        .results-content { display: none; animation: fadeSlide 0.4s ease; }
         @keyframes fadeSlide { from{opacity:0;transform:translateY(10px);} to{opacity:1;transform:translateY(0);} }
+        @keyframes scanPulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
 
-        /* Score */
-        .score-header {
-            display: grid; grid-template-columns: auto 1fr auto;
-            gap: 20px; align-items: center;
-            background: linear-gradient(135deg, rgba(240,180,41,0.07) 0%, transparent 70%);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
-            padding: 20px 24px; margin-bottom: 24px;
+        /* ── SCANNER WRAP ── */
+        .scanner-wrap {
+            background: var(--bg2);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--radius);
+            overflow: hidden;
         }
-        .score-circle {
-            width: 80px; height: 80px; position: relative;
-            flex-shrink: 0;
+        .scanner-header { padding: 18px 20px 0; }
+        .scanner-title-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:4px; }
+        .scanner-badge {
+            font-size:0.58rem; font-weight:700; letter-spacing:0.1em;
+            background:rgba(240,180,41,0.08); border:1px solid rgba(240,180,41,0.3);
+            color:var(--gold); padding:3px 8px; border-radius:4px;
+            font-family:'JetBrains Mono',monospace; text-transform:uppercase;
         }
-        .score-circle svg { transform: rotate(-90deg); }
-        .score-circle-text {
-            position: absolute; inset: 0;
-            display: flex; flex-direction: column;
-            align-items: center; justify-content: center;
+        .scanner-sub {
+            font-size:0.78rem; color:var(--text-muted); margin-bottom:14px;
+            font-family:'JetBrains Mono',monospace;
         }
-        .sc-num { font-family: 'JetBrains Mono', monospace; font-size: 1.4rem; font-weight: 700; color: var(--gold); line-height: 1; }
-        .sc-denom { font-size: 0.65rem; color: var(--text-muted); }
-        .score-bars { flex: 1; }
-        .score-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; font-size: 0.8rem; }
-        .sbr-label { color: var(--text-muted); min-width: 55px; }
-        .sbr-track { flex: 1; height: 4px; background: var(--surface); border-radius: 2px; overflow: hidden; }
-        .sbr-fill  { height: 100%; border-radius: 2px; transition: width 0.8s ease; }
-        .score-verdict { text-align: center; }
-        .verdict-label { font-size: 0.65rem; font-family: 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 4px; }
-        .verdict-val { font-family: 'JetBrains Mono', monospace; font-size: 1.1rem; font-weight: 700; }
 
-        /* Indicator grid */
-        .indicator-grid {
-            display: grid; grid-template-columns: repeat(5, 1fr);
-            gap: 8px; margin-bottom: 20px;
+        /* Smart Scan button */
+        .smart-scan-btn {
+            width:100%; padding:15px; margin-bottom:12px;
+            background:linear-gradient(135deg,rgba(240,180,41,0.12),rgba(240,180,41,0.04));
+            border:1px solid rgba(240,180,41,0.4);
+            border-radius:var(--radius-sm); color:var(--gold);
+            font-weight:700; font-size:1rem; cursor:pointer;
+            display:flex; align-items:center; justify-content:center; gap:10px;
+            transition:var(--transition); font-family:'Space Grotesk',sans-serif;
         }
-        .ind-cell {
-            background: var(--surface); border: 1px solid var(--border-soft);
-            border-radius: var(--radius-xs); padding: 12px 10px; text-align: center;
-            transition: var(--transition); position: relative; overflow: hidden;
-        }
-        .ind-cell:hover { border-color: var(--border); }
-        .ind-cell.bull { border-color: rgba(0,217,126,0.25); }
-        .ind-cell.bear { border-color: rgba(255,59,92,0.25); }
-        .ind-cell.neut { border-color: var(--border-soft); }
-        .ind-cell.bull::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--green); }
-        .ind-cell.bear::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--red); }
-        .ind-name { font-size: 0.62rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
-        .ind-value { font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; font-weight: 600; }
+        .smart-scan-btn:hover { background:linear-gradient(135deg,rgba(240,180,41,0.2),rgba(240,180,41,0.08)); box-shadow:0 0 20px rgba(240,180,41,0.15); }
+        .smart-scan-btn:disabled { opacity:0.6; cursor:not-allowed; }
 
-        /* Levels */
-        .levels-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
-        .level-box {
-            background: var(--surface); border-radius: var(--radius-sm);
-            padding: 16px; text-align: center; border: 1px solid var(--border-soft);
+        /* Input row */
+        .scanner-input-row { display:flex; gap:8px; margin-bottom:14px; }
+        .scanner-input {
+            flex:1; background:var(--surface); border:1px solid var(--border-soft);
+            color:var(--text); padding:11px 14px; border-radius:var(--radius-sm);
+            outline:none; font-family:'JetBrains Mono',monospace; font-size:0.9rem;
+            transition:var(--transition); letter-spacing:0.05em;
         }
-        .level-box.sl-box  { border-color: rgba(255,59,92,0.2); }
-        .level-box.tp-box  { border-color: rgba(0,217,126,0.2); }
-        .level-box.ent-box { border-color: rgba(240,180,41,0.2); }
-        .lbl-tag { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 6px; font-family: 'JetBrains Mono', monospace; }
-        .lbl-val { font-family: 'JetBrains Mono', monospace; font-size: 1.2rem; font-weight: 700; }
-
-        .disclaimer { text-align: center; font-size: 0.75rem; color: var(--text-dim); padding-top: 16px; border-top: 1px solid var(--border-soft); }
-
-        @media (max-width: 900px) {
-            .score-header { grid-template-columns: 1fr; justify-items: center; text-align: center; }
-            .indicator-grid { grid-template-columns: repeat(3, 1fr); }
+        .scanner-input:focus { border-color:var(--gold); box-shadow:0 0 0 3px var(--gold-subtle); }
+        .scanner-input::placeholder { color:var(--text-dim); font-family:'Space Grotesk',sans-serif; letter-spacing:0; }
+        .deep-scan-btn {
+            padding:11px 16px; white-space:nowrap;
+            background:linear-gradient(135deg,rgba(0,217,126,0.12),rgba(0,217,126,0.04));
+            border:1px solid rgba(0,217,126,0.35); border-radius:var(--radius-sm);
+            color:var(--green); font-weight:700; font-size:0.85rem; cursor:pointer;
+            display:flex; align-items:center; gap:6px; transition:var(--transition);
+            font-family:'Space Grotesk',sans-serif;
         }
-        @media (max-width: 600px) {
-            .indicator-grid { grid-template-columns: repeat(2, 1fr); }
-            .levels-row { grid-template-columns: 1fr; }
-            .controls-panel {
-                flex-direction: column;
-                align-items: stretch;
-            }
-            .controls-panel .ctrl-group { flex: unset; width: 100%; }
-            .controls-panel .btn { width: 100%; justify-content: center; }
-            .page-wrap { padding: 80px 16px 40px; }
-            .results-panel { padding: 20px 16px; }
-            .results-panel { padding: 18px; }
+        .deep-scan-btn:hover { background:linear-gradient(135deg,rgba(0,217,126,0.2),rgba(0,217,126,0.08)); box-shadow:0 0 16px rgba(0,217,126,0.12); }
+        .deep-scan-btn:disabled { opacity:0.6; cursor:not-allowed; }
+
+        /* Score filters */
+        .score-filters { display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:0 20px 14px; }
+        .sf-label { font-size:0.72rem; color:var(--text-muted); margin-right:2px; }
+        .sf-btn {
+            padding:4px 12px; border-radius:20px; font-size:0.72rem; font-weight:700;
+            cursor:pointer; border:1px solid var(--border-soft); background:var(--surface);
+            color:var(--text-muted); transition:var(--transition); font-family:'JetBrains Mono',monospace;
+        }
+        .sf-btn.s-grade { border-color:rgba(240,180,41,0.4); color:var(--gold); }
+        .sf-btn.a-grade { border-color:rgba(0,217,126,0.35); color:var(--green); }
+        .sf-btn.b-grade { border-color:rgba(59,139,255,0.35); color:var(--blue); }
+        .sf-btn.c-grade { border-color:var(--border-soft); color:var(--text-muted); }
+        .sf-btn.s-grade.active { background:rgba(240,180,41,0.12); }
+        .sf-btn.a-grade.active { background:rgba(0,217,126,0.1); }
+        .sf-btn.b-grade.active { background:rgba(59,139,255,0.1); }
+        .sf-btn.c-grade.active { background:var(--surface2); color:var(--text); }
+
+        /* Progress */
+        .scan-progress { padding:12px 20px; display:none; }
+        .sp-bar-track { height:3px; background:var(--surface); border-radius:2px; overflow:hidden; margin-bottom:8px; }
+        .sp-bar-fill { height:100%; background:linear-gradient(90deg,var(--gold),var(--green)); border-radius:2px; transition:width 0.3s ease; width:0%; }
+        .sp-text { font-size:0.72rem; color:var(--text-muted); font-family:'JetBrains Mono',monospace; }
+
+        /* Table */
+        .scan-table-head {
+            display:grid; grid-template-columns:1fr 72px 100px 80px 44px;
+            gap:6px; padding:8px 20px;
+            font-size:0.6rem; font-weight:700; text-transform:uppercase;
+            letter-spacing:0.08em; color:var(--text-dim);
+            font-family:'JetBrains Mono',monospace;
+            border-top:1px solid var(--border-soft);
+            border-bottom:1px solid var(--border-soft);
+        }
+        .scan-row {
+            display:grid; grid-template-columns:1fr 72px 100px 80px 44px;
+            gap:6px; padding:12px 20px; align-items:center;
+            border-bottom:1px solid var(--border-dim);
+            cursor:pointer; transition:var(--transition);
+            animation:fadeSlide 0.3s ease;
+        }
+        .scan-row:hover { background:var(--surface); }
+        .scan-row.active-row { background:rgba(240,180,41,0.05); border-left:3px solid var(--gold); }
+        .scan-row:last-child { border-bottom:none; }
+        .scan-sym { font-weight:700; font-size:0.92rem; }
+        .scan-sym span { font-size:0.72rem; color:var(--text-muted); font-weight:400; }
+        .score-badge {
+            display:inline-flex; align-items:center; justify-content:center;
+            padding:3px 10px; border-radius:6px; font-size:0.72rem; font-weight:700;
+            font-family:'JetBrains Mono',monospace; min-width:56px;
+        }
+        .score-badge.s { background:rgba(240,180,41,0.15); border:1px solid rgba(240,180,41,0.4); color:var(--gold); }
+        .score-badge.a { background:rgba(0,217,126,0.1); border:1px solid rgba(0,217,126,0.3); color:var(--green); }
+        .score-badge.b { background:rgba(59,139,255,0.1); border:1px solid rgba(59,139,255,0.3); color:var(--blue); }
+        .score-badge.c { background:rgba(255,59,92,0.08); border:1px solid rgba(255,59,92,0.25); color:var(--red); }
+        .sig-pill {
+            display:inline-flex; align-items:center; gap:4px;
+            font-size:0.72rem; font-weight:600; padding:3px 8px; border-radius:5px;
+        }
+        .sig-pill.bull { background:rgba(0,217,126,0.1); color:var(--green); }
+        .sig-pill.bear { background:rgba(255,59,92,0.08); color:var(--red); }
+        .sig-pill.neut { background:var(--surface); color:var(--text-muted); }
+        .rsi-val { font-family:'JetBrains Mono',monospace; font-size:0.82rem; font-weight:600; }
+        .scan-action-btn {
+            width:36px; height:36px; border-radius:var(--radius-xs);
+            background:var(--surface2); border:1px solid var(--border-soft);
+            color:var(--text-muted); cursor:pointer; display:flex;
+            align-items:center; justify-content:center; font-size:0.85rem;
+            transition:var(--transition);
+        }
+        .scan-action-btn:hover { border-color:var(--gold); color:var(--gold); background:rgba(240,180,41,0.08); }
+        .scan-action-btn.active { border-color:var(--gold); color:var(--gold); background:rgba(240,180,41,0.1); }
+
+        /* Empty state */
+        .scanner-empty { padding:32px 20px; text-align:center; color:var(--text-muted); font-size:0.85rem; }
+        .scanner-empty .se-icon { font-size:2.2rem; opacity:0.25; margin-bottom:10px; }
+
+        /* ── DEEP SCAN RESULT PANEL (inline) ── */
+        .deep-result-panel {
+            display:none;
+            border-top:1px solid var(--border-soft);
+            background:var(--bg2);
+            animation:fadeSlide 0.35s ease;
+        }
+        .deep-result-panel.show { display:block; }
+        .drp-header {
+            padding:18px 20px 14px;
+            border-bottom:1px solid var(--border-soft);
+            display:flex; align-items:flex-start; justify-content:space-between; gap:12px;
+        }
+        .drp-close {
+            width:30px; height:30px; border-radius:50%;
+            background:var(--surface); border:1px solid var(--border-soft);
+            color:var(--text-muted); cursor:pointer; font-size:0.9rem;
+            display:flex; align-items:center; justify-content:center;
+            transition:var(--transition); flex-shrink:0;
+        }
+        .drp-close:hover { border-color:var(--red); color:var(--red); }
+        .drp-body { padding:18px 20px 20px; }
+
+        /* Score row */
+        .drp-score-row {
+            background:linear-gradient(135deg,rgba(240,180,41,0.07),transparent);
+            border:1px solid var(--border); border-radius:var(--radius-sm);
+            padding:16px; display:flex; align-items:center; gap:16px; margin-bottom:16px;
+        }
+
+        /* MTF grid */
+        .mtf-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:16px; }
+        .mtf-cell {
+            background:var(--surface); border:1px solid var(--border-soft);
+            border-radius:var(--radius-sm); padding:14px 10px; position:relative; overflow:hidden; text-align:center;
+        }
+        .mtf-cell.bull { border-color:rgba(0,217,126,0.25); }
+        .mtf-cell.bull::after { content:''; position:absolute; top:0;left:0;right:0;height:2px; background:var(--green); }
+        .mtf-cell.bear { border-color:rgba(255,59,92,0.2); }
+        .mtf-cell.bear::after { content:''; position:absolute; top:0;left:0;right:0;height:2px; background:var(--red); }
+        .mtf-cell.neut::after { content:''; position:absolute; top:0;left:0;right:0;height:2px; background:var(--gold); }
+        .mtf-tf { font-size:0.58rem; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; color:var(--text-muted); margin-bottom:6px; font-family:'JetBrains Mono',monospace; }
+        .mtf-rsi { font-family:'JetBrains Mono',monospace; font-size:1.35rem; font-weight:700; line-height:1; margin-bottom:4px; }
+        .mtf-zone { font-size:0.65rem; font-weight:600; }
+        .mtf-bar-track { height:3px; background:var(--bg); border-radius:2px; margin-top:8px; overflow:hidden; }
+        .mtf-bar-fill { height:100%; border-radius:2px; transition:width 0.8s ease; }
+
+        /* RSI zone bar */
+        .rsi-zone-bar { background:var(--surface); border:1px solid var(--border-soft); border-radius:var(--radius-sm); padding:14px; margin-bottom:12px; }
+
+        .disclaimer-sm { text-align:center; font-size:0.7rem; color:var(--text-dim); border-top:1px solid var(--border-soft); padding-top:12px; }
+
+        @media (max-width:600px) {
+            .page-wrap { padding:80px 14px 60px; }
+            .scan-table-head, .scan-row { grid-template-columns:1fr 68px 90px 72px 40px; padding-left:14px; padding-right:14px; gap:4px; }
+            .score-filters { padding:0 14px 12px; }
+            .scanner-header { padding:16px 14px 0; }
+            .mtf-grid { grid-template-columns:repeat(2,1fr); }
+            .drp-body { padding:14px 14px 18px; }
+            .drp-header { padding:14px 14px 12px; }
         }
     </style>
 </head>
 <body>
 <div class="nav-backdrop" id="navBackdrop"></div>
-    <nav class="auth-nav">
+<nav class="auth-nav">
     <div class="auth-nav-left">
         <button class="auth-hamburger" id="authHamburger">☰</button>
         <a href="index.html" class="logo" style="font-size:0.9rem;">
@@ -141,96 +232,97 @@
 </nav>
 
 <div class="page-wrap">
+    <!-- Page title -->
     <div class="flex-between mb-3" style="flex-wrap:wrap;gap:10px;">
         <div>
-            <h1 style="font-size:1.6rem;margin-bottom:4px;">🧠 RSI Analysis</h1>
-            <p style="color:var(--text-muted);font-size:0.875rem;">Real-time RSI indicator — select a pair and timeframe to run analysis.</p>
+            <h1 style="font-size:1.6rem;margin-bottom:4px;">📡 Market Scanner</h1>
+            <p style="color:var(--text-muted);font-size:0.875rem;">RSI multi-timeframe analysis — scan top coins or type any symbol.</p>
         </div>
         <span id="refreshTime" class="badge badge-outline" style="font-family:'JetBrains Mono',monospace;font-size:0.7rem;">Not run yet</span>
     </div>
 
-    <div class="controls-panel">
-        <div class="ctrl-group">
-            <label>Trading Pair</label>
-            <select class="ctrl-select" id="pairSelect">
-                <option value="BTCUSDT">BTC / USDT</option>
-                <option value="ETHUSDT">ETH / USDT</option>
-                <option value="SOLUSDT">SOL / USDT</option>
-                <option value="BNBUSDT">BNB / USDT</option>
-                <option value="XRPUSDT">XRP / USDT</option>
-                <option value="AVAXUSDT">AVAX / USDT</option>
-                <option value="DOGEUSDT">DOGE / USDT</option>
-                <option value="ADAUSDT">ADA / USDT</option>
-            </select>
-        </div>
-        <div class="ctrl-group">
-            <label>Timeframe</label>
-            <select class="ctrl-select" id="tfSelect">
-                <option value="15m">15 Minutes</option>
-                <option value="1h" selected>1 Hour</option>
-                <option value="4h">4 Hours</option>
-                <option value="1d">1 Day</option>
-            </select>
-        </div>
-        <button class="btn btn-gold" id="runBtn" style="padding:11px 28px;white-space:nowrap;" onclick="runAnalysis()">▶ Run Analysis</button>
-    </div>
-
-    <!-- RSI Results Panel -->
-    <div class="results-panel">
-        <div class="empty-placeholder" id="emptyState">
-            <div class="ep-icon">📊</div>
-            <div class="ep-title">RSI Ready</div>
-            <p class="ep-sub">Select a coin and timeframe above, then click Run Analysis to get the real RSI value.</p>
-        </div>
-        <div class="results-content" id="resultsContent">
-            <!-- RSI Card -->
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:24px;">
-                <div style="background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--radius-sm);padding:24px;text-align:center;">
-                    <div style="font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:8px;font-family:'JetBrains Mono',monospace;">RSI (14)</div>
-                    <div style="font-family:'JetBrains Mono',monospace;font-size:2.2rem;font-weight:700;line-height:1;" id="rsiValue">—</div>
-                    <div style="margin-top:8px;font-size:0.8rem;" id="rsiStatus">—</div>
-                </div>
-                <div style="background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--radius-sm);padding:24px;text-align:center;">
-                    <div style="font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:8px;font-family:'JetBrains Mono',monospace;">Signal</div>
-                    <div style="font-size:1.4rem;font-weight:700;line-height:1;" id="rsiSignal">—</div>
-                    <div style="margin-top:8px;font-size:0.8rem;color:var(--text-muted);" id="rsiPair">—</div>
-                </div>
-                <div style="background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--radius-sm);padding:24px;text-align:center;">
-                    <div style="font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:8px;font-family:'JetBrains Mono',monospace;">Timeframe</div>
-                    <div style="font-family:'JetBrains Mono',monospace;font-size:1.4rem;font-weight:700;line-height:1;color:var(--gold);" id="rsiTf">—</div>
-                    <div style="margin-top:8px;font-size:0.8rem;color:var(--text-muted);">Selected</div>
-                </div>
+    <!-- ══ SCANNER ══ -->
+    <div class="scanner-wrap">
+        <div class="scanner-header">
+            <div class="scanner-title-row">
+                <span style="font-size:1.05rem;">📡</span>
+                <span style="font-weight:700;font-size:1.05rem;">Smart Scanner</span>
+                <span class="scanner-badge">BINANCE FUTURES · RSI MULTI-TF</span>
             </div>
+            <div class="scanner-sub" id="scannerStatus">Scan top 20 coins · Touch any result to deep analyze</div>
 
-            <!-- RSI Zone Bar -->
-            <div style="background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--radius-sm);padding:20px;margin-bottom:24px;">
-                <div style="font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:12px;font-family:'JetBrains Mono',monospace;">RSI Scale (0–100)</div>
-                <div style="position:relative;height:14px;border-radius:7px;background:linear-gradient(to right,var(--green) 0%,var(--green) 30%,var(--gold) 30%,var(--gold) 70%,var(--red) 70%,var(--red) 100%);opacity:0.35;"></div>
-                <div style="position:relative;height:14px;margin-top:-14px;">
-                    <div id="rsiMarker" style="position:absolute;top:-3px;width:20px;height:20px;background:white;border-radius:50%;border:3px solid var(--gold);box-shadow:0 0 8px rgba(240,180,41,0.5);transform:translateX(-50%);transition:left 0.8s ease;left:50%;"></div>
-                </div>
-                <div style="display:flex;justify-content:space-between;margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:0.65rem;color:var(--text-muted);">
-                    <span style="color:var(--green);">Oversold (0–30)</span>
-                    <span>Neutral (30–70)</span>
-                    <span style="color:var(--red);">Overbought (70–100)</span>
-                </div>
+            <!-- Smart Scan -->
+            <button class="smart-scan-btn" id="smartScanBtn" onclick="runSmartScan()">
+                <span id="smartScanIcon">📡</span>
+                <span id="smartScanLabel">Smart Scan</span>
+            </button>
+
+            <!-- Custom input + Deep Scan -->
+            <div class="scanner-input-row">
+                <input id="customCoinInput" class="scanner-input"
+                    placeholder="e.g. BTC, ETH, SOL..."
+                    oninput="this.value=this.value.toUpperCase()"
+                    onkeydown="if(event.key==='Enter')runDeepScan()">
+                <button class="deep-scan-btn" id="deepScanBtn" onclick="runDeepScan()">
+                    <span>🔍</span><span>Deep Scan</span>
+                </button>
             </div>
-
-            <div class="disclaimer">RSI values fetched from Binance API via the server. Data refreshes each time you run analysis.</div>
         </div>
-    </div>
 
-    <!-- Market Scanner -->
-    <div style="margin-top:24px;">
-        <!-- market-scanner-button -->
-        <button class="btn btn-surface" style="width:100%;padding:16px;border-radius:var(--radius);cursor:not-allowed;opacity:0.7;display:flex;align-items:center;justify-content:center;gap:10px;" disabled>
-            <span style="font-size:1rem;">🔍</span>
-            <span style="font-weight:700;">Market Scanner</span>
-            <span class="badge badge-outline" style="font-size:0.68rem;color:var(--text-muted);">Coming Soon</span>
-        </button>
-    </div>
-</div>
+        <!-- Score Filters -->
+        <div class="score-filters">
+            <span class="sf-label">Score:</span>
+            <button class="sf-btn s-grade active" data-min="0"  onclick="setSFActive(this)">All</button>
+            <button class="sf-btn s-grade"        data-min="85" onclick="setSFActive(this)">S 85+</button>
+            <button class="sf-btn a-grade"        data-min="70" onclick="setSFActive(this)">A 70+</button>
+            <button class="sf-btn b-grade"        data-min="50" onclick="setSFActive(this)">B 50+</button>
+            <button class="sf-btn c-grade"        data-min="1"  onclick="setSFActive(this)">C &lt;50</button>
+        </div>
 
+        <!-- Progress -->
+        <div class="scan-progress" id="scanProgress">
+            <div class="sp-bar-track"><div class="sp-bar-fill" id="spBarFill"></div></div>
+            <div class="sp-text" id="spText">Scanning...</div>
+        </div>
+
+        <!-- Table header -->
+        <div class="scan-table-head" id="scanTableHead" style="display:none;">
+            <span>SYMBOL</span>
+            <span>SCORE</span>
+            <span>SIGNAL</span>
+            <span>24H CHG</span>
+            <span></span>
+        </div>
+
+        <!-- Results rows -->
+        <div id="scanResultsList"></div>
+
+        <!-- Empty state -->
+        <div class="scanner-empty" id="scanEmptyState">
+            <div class="se-icon">📡</div>
+            <div>Press <strong>Smart Scan</strong> to rank top 20 coins by RSI strength</div>
+            <div style="margin-top:6px;font-size:0.78rem;color:var(--text-dim);">Or type any symbol and press Deep Scan for full multi-timeframe RSI</div>
+        </div>
+
+        <!-- ══ DEEP SCAN RESULT (inline, below table) ══ -->
+        <div class="deep-result-panel" id="deepResultPanel">
+            <div class="drp-header">
+                <div>
+                    <div style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);font-family:'JetBrains Mono',monospace;margin-bottom:4px;">Multi-Timeframe RSI Analysis</div>
+                    <div style="font-size:1.2rem;font-weight:700;" id="drpCoinName">—</div>
+                    <div style="font-size:0.8rem;color:var(--text-muted);" id="drpCoinPrice">—</div>
+                </div>
+                <button class="drp-close" onclick="closeDeepResult()">✕</button>
+            </div>
+            <div class="drp-body" id="drpBody">
+                <!-- injected by JS -->
+            </div>
+        </div>
+
+    </div><!-- /scanner-wrap -->
+</div><!-- /page-wrap -->
+
+<!-- ══ FIREBASE AUTH ══ -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
@@ -246,79 +338,308 @@ onAuthStateChanged(auth, u => {
   const av = document.getElementById('userAvatar'); if(av) av.textContent = name.charAt(0).toUpperCase();
   const un = document.getElementById('userName');   if(un) un.textContent = name;
 });
-window.handleSignOut = async () => { try { await signOut(auth); } catch(e) {} window.location.href = 'index.html'; };
-    // FIX: wire logout in hamburger nav
-    const navLogout = document.getElementById('navLogout');
-    if (navLogout) navLogout.addEventListener('click', window.handleSignOut);
+window.handleSignOut = async () => { try { await signOut(auth); } catch(e){} window.location.href = 'index.html'; };
+const navLogout = document.getElementById('navLogout');
+if (navLogout) navLogout.addEventListener('click', window.handleSignOut);
 </script>
 
+<!-- ══ MAIN SCRIPTS ══ -->
 <script>
-    const _authHamburger = document.getElementById('authHamburger');
-    const _authNavMenu = document.getElementById('authNavMenu');
-    const _navBackdrop = document.getElementById('navBackdrop');
-    
-    function closeNavMenu() {
-        if (_authNavMenu) _authNavMenu.classList.remove('open');
-        if (_navBackdrop) _navBackdrop.classList.remove('open');
+/* ── Nav ── */
+const _ham = document.getElementById('authHamburger');
+const _menu = document.getElementById('authNavMenu');
+const _backdrop = document.getElementById('navBackdrop');
+function closeNavMenu() { _menu?.classList.remove('open'); _backdrop?.classList.remove('open'); }
+_ham?.addEventListener('click', () => { const o = _menu.classList.toggle('open'); _backdrop?.classList.toggle('open', o); });
+_backdrop?.addEventListener('click', closeNavMenu);
+document.querySelectorAll('.auth-nav-link').forEach(l => l.addEventListener('click', closeNavMenu));
+
+/* ══ Scanner constants ══ */
+const TIMEFRAMES = ['15m','1h','4h','1d'];
+const TF_LABELS  = { '15m':'15m', '1h':'1H', '4h':'4H', '1d':'1D' };
+
+let scanResults    = [];
+let scoreMinFilter = 0;
+let activeCoin     = null;
+
+/* ── Helpers ── */
+function scoreRSI(rsi) {
+    if (rsi < 25) return 25; if (rsi < 30) return 23; if (rsi < 35) return 20;
+    if (rsi < 42) return 17; if (rsi < 50) return 13; if (rsi < 58) return 10;
+    if (rsi < 65) return 6;  if (rsi < 70) return 3;  return 0;
+}
+function grade(s) { return s>=85?'s':s>=70?'a':s>=50?'b':'c'; }
+function gradeLabel(s) { return s>=85?'S':s>=70?'A':s>=50?'B':'C'; }
+function signalFor(chg) {
+    if (chg >= 3)  return { cls:'bull', label:'▲ Bullish' };
+    if (chg <= -3) return { cls:'bear', label:'▼ Bearish' };
+    return { cls:'neut', label:'↔ Neutral' };
+}
+function rsiColor(rsi) {
+    return rsi < 30 ? 'var(--green)' : rsi > 70 ? 'var(--red)' : 'var(--gold)';
+}
+function fmtVol(v) {
+    if (v >= 1e9) return (v/1e9).toFixed(1)+'B';
+    if (v >= 1e6) return (v/1e6).toFixed(1)+'M';
+    return v.toFixed(0);
+}
+
+/* ── SMART SCAN — single /api/scan call ── */
+window.runSmartScan = async function() {
+    const btn   = document.getElementById('smartScanBtn');
+    const icon  = document.getElementById('smartScanIcon');
+    const label = document.getElementById('smartScanLabel');
+    const prog  = document.getElementById('scanProgress');
+    const fill  = document.getElementById('spBarFill');
+    const spTxt = document.getElementById('spText');
+
+    btn.disabled = true;
+    icon.style.animation = 'scanPulse 0.8s ease infinite';
+    label.textContent = 'Scanning...';
+    prog.style.display = 'block';
+    fill.style.width = '30%';
+    document.getElementById('scanEmptyState').style.display = 'none';
+    document.getElementById('scanTableHead').style.display  = 'none';
+    document.getElementById('scanResultsList').innerHTML    = '';
+    closeDeepResult();
+    scanResults = []; activeCoin = null;
+
+    try {
+        spTxt.textContent = 'Fetching top volatile coins from Binance...';
+        fill.style.width = '60%';
+
+        const res = await fetch('/api/scan');
+        const j   = await res.json();
+
+        if (!j.success || !j.coins?.length) throw new Error(j.error || 'No coins returned');
+
+        fill.style.width = '100%';
+        spTxt.textContent = `Found ${j.coins.length} coins — ranking...`;
+
+        // Map scanner result → scanResults format
+        // volume score: higher vol = higher score (0-50), change score (0-50)
+        scanResults = j.coins.map(c => {
+            const chgAbs  = Math.abs(c.change);
+            const chgScore = Math.min(Math.round(chgAbs * 3), 50);   // max 50
+            const volScore = Math.min(Math.round(c.volume / 1e7), 50); // 10M = 1pt, max 50
+            const score    = Math.min(chgScore + volScore, 100);
+            return {
+                coin:   c.symbol.replace('USDT',''),
+                symbol: c.symbol,
+                change: c.change,
+                volume: c.volume,
+                price:  c.price,
+                score,
+            };
+        }).sort((a,b) => b.score - a.score);
+
+    } catch(err) {
+        prog.style.display = 'none';
+        icon.style.animation = 'none';
+        icon.textContent = '📡';
+        label.textContent = 'Smart Scan';
+        btn.disabled = false;
+        document.getElementById('scanEmptyState').innerHTML =
+            `<div class="se-icon">⚠️</div><div style="color:var(--red);">Scan failed: ${err.message}</div>`;
+        document.getElementById('scanEmptyState').style.display = 'block';
+        return;
     }
-    
-    if (_authHamburger) {
-        _authHamburger.addEventListener('click', () => {
-            const isOpen = _authNavMenu.classList.toggle('open');
-            if (_navBackdrop) _navBackdrop.classList.toggle('open', isOpen);
-        });
+
+    setTimeout(() => {
+        prog.style.display = 'none';
+        icon.style.animation = 'none';
+        icon.textContent = '✅';
+        label.textContent = 'Smart Scan';
+        btn.disabled = false;
+        const now = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+        document.getElementById('scannerStatus').textContent = `Found ${scanResults.length} active coins · ${now}`;
+        document.getElementById('refreshTime').textContent   = 'Last: ' + now;
+        renderScanTable();
+    }, 200);
+};
+
+/* ── Render table ── */
+function renderScanTable() {
+    const list = document.getElementById('scanResultsList');
+    const head = document.getElementById('scanTableHead');
+
+    const filtered = scoreMinFilter === 1
+        ? scanResults.filter(r => r.score < 50)
+        : scanResults.filter(r => r.score >= scoreMinFilter);
+
+    if (!filtered.length) {
+        head.style.display = 'none';
+        list.innerHTML = '<div class="scanner-empty"><div class="se-icon">🔍</div><div>No coins match this filter</div></div>';
+        return;
     }
-    if (_navBackdrop) {
-        _navBackdrop.addEventListener('click', closeNavMenu);
-    }
-    document.querySelectorAll('.auth-nav-link').forEach(link => {
-        link.addEventListener('click', closeNavMenu);
-    });
 
-    window.runAnalysis = async function() {
-        const pair = document.getElementById('pairSelect').value;
-        const tf   = document.getElementById('tfSelect').value;
-        const btn  = document.getElementById('runBtn');
-        btn.textContent = '⏳ Fetching...'; btn.disabled = true;
-        document.getElementById('emptyState').style.display = 'none';
-        document.getElementById('resultsContent').style.display = 'none';
+    head.style.display = 'grid';
+    list.innerHTML = filtered.map(r => {
+        const sig    = signalFor(r.change);
+        const g      = grade(r.score);
+        const gl     = gradeLabel(r.score);
+        const chgClr = r.change >= 0 ? 'var(--green)' : 'var(--red)';
+        const chgStr = (r.change >= 0 ? '+' : '') + r.change.toFixed(2) + '%';
+        const isActive = activeCoin === r.coin;
+        return `
+        <div class="scan-row${isActive?' active-row':''}" onclick="openDeepScan('${r.coin}')">
+            <div class="scan-sym">${r.coin}<span>/U</span></div>
+            <div><span class="score-badge ${g}">${gl} ${r.score}</span></div>
+            <div><span class="sig-pill ${sig.cls}">${sig.label}</span></div>
+            <div class="rsi-val" style="color:${chgClr};">${chgStr}</div>
+            <button class="scan-action-btn${isActive?' active':''}" onclick="event.stopPropagation();openDeepScan('${r.coin}')">🔬</button>
+        </div>`;
+    }).join('');
+}
 
-        try {
-            const res = await fetch(`/api/analysis?pair=${pair}&tf=${tf}`);
-            const j   = await res.json();
-            const rsi = j.rsi ?? j.data?.rsi ?? null;
+/* ── Score filter ── */
+window.setSFActive = function(btn) {
+    document.querySelectorAll('.sf-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    scoreMinFilter = parseInt(btn.dataset.min);
+    if (scanResults.length) renderScanTable();
+};
 
-            if (rsi === null) throw new Error('No RSI in response');
+/* ── DEEP SCAN from input ── */
+window.runDeepScan = async function() {
+    const raw  = document.getElementById('customCoinInput').value.trim().toUpperCase();
+    const coin = raw.replace(/USDT$/,'').replace(/[^A-Z0-9]/g,'');
+    if (!coin) { document.getElementById('customCoinInput').focus(); return; }
+    openDeepScan(coin);
+};
 
-            const isOS = rsi < 30, isOB = rsi > 70;
-            const rsiColor  = isOS ? 'var(--green)' : isOB ? 'var(--red)' : 'var(--gold)';
-            const sigLabel  = isOS ? '🟢 Potential BUY — Oversold' : isOB ? '🔴 Potential SELL — Overbought' : '⚪ Neutral Zone';
-            const sigColor  = isOS ? 'var(--green)' : isOB ? 'var(--red)' : 'var(--text-muted)';
+/* ── Open deep result inline ── */
+window.openDeepScan = async function(coin) {
+    activeCoin = coin;
+    if (scanResults.length) renderScanTable(); // update active highlight
 
-            document.getElementById('rsiValue').textContent  = rsi.toFixed(2);
-            document.getElementById('rsiValue').style.color  = rsiColor;
-            document.getElementById('rsiStatus').textContent = isOS ? 'Oversold' : isOB ? 'Overbought' : 'Neutral';
-            document.getElementById('rsiStatus').style.color = rsiColor;
-            document.getElementById('rsiSignal').textContent = sigLabel;
-            document.getElementById('rsiSignal').style.color = sigColor;
-            document.getElementById('rsiPair').textContent   = pair;
-            document.getElementById('rsiTf').textContent     = tf;
-            document.getElementById('rsiMarker').style.left  = rsi + '%';
-        } catch(e) {
-            document.getElementById('rsiValue').textContent  = 'Error';
-            document.getElementById('rsiValue').style.color  = 'var(--red)';
-            document.getElementById('rsiStatus').textContent = 'Failed to fetch data';
-            document.getElementById('rsiSignal').textContent = '⚠ ' + (e.message || 'Analysis failed - check server');
-            document.getElementById('rsiSignal').style.color = 'var(--red)';
-            document.getElementById('rsiPair').textContent   = pair;
-            document.getElementById('rsiTf').textContent     = tf;
-        }
+    const panel = document.getElementById('deepResultPanel');
+    panel.classList.add('show');
+    document.getElementById('drpCoinName').textContent  = `${coin} / USDT`;
+    document.getElementById('drpCoinPrice').textContent = 'Loading...';
+    document.getElementById('drpBody').innerHTML = `
+        <div style="text-align:center;padding:32px;color:var(--text-muted);">
+            <div style="font-size:2rem;margin-bottom:10px;animation:scanPulse 1.2s ease infinite;">📡</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;">Fetching RSI · 15m · 1H · 4H · 1D...</div>
+        </div>`;
 
-        document.getElementById('refreshTime').textContent = 'Last: ' + new Date().toLocaleTimeString();
-        document.getElementById('resultsContent').style.display = 'block';
-        btn.textContent = '▶ Run Analysis'; btn.disabled = false;
-    };
+    // Scroll to panel
+    setTimeout(() => panel.scrollIntoView({ behavior:'smooth', block:'nearest' }), 80);
 
+    // Fetch all 4 TFs in parallel
+    const results = await Promise.all(
+        TIMEFRAMES.map(async tf => {
+            try {
+                const r = await fetch(`/api/analysis?pair=${coin}USDT&tf=${tf}`);
+                const j = await r.json();
+                return { tf, rsi: j.rsi ?? j.data?.rsi ?? null, price: j.price ?? null };
+            } catch { return { tf, rsi: null, price: null }; }
+        })
+    );
+
+    const price = results.find(r => r.price)?.price ?? null;
+    document.getElementById('drpCoinPrice').textContent = price
+        ? '$' + price.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:4})
+        : 'Price unavailable';
+
+    // Score
+    const valid = results.filter(r => r.rsi !== null);
+    const totalScore = valid.length
+        ? Math.round(valid.reduce((s,r) => s + scoreRSI(r.rsi), 0) / valid.length * 4)
+        : 0;
+    const g  = grade(totalScore);
+    const gl = gradeLabel(totalScore);
+
+    // Overall from median RSI
+    const rsiVals = valid.map(r => r.rsi).sort((a,b)=>a-b);
+    const medRSI  = rsiVals.length ? rsiVals[Math.floor(rsiVals.length/2)] : 50;
+    const isOS = medRSI < 30, isOB = medRSI > 70;
+    const sigClr  = isOS ? 'var(--green)' : isOB ? 'var(--red)' : 'var(--gold)';
+    const sigText = isOS ? '🟢 Potential BUY — Oversold Across Timeframes'
+                  : isOB ? '🔴 Potential SELL — Overbought Across Timeframes'
+                  : '⚪ Neutral — Mixed RSI Across Timeframes';
+    const sigDesc = isOS ? 'RSI readings suggest oversold conditions. Watch for reversal confirmation.'
+                  : isOB ? 'RSI readings suggest overbought pressure. Caution on new longs.'
+                  : 'RSI in neutral territory. Wait for clearer oversold or overbought setup.';
+
+    const gradeClr = g==='s'?'var(--gold)':g==='a'?'var(--green)':g==='b'?'var(--blue)':'var(--red)';
+    const circumference = 2 * Math.PI * 26;
+
+    document.getElementById('drpBody').innerHTML = `
+
+        <!-- Score row -->
+        <div class="drp-score-row">
+            <div style="position:relative;width:64px;height:64px;flex-shrink:0;">
+                <svg width="64" height="64" style="transform:rotate(-90deg);position:absolute;inset:0;">
+                    <circle cx="32" cy="32" r="26" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="5"/>
+                    <circle cx="32" cy="32" r="26" fill="none"
+                        stroke="${gradeClr}" stroke-width="5"
+                        stroke-dasharray="${circumference}"
+                        stroke-dashoffset="${circumference*(1-totalScore/100)}"
+                        stroke-linecap="round"
+                        style="transition:stroke-dashoffset 1s ease;"/>
+                </svg>
+                <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:1rem;font-weight:700;color:${gradeClr};">${totalScore}</span>
+                    <span style="font-size:0.5rem;color:var(--text-muted);">/100</span>
+                </div>
+            </div>
+            <div style="flex:1;">
+                <div style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);font-family:'JetBrains Mono',monospace;margin-bottom:4px;">RSI Score · Grade ${gl}</div>
+                <div style="font-size:0.95rem;font-weight:700;color:${sigClr};margin-bottom:4px;">${sigText}</div>
+                <div style="font-size:0.78rem;color:var(--text-muted);">${sigDesc}</div>
+            </div>
+        </div>
+
+        <!-- MTF grid -->
+        <div style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:8px;font-family:'JetBrains Mono',monospace;">RSI Breakdown by Timeframe</div>
+        <div class="mtf-grid">
+            ${results.map(r => {
+                if (r.rsi === null) return `
+                    <div class="mtf-cell neut">
+                        <div class="mtf-tf">${TF_LABELS[r.tf]}</div>
+                        <div class="mtf-rsi" style="color:var(--text-muted);font-size:1rem;">N/A</div>
+                        <div class="mtf-zone" style="color:var(--text-muted);">No data</div>
+                        <div class="mtf-bar-track"><div class="mtf-bar-fill" style="width:50%;background:var(--text-dim);"></div></div>
+                    </div>`;
+                const rsi = r.rsi;
+                const cls = rsi<30?'bull':rsi>70?'bear':'neut';
+                const zone = rsi<30?'Oversold':rsi>70?'Overbought':'Neutral';
+                const clr = rsiColor(rsi);
+                return `
+                    <div class="mtf-cell ${cls}">
+                        <div class="mtf-tf">${TF_LABELS[r.tf]}</div>
+                        <div class="mtf-rsi" style="color:${clr};">${rsi.toFixed(2)}</div>
+                        <div class="mtf-zone" style="color:${clr};">${zone}</div>
+                        <div class="mtf-bar-track">
+                            <div class="mtf-bar-fill" style="width:${rsi}%;background:${clr};"></div>
+                        </div>
+                    </div>`;
+            }).join('')}
+        </div>
+
+        <!-- RSI zone bar -->
+        <div class="rsi-zone-bar">
+            <div style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:10px;font-family:'JetBrains Mono',monospace;">Composite RSI Scale (0–100)</div>
+            <div style="position:relative;height:14px;border-radius:7px;background:linear-gradient(to right,var(--green) 0%,var(--green) 30%,var(--gold) 30%,var(--gold) 70%,var(--red) 70%,var(--red) 100%);opacity:0.3;"></div>
+            <div style="position:relative;height:14px;margin-top:-14px;">
+                <div style="position:absolute;top:-3px;width:20px;height:20px;background:white;border-radius:50%;border:3px solid ${sigClr};box-shadow:0 0 8px ${isOS?'rgba(0,217,126,0.5)':isOB?'rgba(255,59,92,0.5)':'rgba(240,180,41,0.5)'};transform:translateX(-50%);transition:left 0.8s ease;left:${medRSI}%;"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--text-muted);">
+                <span style="color:var(--green);">Oversold (0–30)</span>
+                <span>Neutral (30–70)</span>
+                <span style="color:var(--red);">Overbought (70–100)</span>
+            </div>
+        </div>
+
+        <div class="disclaimer-sm">RSI(14) · Binance Futures · ${new Date().toLocaleTimeString()}</div>`;
+};
+
+window.closeDeepResult = function() {
+    document.getElementById('deepResultPanel').classList.remove('show');
+    activeCoin = null;
+    if (scanResults.length) renderScanTable();
+};
 </script>
 </body>
 </html>

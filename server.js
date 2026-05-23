@@ -113,18 +113,8 @@ const adminLimiter = rateLimit({
 app.use('/api/admin/', adminLimiter);
 app.use('/api/', apiLimiter);
 
-// FIX #1 (partial): Block sensitive files from being served as static assets
-// serviceAccount.json, .env, package.json must never be served
+// FIX #1 (partial): Block sensitive files — checked before static, after API routes
 const BLOCKED_STATIC = ['.env', 'serviceAccount.json', 'package.json', '.gitignore', 'deploy.sh'];
-app.use((req, res, next) => {
-  const basename = path.basename(req.path);
-  if (BLOCKED_STATIC.includes(basename)) {
-    return res.status(403).json({ success: false, error: 'Forbidden' });
-  }
-  next();
-});
-
-app.use(express.static(path.join(__dirname)));
 
 // ── Auth Helpers ─────────────────────────────────────────────
 
@@ -291,6 +281,47 @@ app.get('/api/analysis', async (req, res) => {
     });
   } catch (err) {
     console.error('/api/analysis error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── Market Scanner — Binance 24hr ticker funnel ─────────────
+const STABLECOINS = new Set([
+  'USDCUSDT','FDUSDUSDT','TUSDUSDT','BUSDUSDT',
+  'EURUSDT','DAIUSDT','USDPUSDT','AEURUSDT',
+]);
+
+app.get('/api/scan', async (req, res) => {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    const response = await fetch('https://api.binance.com/api/v3/ticker/24hr', { signal: controller.signal });
+    clearTimeout(timer);
+    if (!response.ok) throw new Error(`Binance error: ${response.status}`);
+    const data = await response.json();
+
+    const results = data
+      .filter(c => c.symbol.endsWith('USDT'))                        // USDT pairs only
+      .filter(c => !STABLECOINS.has(c.symbol))                       // No stablecoins
+      .filter(c => parseFloat(c.quoteVolume) >= 15_000_000)          // Volume ≥ $15M
+      .filter(c => parseInt(c.count) >= 100_000)                     // Trades ≥ 100k
+      .filter(c => {                                                  // Volatility ≥ ±3%
+        const chg = parseFloat(c.priceChangePercent);
+        return chg >= 3.0 || chg <= -3.0;
+      })
+      .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume)) // Sort by volume
+      .slice(0, 20)
+      .map(c => ({
+        symbol:  c.symbol,
+        change:  parseFloat(c.priceChangePercent),
+        volume:  parseFloat(c.quoteVolume),
+        price:   parseFloat(c.lastPrice),
+        trades:  parseInt(c.count),
+      }));
+
+    res.json({ success: true, count: results.length, coins: results });
+  } catch (err) {
+    console.error('/api/scan error:', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -968,6 +999,16 @@ wss.on('connection', async (ws, req) => {
   ws.on('close', () => { console.log('WS client disconnected. Total:', wss.clients.size); });
   ws.on('error', () => {});
 });
+
+// ── Static files — served AFTER all API routes ───────────────
+app.use((req, res, next) => {
+  const basename = path.basename(req.path);
+  if (BLOCKED_STATIC.includes(basename)) {
+    return res.status(403).json({ success: false, error: 'Forbidden' });
+  }
+  next();
+});
+app.use(express.static(path.join(__dirname)));
 
 // ============================================================
 //  START
