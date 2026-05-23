@@ -1184,9 +1184,9 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     const tp2       = parseFloat((isBullish ? currentPrice + riskAmt * 2.5 : currentPrice - riskAmt * 2.5).toFixed(4));
     const tp3       = parseFloat((isBullish ? currentPrice + riskAmt * 4.0 : currentPrice - riskAmt * 4.0).toFixed(4));
 
-    // ── Build prompt for Gemini ──
-    const GEMINI_KEY = process.env.GEMINI_API_KEY;
-    if (!GEMINI_KEY) return res.status(500).json({ success: false, error: 'AI key not configured' });
+    // ── Build prompt for Groq ──
+    const GROQ_KEY = process.env.GROQ_API_KEY;
+    if (!GROQ_KEY) return res.status(500).json({ success: false, error: 'AI key not configured' });
 
     const prompt = `You are a professional crypto futures trader and analyst. Analyze the following REAL calculated market data for ${pair} and provide a structured 5-level trade analysis.
 
@@ -1303,32 +1303,28 @@ Based on this REAL data, provide analysis in this EXACT JSON format (no markdown
   "warning": "any major risk or reason to avoid this trade"
 }`;
 
-    // Try multiple Gemini endpoints to avoid regional rate limits
-    const geminiEndpoints = [
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_KEY}`,
-    ];
+    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${GROQ_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        temperature: 0.2,
+        max_tokens: 2000,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
 
-    let rawText = '';
-    let lastErr = '';
-    for (const endpoint of geminiEndpoints) {
-      try {
-        const aiRes = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.2, maxOutputTokens: 2000 },
-          }),
-        });
-        const aiData = await aiRes.json();
-        if (aiData.error) { lastErr = aiData.error.message; continue; }
-        rawText = aiData.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        if (rawText) break;
-      } catch(e) { lastErr = e.message; }
+    if (!groqRes.ok) {
+      const err = await groqRes.text();
+      return res.status(502).json({ success: false, error: `AI error: ${err}` });
     }
-    if (!rawText) return res.status(502).json({ success: false, error: `AI error: ${lastErr}` });
+
+    const groqData = await groqRes.json();
+    const rawText = groqData.choices?.[0]?.message?.content || '';
+    if (!rawText) return res.status(502).json({ success: false, error: 'AI returned empty response' });
     const cleaned = rawText.replace(/```json|```/g, '').trim();
 
     let analysis;
