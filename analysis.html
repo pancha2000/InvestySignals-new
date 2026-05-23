@@ -202,6 +202,73 @@
             .drp-body { padding:14px 14px 18px; }
             .drp-header { padding:14px 14px 12px; }
         }
+
+        /* ══ 5-LEVEL AI ANALYSIS ══ */
+        .ai-trigger-bar {
+            display:flex; align-items:center; justify-content:space-between;
+            padding:14px 20px; border-top:1px solid var(--border-soft);
+            flex-wrap:wrap; gap:10px;
+        }
+        .ai-run-btn {
+            padding:10px 20px;
+            background:linear-gradient(135deg,rgba(240,180,41,0.15),rgba(240,180,41,0.04));
+            border:1px solid rgba(240,180,41,0.5); border-radius:var(--radius-sm);
+            color:var(--gold); font-weight:700; font-size:0.85rem; cursor:pointer;
+            display:flex; align-items:center; gap:8px;
+            font-family:'Space Grotesk',sans-serif; transition:var(--transition);
+        }
+        .ai-run-btn:hover { background:rgba(240,180,41,0.22); box-shadow:0 0 18px rgba(240,180,41,0.18); }
+        .ai-run-btn:disabled { opacity:0.5; cursor:not-allowed; }
+        .ai-panel { display:none; border-top:1px solid var(--border-soft); }
+        .ai-panel.show { display:block; }
+        .level-card {
+            background:var(--surface); border:1px solid var(--border-soft);
+            border-radius:var(--radius-sm); margin-bottom:10px; overflow:hidden;
+        }
+        .level-card-head {
+            display:flex; align-items:center; justify-content:space-between;
+            padding:10px 14px; border-bottom:1px solid var(--border-soft);
+            cursor:pointer;
+        }
+        .level-card-head:hover { background:var(--surface2); }
+        .level-title { font-weight:700; font-size:0.82rem; display:flex; align-items:center; gap:7px; }
+        .level-badge {
+            font-size:0.6rem; font-weight:700; padding:2px 8px; border-radius:4px;
+            font-family:'JetBrains Mono',monospace; text-transform:uppercase;
+        }
+        .badge-bull { background:rgba(0,217,126,0.12); color:var(--green); border:1px solid rgba(0,217,126,0.3); }
+        .badge-bear { background:rgba(255,59,92,0.1);  color:var(--red);   border:1px solid rgba(255,59,92,0.25); }
+        .badge-neut { background:rgba(240,180,41,0.1); color:var(--gold);  border:1px solid rgba(240,180,41,0.3); }
+        .level-card-body { padding:12px 14px; display:none; }
+        .level-card-body.open { display:block; }
+        .data-row { display:flex; justify-content:space-between; align-items:flex-start;
+            padding:5px 0; border-bottom:1px solid var(--border-dim); gap:10px; }
+        .data-row:last-child { border-bottom:none; }
+        .data-lbl { font-size:0.68rem; color:var(--text-muted); font-family:'JetBrains Mono',monospace;
+            text-transform:uppercase; letter-spacing:0.06em; white-space:nowrap; flex-shrink:0; }
+        .data-val { font-size:0.78rem; color:var(--text); text-align:right; }
+        .trade-setup-box {
+            background:linear-gradient(135deg,rgba(240,180,41,0.07),transparent);
+            border:1px solid rgba(240,180,41,0.3); border-radius:var(--radius-sm);
+            padding:14px; margin-bottom:10px;
+        }
+        .setup-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+        .setup-item { background:var(--bg3); border:1px solid var(--border-soft);
+            border-radius:var(--radius-xs); padding:10px 12px; }
+        .setup-lbl { font-size:0.58rem; font-weight:700; text-transform:uppercase;
+            letter-spacing:0.08em; color:var(--text-muted); font-family:'JetBrains Mono',monospace; margin-bottom:4px; }
+        .setup-val { font-family:'JetBrains Mono',monospace; font-size:0.85rem; font-weight:700; }
+        .score-ring-wrap { display:flex; align-items:center; gap:14px; margin-bottom:12px;
+            background:var(--bg3); border:1px solid var(--border-soft); border-radius:var(--radius-sm); padding:12px 14px; }
+        .summary-box { font-size:0.82rem; color:var(--text-muted); line-height:1.6;
+            background:var(--bg3); border-radius:var(--radius-xs); padding:10px 12px;
+            border-left:3px solid var(--gold); margin-bottom:10px; }
+        .warning-box { font-size:0.78rem; color:var(--red); line-height:1.5;
+            background:rgba(255,59,92,0.07); border:1px solid rgba(255,59,92,0.2);
+            border-radius:var(--radius-xs); padding:10px 12px; margin-bottom:10px; }
+        .ai-loading { text-align:center; padding:32px 20px; color:var(--text-muted); }
+        .ai-loading .spin { font-size:2rem; animation:scanPulse 1s ease infinite; margin-bottom:10px; }
+        @media(max-width:600px){ .setup-grid { grid-template-columns:1fr; } .ai-trigger-bar { flex-direction:column; align-items:stretch; } .ai-run-btn { justify-content:center; } }
     </style>
 </head>
 <body>
@@ -317,7 +384,24 @@
             <div class="drp-body" id="drpBody">
                 <!-- injected by JS -->
             </div>
+
         </div>
+
+            <!-- ══ AI TRIGGER BAR ══ -->
+            <div class="ai-trigger-bar" id="aiTriggerBar" style="display:none;">
+                <div>
+                    <div style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--gold);font-family:'JetBrains Mono',monospace;margin-bottom:3px;">⚡ 5-LEVEL AI ANALYSIS ENGINE</div>
+                    <div style="font-size:0.78rem;color:var(--text-muted);">Macro → Structure → Momentum → Entry → Trade Setup</div>
+                </div>
+                <button class="ai-run-btn" id="aiRunBtn" onclick="runAIAnalysis()">
+                    <span id="aiRunIcon">🧠</span>
+                    <span id="aiRunLabel">Run Deep Analysis</span>
+                </button>
+            </div>
+            <!-- ══ AI RESULT PANEL ══ -->
+            <div class="ai-panel" id="aiPanel">
+                <div id="aiPanelBody" style="padding:14px 20px 20px;"></div>
+            </div>
 
     </div><!-- /scanner-wrap -->
 </div><!-- /page-wrap -->
@@ -633,12 +717,188 @@ window.openDeepScan = async function(coin) {
         </div>
 
         <div class="disclaimer-sm">RSI(14) · Binance Futures · ${new Date().toLocaleTimeString()}</div>`;
+
+    // Show AI analysis trigger
+    showAITrigger();
 };
 
 window.closeDeepResult = function() {
     document.getElementById('deepResultPanel').classList.remove('show');
+    // Reset AI panel too
+    document.getElementById('aiTriggerBar').style.display = 'none';
+    document.getElementById('aiPanel').classList.remove('show');
+    document.getElementById('aiPanelBody').innerHTML = '';
     activeCoin = null;
     if (scanResults.length) renderScanTable();
+};
+
+/* ══ Show AI trigger bar after RSI load ══ */
+function showAITrigger() {
+    document.getElementById('aiTriggerBar').style.display = 'flex';
+    document.getElementById('aiPanel').classList.remove('show');
+    document.getElementById('aiPanelBody').innerHTML = '';
+    const btn = document.getElementById('aiRunBtn');
+    if (btn) { btn.disabled = false; document.getElementById('aiRunIcon').textContent = '🧠'; document.getElementById('aiRunLabel').textContent = 'Run Deep Analysis'; }
+}
+
+/* ══ 5-Level AI Analysis ══ */
+window.runAIAnalysis = async function() {
+    if (!activeCoin) return;
+    const btn = document.getElementById('aiRunBtn');
+    btn.disabled = true;
+    document.getElementById('aiRunIcon').textContent = '⏳';
+    document.getElementById('aiRunLabel').textContent = 'Analyzing...';
+
+    const panel = document.getElementById('aiPanel');
+    const body  = document.getElementById('aiPanelBody');
+    panel.classList.add('show');
+    body.innerHTML = `<div class="ai-loading"><div class="spin">🧠</div><div style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;">Running 5-Level Deep Analysis on ${activeCoin}...</div><div style="font-size:0.72rem;color:var(--text-dim);margin-top:6px;">Fetching multi-timeframe data · Calculating indicators · AI interpreting...</div></div>`;
+    panel.scrollIntoView({ behavior:'smooth', block:'nearest' });
+
+    try {
+        const tok = await window._signalsUser?.getIdToken();
+        if (!tok) throw new Error('Not authenticated');
+
+        const res = await fetch('/api/deep-analysis', {
+            method: 'POST',
+            headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + tok },
+            body: JSON.stringify({ coin: activeCoin }),
+        });
+        const j = await res.json();
+        if (!j.success) throw new Error(j.error || 'Analysis failed');
+
+        renderAIAnalysis(j, body);
+    } catch(err) {
+        body.innerHTML = `<div style="color:var(--red);padding:20px;text-align:center;font-size:0.85rem;">⚠️ ${err.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        document.getElementById('aiRunIcon').textContent = '🔄';
+        document.getElementById('aiRunLabel').textContent = 'Re-analyze';
+    }
+};
+
+/* ══ Render AI Analysis Result ══ */
+function renderAIAnalysis(data, container) {
+    const a = data.analysis;
+    const r = data.rawData;
+
+    function biasClr(b) { return b==='BULLISH'||b==='STRONG_BULL'||b==='LONG'||b==='CONFIRMED'?'var(--green)':b==='BEARISH'||b==='STRONG_BEAR'||b==='SHORT'||b==='AVOID'?'var(--red)':'var(--gold)'; }
+    function biasClass(b) { return b==='BULLISH'||b==='STRONG_BULL'||b==='LONG'||b==='CONFIRMED'?'badge-bull':b==='BEARISH'||b==='STRONG_BEAR'||b==='SHORT'||b==='AVOID'?'badge-bear':'badge-neut'; }
+    function gradeClr(g) { return g==='S'?'var(--gold)':g==='A'?'var(--green)':g==='B'?'var(--blue)':'var(--red)'; }
+
+    const circ = 2 * Math.PI * 26;
+    const score = a.confluenceScore || data.confluenceScore || 0;
+    const gc = gradeClr(a.grade);
+
+    function levelCard(icon, title, badge, badgeClass, fields, startOpen) {
+        const id = 'lc_' + Math.random().toString(36).slice(2,7);
+        const rows = fields.map(([lbl,val]) => `<div class="data-row"><span class="data-lbl">${lbl}</span><span class="data-val">${val||'—'}</span></div>`).join('');
+        return `<div class="level-card">
+            <div class="level-card-head" onclick="toggleLC('${id}')">
+                <div class="level-title">${icon} <span>${title}</span></div>
+                <span class="level-badge ${badgeClass}">${badge}</span>
+            </div>
+            <div class="level-card-body${startOpen?' open':''}" id="${id}">${rows}</div>
+        </div>`;
+    }
+
+    const html = `
+    <!-- Score + Summary -->
+    <div class="score-ring-wrap">
+        <div style="position:relative;width:64px;height:64px;flex-shrink:0;">
+            <svg width="64" height="64" style="transform:rotate(-90deg);position:absolute;inset:0;">
+                <circle cx="32" cy="32" r="26" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="5"/>
+                <circle cx="32" cy="32" r="26" fill="none" stroke="${gc}" stroke-width="5"
+                    stroke-dasharray="${circ}" stroke-dashoffset="${circ*(1-score/10)}"
+                    stroke-linecap="round" style="transition:stroke-dashoffset 1s ease;"/>
+            </svg>
+            <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:1rem;font-weight:700;color:${gc};">${score}</span>
+                <span style="font-size:0.5rem;color:var(--text-muted);">/10</span>
+            </div>
+        </div>
+        <div style="flex:1;">
+            <div style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);font-family:'JetBrains Mono',monospace;margin-bottom:4px;">Confluence Score · Grade ${a.grade}</div>
+            <div style="font-size:1rem;font-weight:700;color:${biasClr(a.overallBias)};margin-bottom:3px;">${a.overallBias === 'LONG' ? '🟢 LONG Setup' : a.overallBias === 'SHORT' ? '🔴 SHORT Setup' : '⚪ NEUTRAL — No Clear Setup'}</div>
+            <div style="font-size:0.75rem;color:var(--text-muted);">${a.summary || ''}</div>
+        </div>
+    </div>
+
+    ${a.warning ? `<div class="warning-box">⚠️ ${a.warning}</div>` : ''}
+
+    <!-- Level 1 -->
+    ${levelCard('📊','Market Context',a.level1?.macroConclusion||'—',biasClass(a.level1?.macroConclusion),[
+        ['BTC Trend', a.level1?.btcTrend],
+        ['Funding', a.level1?.fundingSignal],
+        ['Open Interest', a.level1?.oiSignal],
+    ], true)}
+
+    <!-- Level 2 -->
+    ${levelCard('🏗️','HTF Structure (Daily + 4H)',a.level2?.structureConclusion||'—',biasClass(a.level2?.structureConclusion),[
+        ['Daily Structure', a.level2?.dailyStructure],
+        ['Daily EMA', a.level2?.dailyEMA],
+        ['4H Structure', a.level2?.h4Structure],
+        ['4H EMA', a.level2?.h4EMA],
+        ['4H Divergence', a.level2?.h4Divergence],
+        ['Key Levels', a.level2?.keyLevels],
+        ['Order Block', a.level2?.orderBlock],
+        ['FVG Zones', a.level2?.fvgZones],
+    ], false)}
+
+    <!-- Level 3 -->
+    ${levelCard('⚡','Momentum (1H)',a.level3?.momentumConclusion||'—',biasClass(a.level3?.momentumConclusion),[
+        ['1H Structure', a.level3?.h1Structure],
+        ['RSI', a.level3?.h1RSI],
+        ['Divergence', a.level3?.h1Divergence],
+        ['MACD', a.level3?.macdSignal],
+        ['Bollinger', a.level3?.bollingerSignal],
+        ['Volume', a.level3?.volumeSignal],
+    ], false)}
+
+    <!-- Level 4 -->
+    ${levelCard('🎯','Entry Timing (15m)',a.level4?.entryConclusion||'—',biasClass(a.level4?.entryConclusion),[
+        ['15m Structure', a.level4?.m15Structure],
+        ['RSI', a.level4?.m15RSI],
+        ['Divergence', a.level4?.m15Divergence],
+        ['MACD Cross', a.level4?.macdCross],
+        ['Candle Pattern', a.level4?.candlePattern],
+        ['Volume', a.level4?.volumeConfirm],
+        ['FVG Entry', a.level4?.fvgEntry],
+        ['Session', a.level4?.sessionNote],
+    ], false)}
+
+    <!-- Level 5 Trade Setup -->
+    <div class="trade-setup-box">
+        <div style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--gold);font-family:'JetBrains Mono',monospace;margin-bottom:10px;">💰 Trade Setup</div>
+        <div class="setup-grid">
+            <div class="setup-item"><div class="setup-lbl">Direction</div><div class="setup-val" style="color:${biasClr(a.level5?.direction)}">${a.level5?.direction||'—'}</div></div>
+            <div class="setup-item"><div class="setup-lbl">Entry Zone</div><div class="setup-val" style="font-size:0.75rem;">${a.level5?.entryZone||'—'}</div></div>
+            <div class="setup-item"><div class="setup-lbl">Stop Loss</div><div class="setup-val" style="color:var(--red);">${a.level5?.stopLoss||'—'}</div></div>
+            <div class="setup-item"><div class="setup-lbl">Invalidation</div><div class="setup-val" style="font-size:0.74rem;color:var(--red);">${a.level5?.invalidationLevel||'—'}</div></div>
+            <div class="setup-item"><div class="setup-lbl">TP1 · 1:1.5</div><div class="setup-val" style="color:var(--green);">${a.level5?.tp1||'—'}</div></div>
+            <div class="setup-item"><div class="setup-lbl">TP2 · 1:2.5</div><div class="setup-val" style="color:var(--green);">${a.level5?.tp2||'—'}</div></div>
+            <div class="setup-item" style="grid-column:1/-1"><div class="setup-lbl">TP3 · 1:4.0</div><div class="setup-val" style="color:var(--green);">${a.level5?.tp3||'—'}</div></div>
+            <div class="setup-item"><div class="setup-lbl">Leverage</div><div class="setup-val">${a.level5?.leverage||'—'}</div></div>
+            <div class="setup-item"><div class="setup-lbl">Position Size</div><div class="setup-val" style="font-size:0.74rem;">${a.level5?.positionSize||'—'}</div></div>
+        </div>
+        <div style="margin-top:10px;font-size:0.73rem;color:var(--text-muted);line-height:1.55;border-top:1px solid var(--border-dim);padding-top:8px;">
+            <span style="color:var(--gold);font-weight:700;">Trade Management:</span> ${a.level5?.tradeManagement||'—'}
+        </div>
+        <div style="margin-top:6px;font-size:0.73rem;color:var(--text-muted);line-height:1.55;">
+            <span style="color:var(--gold);font-weight:700;">Re-entry:</span> ${a.level5?.reEntry||'—'}
+        </div>
+        ${a.level5?.riskNote ? `<div style="margin-top:6px;font-size:0.72rem;color:var(--red);line-height:1.5;">⚠️ ${a.level5.riskNote}</div>` : ''}
+    </div>
+
+    <div style="font-size:0.65rem;color:var(--text-dim);text-align:center;padding-top:4px;">Powered by Gemini AI · Real Binance Futures Data · ${new Date().toLocaleTimeString()}</div>`;
+
+    container.innerHTML = html;
+}
+
+/* ══ Toggle level card ══ */
+window.toggleLC = function(id) {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('open');
 };
 </script>
 </body>

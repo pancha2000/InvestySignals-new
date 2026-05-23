@@ -874,6 +874,484 @@ app.get('/api/reports/activity', verifyAdmin, async (req, res) => {
   }
 });
 
+
+// ── Deep Analysis — 5-Level confluence engine ─────────────────
+app.post('/api/deep-analysis', verifyToken, async (req, res) => {
+  try {
+    const { coin } = req.body;
+    if (!coin || !/^[A-Z0-9]{2,20}$/.test(coin)) {
+      return res.status(400).json({ success: false, error: 'Invalid coin symbol' });
+    }
+    const pair = coin.replace(/USDT$/i, '') + 'USDT';
+
+    // ── Helper: fetch klines from Binance Futures ──
+    async function fetchKlines(symbol, interval, limit = 200) {
+      const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`Binance klines error ${r.status}`);
+      return r.json();
+    }
+
+    // ── Helper: EMA ──
+    function calcEMA(closes, n) {
+      const k = 2 / (n + 1);
+      let val = closes.slice(0, n).reduce((a, b) => a + b, 0) / n;
+      for (let i = n; i < closes.length; i++) val = closes[i] * k + val * (1 - k);
+      return val;
+    }
+
+    // ── Helper: EMA array ──
+    function calcEMAArr(closes, n) {
+      const k = 2 / (n + 1);
+      let val = closes.slice(0, n).reduce((a, b) => a + b, 0) / n;
+      const out = [val];
+      for (let i = n; i < closes.length; i++) { val = closes[i] * k + val * (1 - k); out.push(val); }
+      return out;
+    }
+
+    // ── Helper: RSI ──
+    function calcRSI(closes, period = 14) {
+      let gains = 0, losses = 0;
+      for (let i = 1; i <= period; i++) {
+        const d = closes[i] - closes[i - 1];
+        if (d >= 0) gains += d; else losses -= d;
+      }
+      let ag = gains / period, al = losses / period;
+      for (let i = period + 1; i < closes.length; i++) {
+        const d = closes[i] - closes[i - 1];
+        ag = (ag * (period - 1) + (d > 0 ? d : 0)) / period;
+        al = (al * (period - 1) + (d < 0 ? -d : 0)) / period;
+      }
+      return al === 0 ? 100 : parseFloat((100 - 100 / (1 + ag / al)).toFixed(2));
+    }
+
+    // ── Helper: RSI array (last N) ──
+    function calcRSIArr(closes, period = 14, count = 5) {
+      const result = [];
+      for (let offset = count - 1; offset >= 0; offset--) {
+        const slice = closes.slice(0, closes.length - offset);
+        result.push(calcRSI(slice, period));
+      }
+      return result;
+    }
+
+    // ── Helper: MACD ──
+    function calcMACD(closes) {
+      const ema12 = calcEMAArr(closes, 12);
+      const ema26 = calcEMAArr(closes, 26);
+      const macdLine = ema12.slice(ema12.length - ema26.length).map((v, i) => v - ema26[i]);
+      const signal9 = calcEMAArr(macdLine, 9);
+      return {
+        macd: macdLine[macdLine.length - 1],
+        signal: signal9[signal9.length - 1],
+        histogram: macdLine[macdLine.length - 1] - signal9[signal9.length - 1],
+        prevHistogram: macdLine[macdLine.length - 2] - signal9[signal9.length - 2],
+      };
+    }
+
+    // ── Helper: Bollinger Bands ──
+    function calcBB(closes, period = 20) {
+      const slice = closes.slice(-period);
+      const mid = slice.reduce((a, b) => a + b, 0) / period;
+      const std = Math.sqrt(slice.reduce((a, c) => a + Math.pow(c - mid, 2), 0) / period);
+      return { upper: mid + 2 * std, middle: mid, lower: mid - 2 * std };
+    }
+
+    // ── Helper: ATR ──
+    function calcATR(klines, period = 14) {
+      const trs = [];
+      for (let i = 1; i < klines.length; i++) {
+        const h = parseFloat(klines[i][2]), l = parseFloat(klines[i][3]), pc = parseFloat(klines[i-1][4]);
+        trs.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
+      }
+      return trs.slice(-period).reduce((a, b) => a + b, 0) / period;
+    }
+
+    // ── Helper: BOS/CHoCH ──
+    function detectStructure(closes, highs, lows) {
+      const len = closes.length;
+      const recentHighs = highs.slice(-20);
+      const recentLows  = lows.slice(-20);
+      const prevHigh = Math.max(...recentHighs.slice(0, 15));
+      const prevLow  = Math.min(...recentLows.slice(0, 15));
+      const lastClose = closes[len - 1];
+      const lastHigh  = highs[len - 1];
+      const lastLow   = lows[len - 1];
+      if (lastHigh > prevHigh) return 'BOS_BULLISH';
+      if (lastLow < prevLow)   return 'BOS_BEARISH';
+      const midHigh = Math.max(...recentHighs.slice(5, 12));
+      const midLow  = Math.min(...recentLows.slice(5, 12));
+      if (lastClose > midHigh) return 'CHOCH_BULLISH';
+      if (lastClose < midLow)  return 'CHOCH_BEARISH';
+      return 'NEUTRAL';
+    }
+
+    // ── Helper: RSI Divergence ──
+    function detectDivergence(closes, rsiArr) {
+      const priceUp   = closes[closes.length - 1] > closes[closes.length - 3];
+      const rsiUp     = rsiArr[rsiArr.length - 1] > rsiArr[rsiArr.length - 3];
+      if (priceUp && !rsiUp)  return 'BEARISH_DIV';
+      if (!priceUp && rsiUp)  return 'BULLISH_DIV';
+      if (priceUp && rsiUp)   return 'HIDDEN_BEARISH';
+      if (!priceUp && !rsiUp) return 'HIDDEN_BULLISH';
+      return 'NONE';
+    }
+
+    // ── Helper: FVG detect ──
+    function detectFVG(klines) {
+      const fvgs = [];
+      for (let i = 2; i < klines.length; i++) {
+        const prevHigh = parseFloat(klines[i-2][2]);
+        const curLow   = parseFloat(klines[i][3]);
+        const prevLow  = parseFloat(klines[i-2][3]);
+        const curHigh  = parseFloat(klines[i][2]);
+        if (curLow > prevHigh) fvgs.push({ type: 'BULL', high: curLow, low: prevHigh });
+        if (curHigh < prevLow) fvgs.push({ type: 'BEAR', high: prevLow, low: curHigh });
+      }
+      return fvgs.slice(-3);
+    }
+
+    // ── Helper: Volume spike ──
+    function detectVolumeSpike(volumes) {
+      const avg = volumes.slice(-21, -1).reduce((a, b) => a + b, 0) / 20;
+      const last = volumes[volumes.length - 1];
+      return { ratio: parseFloat((last / avg).toFixed(2)), spike: last > avg * 1.5 };
+    }
+
+    // ── Helper: Key S/R levels ──
+    function findSRLevels(highs, lows) {
+      const allLevels = [...highs.slice(-50), ...lows.slice(-50)].sort((a, b) => a - b);
+      const clusters = [];
+      let i = 0;
+      while (i < allLevels.length) {
+        const base = allLevels[i];
+        const cluster = allLevels.filter(v => Math.abs(v - base) / base < 0.005);
+        if (cluster.length >= 2) clusters.push(parseFloat((cluster.reduce((a,b)=>a+b,0)/cluster.length).toFixed(4)));
+        i += Math.max(1, cluster.length);
+      }
+      return [...new Set(clusters)].slice(-6);
+    }
+
+    // ── Helper: Order Block ──
+    function findOrderBlock(klines) {
+      for (let i = klines.length - 5; i >= klines.length - 30; i--) {
+        const open  = parseFloat(klines[i][1]);
+        const close = parseFloat(klines[i][4]);
+        const high  = parseFloat(klines[i][2]);
+        const low   = parseFloat(klines[i][3]);
+        const body  = Math.abs(close - open);
+        const range = high - low;
+        if (body / range > 0.6) {
+          return { high, low, open, close, type: close > open ? 'BULL_OB' : 'BEAR_OB' };
+        }
+      }
+      return null;
+    }
+
+    // ── Helper: Candle Pattern ──
+    function detectCandlePattern(klines) {
+      const last = klines[klines.length - 1];
+      const prev = klines[klines.length - 2];
+      const o = parseFloat(last[1]), c = parseFloat(last[4]);
+      const h = parseFloat(last[2]), l = parseFloat(last[3]);
+      const po = parseFloat(prev[1]), pc = parseFloat(prev[4]);
+      const body = Math.abs(c - o), range = h - l;
+      const upperWick = h - Math.max(o, c);
+      const lowerWick = Math.min(o, c) - l;
+      if (lowerWick > body * 2 && upperWick < body * 0.5) return 'PIN_BAR_BULL';
+      if (upperWick > body * 2 && lowerWick < body * 0.5) return 'PIN_BAR_BEAR';
+      if (c > po && o < pc && c > po) return 'BULLISH_ENGULFING';
+      if (c < po && o > pc && c < po) return 'BEARISH_ENGULFING';
+      if (body / range < 0.1) return 'DOJI';
+      if (c > o && body / range > 0.7) return 'STRONG_BULL';
+      if (c < o && body / range > 0.7) return 'STRONG_BEAR';
+      return 'NONE';
+    }
+
+    // ── Fetch all data in parallel ──
+    const [k1d, k4h, k1h, k15m, btcK1d, fundingRaw, oiRaw] = await Promise.all([
+      fetchKlines(pair, '1d', 200),
+      fetchKlines(pair, '4h', 200),
+      fetchKlines(pair, '1h', 200),
+      fetchKlines(pair, '15m', 200),
+      fetchKlines('BTCUSDT', '1d', 200),
+      fetch(`https://fapi.binance.com/fapi/v1/fundingRate?symbol=${pair}&limit=1`).then(r=>r.json()).catch(()=>[]),
+      fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${pair}`).then(r=>r.json()).catch(()=>({})),
+    ]);
+
+    // ── Parse closes/highs/lows/volumes ──
+    function parseKlines(klines) {
+      return {
+        opens:   klines.map(k => parseFloat(k[1])),
+        highs:   klines.map(k => parseFloat(k[2])),
+        lows:    klines.map(k => parseFloat(k[3])),
+        closes:  klines.map(k => parseFloat(k[4])),
+        volumes: klines.map(k => parseFloat(k[5])),
+      };
+    }
+
+    const d1  = parseKlines(k1d);
+    const h4  = parseKlines(k4h);
+    const h1  = parseKlines(k1h);
+    const m15 = parseKlines(k15m);
+    const btc = parseKlines(btcK1d);
+
+    const currentPrice = d1.closes[d1.closes.length - 1];
+
+    // ══ LEVEL 1 — Macro Context ══
+    const btcEma20  = calcEMA(btc.closes, 20);
+    const btcEma50  = calcEMA(btc.closes, 50);
+    const btcEma200 = calcEMA(btc.closes, 200);
+    const btcClose  = btc.closes[btc.closes.length - 1];
+    const btcTrend  = btcClose > btcEma20 && btcEma20 > btcEma50 && btcEma50 > btcEma200
+      ? 'STRONG_BULL' : btcClose > btcEma50 ? 'BULL' : btcClose < btcEma200 ? 'STRONG_BEAR' : 'BEAR';
+
+    const fundingRate = fundingRaw[0]?.fundingRate ? parseFloat(fundingRaw[0].fundingRate) * 100 : 0;
+    const fundingBias = fundingRate > 0.05 ? 'LONGS_PAYING' : fundingRate < -0.01 ? 'SHORTS_PAYING' : 'NEUTRAL';
+
+    const openInterest = oiRaw?.openInterest ? parseFloat(oiRaw.openInterest) : null;
+
+    // ══ LEVEL 2 — HTF Structure ══
+    // Daily
+    const d1Ema20  = calcEMA(d1.closes, 20);
+    const d1Ema50  = calcEMA(d1.closes, 50);
+    const d1Ema200 = calcEMA(d1.closes, 200);
+    const d1Struct = detectStructure(d1.closes, d1.highs, d1.lows);
+    const d1SR     = findSRLevels(d1.highs, d1.lows);
+    const d1OB     = findOrderBlock(k1d);
+    // 4H
+    const h4Ema20  = calcEMA(h4.closes, 20);
+    const h4Ema50  = calcEMA(h4.closes, 50);
+    const h4Ema200 = calcEMA(h4.closes, 200);
+    const h4Struct = detectStructure(h4.closes, h4.highs, h4.lows);
+    const h4SR     = findSRLevels(h4.highs, h4.lows);
+    const h4OB     = findOrderBlock(k4h);
+    const h4FVGs   = detectFVG(k4h);
+    const h4RSIArr = calcRSIArr(h4.closes, 14, 5);
+    const h4RSI    = h4RSIArr[h4RSIArr.length - 1];
+    const h4Div    = detectDivergence(h4.closes, h4RSIArr);
+    const prevDayHigh = Math.max(...h4.highs.slice(-6));
+    const prevDayLow  = Math.min(...h4.lows.slice(-6));
+
+    // ══ LEVEL 3 — Momentum (1H) ══
+    const h1Ema20  = calcEMA(h1.closes, 20);
+    const h1Ema50  = calcEMA(h1.closes, 50);
+    const h1Ema200 = calcEMA(h1.closes, 200);
+    const h1Struct = detectStructure(h1.closes, h1.highs, h1.lows);
+    const h1RSIArr = calcRSIArr(h1.closes, 14, 5);
+    const h1RSI    = h1RSIArr[h1RSIArr.length - 1];
+    const h1Div    = detectDivergence(h1.closes, h1RSIArr);
+    const h1MACD   = calcMACD(h1.closes);
+    const h1BB     = calcBB(h1.closes);
+    const h1Vol    = detectVolumeSpike(h1.volumes);
+    const h1FVGs   = detectFVG(k1h);
+
+    // ══ LEVEL 4 — Entry Timing (15m) ══
+    const m15Ema20  = calcEMA(m15.closes, 20);
+    const m15Ema50  = calcEMA(m15.closes, 50);
+    const m15Struct = detectStructure(m15.closes, m15.highs, m15.lows);
+    const m15RSIArr = calcRSIArr(m15.closes, 14, 5);
+    const m15RSI    = m15RSIArr[m15RSIArr.length - 1];
+    const m15Div    = detectDivergence(m15.closes, m15RSIArr);
+    const m15MACD   = calcMACD(m15.closes);
+    const m15Vol    = detectVolumeSpike(m15.volumes);
+    const m15FVGs   = detectFVG(k15m);
+    const m15Candle = detectCandlePattern(k15m);
+
+    // ══ LEVEL 5 — Trade Setup ══
+    const atr4h = calcATR(k4h, 14);
+    const atr1h = calcATR(k1h, 14);
+
+    // Confluence scoring
+    let score = 0;
+    const isBullish = ['BOS_BULLISH','CHOCH_BULLISH'].includes(h4Struct) || ['BOS_BULLISH','CHOCH_BULLISH'].includes(h1Struct);
+
+    if (btcTrend === 'STRONG_BULL' || btcTrend === 'BULL') score += 2;
+    if (d1Struct === 'BOS_BULLISH' || d1Struct === 'CHOCH_BULLISH') score += 2;
+    if (h4Struct === 'BOS_BULLISH' || h4Struct === 'CHOCH_BULLISH') score += 2;
+    if (h1RSI < 40 || h1RSI > 60) score += 1;
+    if (h1MACD.histogram > 0 !== h1MACD.prevHistogram > 0) score += 1; // fresh cross
+    if (h4Div === 'BULLISH_DIV' || h1Div === 'BULLISH_DIV') score += 1;
+    if (m15Struct === 'BOS_BULLISH' || m15Struct === 'CHOCH_BULLISH') score += 1;
+    if (m15Vol.spike) score += 1;
+
+    // Entry zone based on ATR + OB/FVG
+    const entryLow  = parseFloat((currentPrice - atr1h * 0.3).toFixed(4));
+    const entryHigh = parseFloat((currentPrice + atr1h * 0.3).toFixed(4));
+    const sl        = parseFloat((isBullish ? currentPrice - atr4h * 1.5 : currentPrice + atr4h * 1.5).toFixed(4));
+    const riskAmt   = Math.abs(currentPrice - sl);
+    const tp1       = parseFloat((isBullish ? currentPrice + riskAmt * 1.5 : currentPrice - riskAmt * 1.5).toFixed(4));
+    const tp2       = parseFloat((isBullish ? currentPrice + riskAmt * 2.5 : currentPrice - riskAmt * 2.5).toFixed(4));
+    const tp3       = parseFloat((isBullish ? currentPrice + riskAmt * 4.0 : currentPrice - riskAmt * 4.0).toFixed(4));
+
+    // ── Build prompt for Gemini ──
+    const GEMINI_KEY = process.env.GEMINI_API_KEY;
+    if (!GEMINI_KEY) return res.status(500).json({ success: false, error: 'AI key not configured' });
+
+    const prompt = `You are a professional crypto futures trader and analyst. Analyze the following REAL calculated market data for ${pair} and provide a structured 5-level trade analysis.
+
+=== REAL MARKET DATA ===
+
+CURRENT PRICE: $${currentPrice}
+
+--- LEVEL 1: MACRO CONTEXT ---
+BTC 1D Trend: ${btcTrend} (EMA20: ${btcEma20.toFixed(2)}, EMA50: ${btcEma50.toFixed(2)}, EMA200: ${btcEma200.toFixed(2)})
+BTC Price: $${btcClose.toFixed(2)}
+Funding Rate: ${fundingRate.toFixed(4)}% (${fundingBias})
+Open Interest: ${openInterest ? openInterest.toFixed(2) : 'N/A'}
+
+--- LEVEL 2: HTF STRUCTURE ---
+Daily Structure: ${d1Struct}
+Daily EMA20: ${d1Ema20.toFixed(4)}, EMA50: ${d1Ema50.toFixed(4)}, EMA200: ${d1Ema200.toFixed(4)}
+Daily S/R Levels: ${d1SR.join(', ')}
+Daily Order Block: ${d1OB ? JSON.stringify(d1OB) : 'None detected'}
+
+4H Structure: ${h4Struct}
+4H EMA20: ${h4Ema20.toFixed(4)}, EMA50: ${h4Ema50.toFixed(4)}, EMA200: ${h4Ema200.toFixed(4)}
+4H RSI: ${h4RSI} | Divergence: ${h4Div}
+4H S/R: ${h4SR.join(', ')}
+4H Order Block: ${h4OB ? JSON.stringify(h4OB) : 'None'}
+4H FVG Zones: ${JSON.stringify(h4FVGs)}
+Prev Day High/Low: ${prevDayHigh.toFixed(4)} / ${prevDayLow.toFixed(4)}
+
+--- LEVEL 3: MOMENTUM (1H) ---
+1H Structure: ${h1Struct}
+1H EMA20: ${h1Ema20.toFixed(4)}, EMA50: ${h1Ema50.toFixed(4)}, EMA200: ${h1Ema200.toFixed(4)}
+1H RSI: ${h1RSI} | Divergence: ${h1Div}
+1H MACD: ${h1MACD.macd.toFixed(4)} | Signal: ${h1MACD.signal.toFixed(4)} | Hist: ${h1MACD.histogram.toFixed(4)} | Fresh Cross: ${h1MACD.histogram > 0 !== h1MACD.prevHistogram > 0}
+1H Bollinger: Upper ${h1BB.upper.toFixed(4)}, Mid ${h1BB.middle.toFixed(4)}, Lower ${h1BB.lower.toFixed(4)}
+1H Volume Spike: ${h1Vol.spike} (ratio: ${h1Vol.ratio}x avg)
+1H FVG Zones: ${JSON.stringify(h1FVGs)}
+
+--- LEVEL 4: ENTRY TIMING (15m) ---
+15m Structure: ${m15Struct}
+15m EMA20: ${m15Ema20.toFixed(4)}, EMA50: ${m15Ema50.toFixed(4)}
+15m RSI: ${m15RSI} | Divergence: ${m15Div}
+15m MACD Hist: ${m15MACD.histogram.toFixed(4)} | Fresh Cross: ${m15MACD.histogram > 0 !== m15MACD.prevHistogram > 0}
+15m Candle Pattern: ${m15Candle}
+15m Volume Spike: ${m15Vol.spike} (ratio: ${m15Vol.ratio}x avg)
+15m FVG Zones: ${JSON.stringify(m15FVGs)}
+
+--- LEVEL 5: TRADE SETUP (CALCULATED) ---
+Direction Bias: ${isBullish ? 'LONG' : 'SHORT'}
+Entry Zone: $${entryLow} — $${entryHigh}
+Stop Loss (ATR×1.5): $${sl}
+TP1 (1:1.5): $${tp1}
+TP2 (1:2.5): $${tp2}
+TP3 (1:4.0): $${tp3}
+ATR 4H: ${atr4h.toFixed(4)}, ATR 1H: ${atr1h.toFixed(4)}
+Confluence Score: ${score}/10
+
+=== YOUR TASK ===
+Based on this REAL data, provide analysis in this EXACT JSON format (no markdown, no extra text):
+{
+  "overallBias": "LONG or SHORT or NEUTRAL",
+  "confluenceScore": ${score},
+  "grade": "S or A or B or C",
+  "level1": {
+    "btcTrend": "one sentence interpretation",
+    "fundingSignal": "one sentence interpretation",
+    "oiSignal": "one sentence interpretation",
+    "macroConclusion": "BULLISH or BEARISH or NEUTRAL"
+  },
+  "level2": {
+    "dailyStructure": "one sentence",
+    "dailyEMA": "one sentence — price vs EMA position",
+    "h4Structure": "one sentence",
+    "h4EMA": "one sentence",
+    "h4Divergence": "one sentence",
+    "keyLevels": "important S/R levels to watch",
+    "orderBlock": "OB interpretation",
+    "fvgZones": "FVG interpretation",
+    "structureConclusion": "BULLISH or BEARISH or NEUTRAL"
+  },
+  "level3": {
+    "h1Structure": "one sentence",
+    "h1RSI": "one sentence",
+    "h1Divergence": "one sentence",
+    "macdSignal": "one sentence — cross direction and strength",
+    "bollingerSignal": "one sentence — price position in BB",
+    "volumeSignal": "one sentence",
+    "momentumConclusion": "STRONG_BULL or BULL or NEUTRAL or BEAR or STRONG_BEAR"
+  },
+  "level4": {
+    "m15Structure": "one sentence",
+    "m15RSI": "one sentence",
+    "m15Divergence": "one sentence",
+    "macdCross": "one sentence",
+    "candlePattern": "one sentence interpretation",
+    "volumeConfirm": "one sentence",
+    "fvgEntry": "one sentence",
+    "sessionNote": "note about current session timing",
+    "entryConclusion": "CONFIRMED or WAIT or AVOID"
+  },
+  "level5": {
+    "direction": "${isBullish ? 'LONG' : 'SHORT'}",
+    "entryZone": "$${entryLow} — $${entryHigh}",
+    "stopLoss": "$${sl}",
+    "tp1": "$${tp1}",
+    "tp2": "$${tp2}",
+    "tp3": "$${tp3}",
+    "invalidationLevel": "price level that fully invalidates this setup",
+    "leverage": "suggested leverage range based on volatility",
+    "positionSize": "risk 1-2% of account — how to size",
+    "tradeManagement": "when to move SL to BE, when to trail",
+    "reEntry": "conditions for a valid re-entry",
+    "riskNote": "overall risk assessment"
+  },
+  "summary": "2-3 sentence overall trade summary",
+  "warning": "any major risk or reason to avoid this trade"
+}`;
+
+    const aiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.2, maxOutputTokens: 2000 },
+        }),
+      }
+    );
+
+    if (!aiRes.ok) {
+      const err = await aiRes.text();
+      return res.status(502).json({ success: false, error: `AI error: ${err}` });
+    }
+
+    const aiData = await aiRes.json();
+    const rawText = aiData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const cleaned = rawText.replace(/```json|```/g, '').trim();
+
+    let analysis;
+    try { analysis = JSON.parse(cleaned); }
+    catch (e) { return res.status(500).json({ success: false, error: 'AI response parse failed', raw: rawText }); }
+
+    res.json({
+      success: true,
+      coin: pair,
+      price: currentPrice,
+      confluenceScore: score,
+      rawData: {
+        btcTrend, fundingRate, fundingBias,
+        d1Struct, h4Struct, h1Struct, m15Struct,
+        h4RSI, h1RSI, m15RSI,
+        h4Div, h1Div, m15Div,
+        h1MACD, m15MACD,
+        h1BB, h1Vol, m15Vol,
+        m15Candle, atr4h, atr1h,
+        entryLow, entryHigh, sl, tp1, tp2, tp3,
+      },
+      analysis,
+    });
+
+  } catch (err) {
+    console.error('/api/deep-analysis error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ── Catch-all: serve HTML pages ───────────────────────────────
 app.get('*', (req, res) => {
   const file     = req.path.replace('/', '') || 'index.html';
