@@ -73,6 +73,9 @@ async function saveSettingToDB(key, value) {
 // ── Express Setup ────────────────────────────────────────────
 const app = express();
 
+// Trust proxy — required when behind nginx/reverse proxy
+app.set('trust proxy', 1);
+
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false
