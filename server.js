@@ -1303,25 +1303,32 @@ Based on this REAL data, provide analysis in this EXACT JSON format (no markdown
   "warning": "any major risk or reason to avoid this trade"
 }`;
 
-    const aiRes = await fetch(
+    // Try multiple Gemini endpoints to avoid regional rate limits
+    const geminiEndpoints = [
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.2, maxOutputTokens: 2000 },
-        }),
-      }
-    );
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_KEY}`,
+    ];
 
-    if (!aiRes.ok) {
-      const err = await aiRes.text();
-      return res.status(502).json({ success: false, error: `AI error: ${err}` });
+    let rawText = '';
+    let lastErr = '';
+    for (const endpoint of geminiEndpoints) {
+      try {
+        const aiRes = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.2, maxOutputTokens: 2000 },
+          }),
+        });
+        const aiData = await aiRes.json();
+        if (aiData.error) { lastErr = aiData.error.message; continue; }
+        rawText = aiData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        if (rawText) break;
+      } catch(e) { lastErr = e.message; }
     }
-
-    const aiData = await aiRes.json();
-    const rawText = aiData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    if (!rawText) return res.status(502).json({ success: false, error: `AI error: ${lastErr}` });
     const cleaned = rawText.replace(/```json|```/g, '').trim();
 
     let analysis;

@@ -341,7 +341,7 @@
             </div>
 
             <!-- THE BIG BUTTON -->
-            <button class="run-analysis-btn" id="runAnalysisBtn" onclick="runFullAnalysis()">
+            <button class="run-analysis-btn" id="runAnalysisBtn" onclick="runFullAnalysis()" style="display:none;">
                 <span id="runBtnIcon">🧠</span>
                 <span id="runBtnLabel">Run Deep Analysis</span>
             </button>
@@ -498,7 +498,10 @@ window.setSFActive = function(btn) {
 window.openCoinFromScan = function(coin, price) {
     activeCoin = coin;
     if (scanResults.length) renderScanTable();
-    openCoinPanel(coin, price ? '$' + parseFloat(price).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:4}) : '');
+    const priceStr = price ? '$' + parseFloat(price).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:4}) : '';
+    openCoinPanel(coin, priceStr);
+    // Auto-run analysis immediately
+    setTimeout(() => runFullAnalysis(), 100);
 };
 
 /* ── Select from input ── */
@@ -509,6 +512,7 @@ window.selectCoin = function() {
     activeCoin = coin;
     if (scanResults.length) renderScanTable();
     openCoinPanel(coin, '');
+    setTimeout(() => runFullAnalysis(), 100);
 };
 
 /* ── Open coin panel ── */
