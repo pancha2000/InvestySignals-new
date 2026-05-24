@@ -934,6 +934,9 @@
             appId: "1:1045281522975:web:534501aab2ceeb887bdc2a"
         }));
 
+        // authGuard-timeout
+// Safety: always hide authGuard after 4s max
+setTimeout(() => { const g = document.getElementById('authGuard'); if(g) g.style.display='none'; }, 4000);
         onAuthStateChanged(auth, async u => {
             window._currentUser = u;
             document.getElementById('authGuard').style.display = 'none';

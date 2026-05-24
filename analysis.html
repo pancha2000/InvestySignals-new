@@ -383,8 +383,8 @@ if (navLogout) navLogout.addEventListener('click', window.handleSignOut);
 const _ham = document.getElementById('authHamburger');
 const _menu = document.getElementById('authNavMenu');
 const _backdrop = document.getElementById('navBackdrop');
-function closeNavMenu() { _menu?.classList.remove('open'); _backdrop?.classList.remove('open'); }
-_ham?.addEventListener('click', () => { const o = _menu.classList.toggle('open'); _backdrop?.classList.toggle('open', o); });
+function closeNavMenu() { _menu?.classList.remove('open'); _backdrop?.classList.remove('open'); if(_backdrop) _backdrop.style.pointerEvents='none'; }
+_ham?.addEventListener('click', () => { const o = _menu.classList.toggle('open'); _backdrop?.classList.toggle('open', o); if(_backdrop) _backdrop.style.pointerEvents = o ? 'auto' : 'none'; });
 _backdrop?.addEventListener('click', closeNavMenu);
 document.querySelectorAll('.auth-nav-link').forEach(l => l.addEventListener('click', closeNavMenu));
 
