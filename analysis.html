@@ -591,73 +591,23 @@ function renderFullAnalysis(data, container) {
     const a = data.analysis;
     const r = data.rawData;
 
-    function biasClr(b)   { return b==='BULLISH'||b==='STRONG_BULL'||b==='LONG'||b==='CONFIRMED'?'var(--green)':b==='BEARISH'||b==='STRONG_BEAR'||b==='SHORT'||b==='AVOID'?'var(--red)':'var(--gold)'; }
-    function biasClass(b) { return b==='BULLISH'||b==='STRONG_BULL'||b==='LONG'||b==='CONFIRMED'?'badge-bull':b==='BEARISH'||b==='STRONG_BEAR'||b==='SHORT'||b==='AVOID'?'badge-bear':'badge-neut'; }
+    function biasClr(b)   { return ['BULLISH','STRONG_BULL','LONG','CONFIRMED'].includes(b)?'var(--green)':['BEARISH','STRONG_BEAR','SHORT','AVOID'].includes(b)?'var(--red)':'var(--gold)'; }
+    function biasClass(b) { return ['BULLISH','STRONG_BULL','LONG','CONFIRMED'].includes(b)?'badge-bull':['BEARISH','STRONG_BEAR','SHORT','AVOID'].includes(b)?'badge-bear':'badge-neut'; }
     function gradeClr(g)  { return g==='S'?'var(--gold)':g==='A'?'var(--green)':g==='B'?'var(--blue)':'var(--red)'; }
     function rsiClr(v)    { return v<30?'var(--green)':v>70?'var(--red)':'var(--gold)'; }
-    function rsiZone(v)   { return v<30?'Oversold':v>70?'Overbought':'Neutral'; }
-    function macdDir(h)   { return h>0?'▲ Bullish':'▼ Bearish'; }
+    function sigBadge(val, bull, bear) {
+        const isBull = typeof bull === 'function' ? bull(val) : val === bull;
+        const isBear = typeof bear === 'function' ? bear(val) : val === bear;
+        const cls = isBull ? 'badge-bull' : isBear ? 'badge-bear' : 'badge-neut';
+        return `<span class="level-badge ${cls}">${val||'—'}</span>`;
+    }
 
     const score = a.confluenceScore || data.confluenceScore || 0;
     const gc    = gradeClr(a.grade);
     const circ  = 2 * Math.PI * 26;
 
-    /* ── Raw stats bar — RSI + MACD per TF ── */
-    const tfs = [
-        { lbl:'15m', rsi: r.m15RSI, macdH: r.m15MACD?.histogram },
-        { lbl:'1H',  rsi: r.h1RSI,  macdH: r.h1MACD?.histogram  },
-        { lbl:'4H',  rsi: r.h4RSI,  macdH: null                  },
-        { lbl:'1D',  rsi: null,      macdH: null                  },
-    ];
-
-    const rawBar = `
-    <div style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);font-family:'JetBrains Mono',monospace;margin-bottom:6px;">Indicator Snapshot</div>
-    <div class="raw-stats-bar">
-        ${tfs.map(tf => {
-            const rsiC = tf.rsi != null ? rsiClr(tf.rsi) : 'var(--text-muted)';
-            const cls  = tf.rsi != null ? (tf.rsi<30?'bull':tf.rsi>70?'bear':'neut') : 'neut';
-            const macdTxt = tf.macdH != null ? `<div class="rs-macd" style="color:${tf.macdH>0?'var(--green)':'var(--red)'}">MACD ${macdDir(tf.macdH)}</div>` : '';
-            return `<div class="raw-stat ${cls}">
-                <div class="rs-tf">${tf.lbl}</div>
-                <div class="rs-val" style="color:${rsiC}">${tf.rsi != null ? tf.rsi.toFixed(1) : '—'}</div>
-                <div class="rs-sub" style="color:${rsiC}">${tf.rsi != null ? rsiZone(tf.rsi) : 'RSI'}</div>
-                ${macdTxt}
-            </div>`;
-        }).join('')}
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:12px;">
-        <div style="background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--radius-xs);padding:8px 10px;">
-            <div class="rs-tf">BTC Trend</div>
-            <div class="rs-val" style="font-size:0.75rem;color:${r.btcTrend?.includes('BULL')?'var(--green)':'var(--red)'}">${r.btcTrend||'—'}</div>
-        </div>
-        <div style="background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--radius-xs);padding:8px 10px;">
-            <div class="rs-tf">Funding</div>
-            <div class="rs-val" style="font-size:0.75rem;color:${r.fundingBias==='LONGS_PAYING'?'var(--red)':r.fundingBias==='SHORTS_PAYING'?'var(--green)':'var(--gold)'}">${r.fundingRate!=null?(r.fundingRate>0?'+':'')+r.fundingRate.toFixed(4)+'%':'—'}</div>
-        </div>
-        <div style="background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--radius-xs);padding:8px 10px;">
-            <div class="rs-tf">Candle (15m)</div>
-            <div class="rs-val" style="font-size:0.7rem;">${(r.m15Candle||'—').replace(/_/g,' ')}</div>
-        </div>
-    </div>`;
-
-    /* ── Level card helper ── */
-    function levelCard(icon, title, badge, badgeClass, fields, open) {
-        const id   = 'lc_' + Math.random().toString(36).slice(2,7);
-        const rows = fields.map(([lbl,val]) => `<div class="data-row"><span class="data-lbl">${lbl}</span><span class="data-val">${val||'—'}</span></div>`).join('');
-        return `<div class="level-card">
-            <div class="level-card-head" onclick="toggleLC('${id}')">
-                <div class="level-title">${icon} <span>${title}</span></div>
-                <div style="display:flex;align-items:center;gap:6px;">
-                    <span class="level-badge ${badgeClass}">${badge}</span>
-                    <span style="font-size:0.7rem;color:var(--text-dim);" id="arr_${id}">▼</span>
-                </div>
-            </div>
-            <div class="level-card-body${open?' open':''}" id="${id}">${rows}</div>
-        </div>`;
-    }
-
-    const html = `
-    <!-- Score ring + summary -->
+    // ── Score ring + overall bias ──
+    const scoreHtml = `
     <div class="score-ring-wrap">
         <div style="position:relative;width:64px;height:64px;flex-shrink:0;">
             <svg width="64" height="64" style="transform:rotate(-90deg);position:absolute;inset:0;">
@@ -678,40 +628,248 @@ function renderFullAnalysis(data, container) {
             </div>
             <div style="font-size:0.75rem;color:var(--text-muted);line-height:1.5;">${a.summary||''}</div>
         </div>
-    </div>
+    </div>`;
 
-    ${a.warning ? `<div class="warning-box">⚠️ ${a.warning}</div>` : ''}
+    // ── Warning ──
+    const warnHtml = a.warning ? `<div class="warning-box">⚠️ ${a.warning}</div>` : '';
 
-    ${rawBar}
+    // ── Raw Indicator Snapshot — exact values ──
+    function indRow(label, value, signalHtml, extra) {
+        return `<div class="data-row">
+            <span class="data-lbl">${label}</span>
+            <span class="data-val" style="display:flex;align-items:center;gap:6px;justify-content:flex-end;">
+                ${value ? `<span style="font-family:'JetBrains Mono',monospace;">${value}</span>` : ''}
+                ${signalHtml||''}
+                ${extra ? `<span style="font-size:0.65rem;color:var(--text-muted);">${extra}</span>` : ''}
+            </span>
+        </div>`;
+    }
 
-    ${levelCard('📊','Market Context (Macro)',a.level1?.macroConclusion||'—',biasClass(a.level1?.macroConclusion),[
+    function signalPill(text, type) {
+        // type: bull / bear / neut / warn
+        const cls = type==='bull'?'badge-bull':type==='bear'?'badge-bear':type==='warn'?'badge-neut':'badge-neut';
+        return `<span class="level-badge ${cls}">${text}</span>`;
+    }
+
+    // RSI signal
+    function rsiSignal(v) {
+        if (v == null) return signalPill('—','neut');
+        if (v < 30)  return signalPill('Oversold','bull');
+        if (v > 70)  return signalPill('Overbought','bear');
+        if (v < 45)  return signalPill('Neutral-Low','neut');
+        if (v > 55)  return signalPill('Neutral-High','neut');
+        return signalPill('Neutral','neut');
+    }
+
+    // MACD signal
+    function macdSignal(h) {
+        if (h == null) return signalPill('—','neut');
+        return h > 0 ? signalPill('▲ Bull','bull') : signalPill('▼ Bear','bear');
+    }
+
+    // Divergence signal
+    function divSignal(d) {
+        if (!d || d==='NONE') return signalPill('None','neut');
+        if (d==='BULLISH_DIV') return signalPill('🟢 Bull Div','bull');
+        if (d==='BEARISH_DIV') return signalPill('🔴 Bear Div','bear');
+        if (d==='HIDDEN_BULLISH') return signalPill('↗ Hidden Bull','bull');
+        if (d==='HIDDEN_BEARISH') return signalPill('↘ Hidden Bear','bear');
+        return signalPill(d,'neut');
+    }
+
+    // Structure signal
+    function structSignal(s) {
+        if (!s || s==='NEUTRAL') return signalPill('Neutral','neut');
+        if (s==='BOS_BULLISH')   return signalPill('BOS ▲','bull');
+        if (s==='BOS_BEARISH')   return signalPill('BOS ▼','bear');
+        if (s==='CHOCH_BULLISH') return signalPill('CHoCH ▲','bull');
+        if (s==='CHOCH_BEARISH') return signalPill('CHoCH ▼','bear');
+        return signalPill(s,'neut');
+    }
+
+    // EMA signal
+    function emaSignal(price, ema20, ema50, ema200) {
+        if (!price || !ema20) return signalPill('—','neut');
+        if (price > ema20 && ema20 > ema50 && ema50 > ema200) return signalPill('✓✓ Perfect Bull','bull');
+        if (price > ema20 && ema20 > ema50) return signalPill('▲ Bull','bull');
+        if (price < ema20 && ema20 < ema50 && ema50 < ema200) return signalPill('✗✗ Perfect Bear','bear');
+        if (price < ema20 && ema20 < ema50) return signalPill('▼ Bear','bear');
+        return signalPill('Mixed','neut');
+    }
+
+    // Volume signal
+    function volSignal(ratio, spike) {
+        if (ratio == null) return signalPill('—','neut');
+        if (spike) return signalPill(`⚡ Spike ${ratio}x`,'bull');
+        if (ratio > 1.2) return signalPill(`↑ ${ratio}x`,'neut');
+        return signalPill(`${ratio}x avg`,'neut');
+    }
+
+    // BB signal
+    function bbSignal(price, upper, mid, lower) {
+        if (!price || !upper) return signalPill('—','neut');
+        if (price <= lower * 1.002) return signalPill('At Lower','bull');
+        if (price >= upper * 0.998) return signalPill('At Upper','bear');
+        if (price > mid) return signalPill('Above Mid','neut');
+        return signalPill('Below Mid','neut');
+    }
+
+    // FVG display
+    function fvgHtml(fvgs) {
+        if (!fvgs || !fvgs.length) return '<span style="color:var(--text-muted);font-size:0.72rem;">None detected</span>';
+        return fvgs.slice(0,3).map(f => {
+            const col = f.type==='BULL' ? 'var(--green)' : 'var(--red)';
+            return `<span style="font-family:'JetBrains Mono',monospace;font-size:0.68rem;padding:2px 7px;border-radius:4px;margin:2px;display:inline-block;background:${f.type==='BULL'?'rgba(0,217,126,0.1)':'rgba(255,59,92,0.1)'};color:${col};">${f.type} $${parseFloat(f.low).toFixed(4)}–$${parseFloat(f.high).toFixed(4)}</span>`;
+        }).join('');
+    }
+
+    // OB display
+    function obHtml(ob) {
+        if (!ob) return '<span style="color:var(--text-muted);font-size:0.72rem;">None detected</span>';
+        const col = ob.type==='BULL_OB' ? 'var(--green)' : 'var(--red)';
+        return `<span style="font-family:'JetBrains Mono',monospace;font-size:0.68rem;padding:2px 7px;border-radius:4px;background:${ob.type==='BULL_OB'?'rgba(0,217,126,0.1)':'rgba(255,59,92,0.1)'};color:${col};">${ob.type.replace('_OB','')} OB $${parseFloat(ob.low).toFixed(4)}–$${parseFloat(ob.high).toFixed(4)}</span>`;
+    }
+
+    // S/R levels display
+    function srHtml(levels) {
+        if (!levels || !levels.length) return '<span style="color:var(--text-muted);font-size:0.72rem;">—</span>';
+        return levels.map(l => `<span style="font-family:'JetBrains Mono',monospace;font-size:0.7rem;padding:2px 8px;border-radius:4px;margin:2px;display:inline-block;background:var(--surface);border:1px solid var(--border-soft);">$${parseFloat(l).toFixed(4)}</span>`).join('');
+    }
+
+    const p = data.price || 0;
+
+    const snapshotHtml = `
+    <div style="margin-bottom:12px;">
+        <div style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);font-family:'JetBrains Mono',monospace;margin-bottom:8px;">📊 Live Indicator Values</div>
+
+        <div class="level-card" style="margin-bottom:8px;">
+            <div class="level-card-head" onclick="toggleLC('snap_btc')">
+                <div class="level-title">📈 BTC + Market Context</div>
+                <div style="display:flex;gap:6px;">${signalPill(r.btcTrend?.includes('BULL')?'BTC Bull':'BTC Bear', r.btcTrend?.includes('BULL')?'bull':'bear')} <span id="arr_snap_btc" style="font-size:0.7rem;color:var(--text-dim);">▼</span></div>
+            </div>
+            <div class="level-card-body open" id="snap_btc">
+                ${indRow('BTC 1D Trend', r.btcTrend, signalPill(r.btcTrend?.includes('STRONG_BULL')?'Strong Bull':r.btcTrend?.includes('BULL')?'Bull':r.btcTrend?.includes('STRONG_BEAR')?'Strong Bear':'Bear', r.btcTrend?.includes('BULL')?'bull':'bear'))}
+                ${indRow('Funding Rate', r.fundingRate!=null?(r.fundingRate>0?'+':'')+r.fundingRate.toFixed(4)+'%', signalPill(r.fundingBias==='LONGS_PAYING'?'Longs Paying':r.fundingBias==='SHORTS_PAYING'?'Shorts Paying':'Neutral', r.fundingBias==='LONGS_PAYING'?'bear':r.fundingBias==='SHORTS_PAYING'?'bull':'neut'))}
+                ${indRow('Structure (1D)', '', structSignal(r.d1Struct))}
+            </div>
+        </div>
+
+        <div class="level-card" style="margin-bottom:8px;">
+            <div class="level-card-head" onclick="toggleLC('snap_rsi')">
+                <div class="level-title">📉 RSI — All Timeframes</div>
+                <div style="display:flex;gap:6px;"><span id="arr_snap_rsi" style="font-size:0.7rem;color:var(--text-dim);">▼</span></div>
+            </div>
+            <div class="level-card-body open" id="snap_rsi">
+                ${indRow('RSI (15m)', r.m15RSI!=null?r.m15RSI.toFixed(1):'—', rsiSignal(r.m15RSI))}
+                ${indRow('RSI (1H)',  r.h1RSI!=null?r.h1RSI.toFixed(1):'—',  rsiSignal(r.h1RSI))}
+                ${indRow('RSI (4H)',  r.h4RSI!=null?r.h4RSI.toFixed(1):'—',  rsiSignal(r.h4RSI))}
+                ${indRow('RSI Div (4H)', '', divSignal(r.h4Div))}
+                ${indRow('RSI Div (1H)', '', divSignal(r.h1Div))}
+                ${indRow('RSI Div (15m)','', divSignal(r.m15Div))}
+            </div>
+        </div>
+
+        <div class="level-card" style="margin-bottom:8px;">
+            <div class="level-card-head" onclick="toggleLC('snap_macd')">
+                <div class="level-title">📈 MACD + Structure</div>
+                <div style="display:flex;gap:6px;"><span id="arr_snap_macd" style="font-size:0.7rem;color:var(--text-dim);">▼</span></div>
+            </div>
+            <div class="level-card-body open" id="snap_macd">
+                ${indRow('MACD (1H)', r.h1MACD?.histogram!=null?'Hist: '+(r.h1MACD.histogram>0?'+':'')+r.h1MACD.histogram.toFixed(4):'—', macdSignal(r.h1MACD?.histogram), r.h1MACD?.histogram!=null&&r.h1MACD?.prevHistogram!=null?(Math.abs(r.h1MACD.histogram)>Math.abs(r.h1MACD.prevHistogram)?'↑ Growing':'↓ Fading'):'')}
+                ${indRow('MACD (15m)', r.m15MACD?.histogram!=null?'Hist: '+(r.m15MACD.histogram>0?'+':'')+r.m15MACD.histogram.toFixed(4):'—', macdSignal(r.m15MACD?.histogram))}
+                ${indRow('Structure (4H)', '', structSignal(r.h4Struct))}
+                ${indRow('Structure (1H)', '', structSignal(r.h1Struct))}
+                ${indRow('Structure (15m)','', structSignal(r.m15Struct))}
+            </div>
+        </div>
+
+        <div class="level-card" style="margin-bottom:8px;">
+            <div class="level-card-head" onclick="toggleLC('snap_ema')">
+                <div class="level-title">📊 EMA Position</div>
+                <div style="display:flex;gap:6px;"><span id="arr_snap_ema" style="font-size:0.7rem;color:var(--text-dim);">▼</span></div>
+            </div>
+            <div class="level-card-body open" id="snap_ema">
+                ${indRow('EMA (1H)', `20: $${r.h1Ema20?.toFixed(4)||'—'} / 50: $${r.h1Ema50?.toFixed(4)||'—'}`, emaSignal(p, r.h1Ema20, r.h1Ema50, r.h1Ema200))}
+                ${indRow('EMA 200 (1H)', r.h1Ema200?'$'+r.h1Ema200.toFixed(4):'—', signalPill(p&&r.h1Ema200?(p>r.h1Ema200?'Above 200':'Below 200'):'—', p&&r.h1Ema200?(p>r.h1Ema200?'bull':'bear'):'neut'))}
+                ${indRow('EMA (4H)', `20: $${r.h4Ema20?.toFixed(4)||'—'} / 50: $${r.h4Ema50?.toFixed(4)||'—'}`, emaSignal(p, r.h4Ema20, r.h4Ema50, r.h4Ema200))}
+                ${indRow('BB Position (1H)', r.h1BB?`Upper: $${r.h1BB.upper?.toFixed(4)} / Lower: $${r.h1BB.lower?.toFixed(4)}`:'—', bbSignal(p, r.h1BB?.upper, r.h1BB?.middle, r.h1BB?.lower))}
+            </div>
+        </div>
+
+        <div class="level-card" style="margin-bottom:8px;">
+            <div class="level-card-head" onclick="toggleLC('snap_zones')">
+                <div class="level-title">🗺️ Key Zones + Volume</div>
+                <div style="display:flex;gap:6px;"><span id="arr_snap_zones" style="font-size:0.7rem;color:var(--text-dim);">▼</span></div>
+            </div>
+            <div class="level-card-body open" id="snap_zones">
+                ${indRow('S/R Levels (4H)', '', '')}
+                <div style="padding:4px 0 8px;flex-wrap:wrap;display:flex;gap:4px;">${srHtml(r.h4SR)}</div>
+                ${indRow('S/R Levels (1D)', '', '')}
+                <div style="padding:4px 0 8px;flex-wrap:wrap;display:flex;gap:4px;">${srHtml(r.d1SR)}</div>
+                ${indRow('FVG Zones (4H)', '', '')}
+                <div style="padding:4px 0 8px;">${fvgHtml(r.h4FVGs)}</div>
+                ${indRow('FVG Zones (1H)', '', '')}
+                <div style="padding:4px 0 8px;">${fvgHtml(r.h1FVGs)}</div>
+                ${indRow('FVG Zones (15m)', '', '')}
+                <div style="padding:4px 0 8px;">${fvgHtml(r.m15FVGs)}</div>
+                ${indRow('Order Block (4H)', '', obHtml(r.h4OB))}
+                ${indRow('Order Block (1D)', '', obHtml(r.d1OB))}
+                ${indRow('Volume Spike (1H)', r.h1Vol?.ratio!=null?r.h1Vol.ratio+'x avg':'—', volSignal(r.h1Vol?.ratio, r.h1Vol?.spike))}
+                ${indRow('Volume Spike (15m)', r.m15Vol?.ratio!=null?r.m15Vol.ratio+'x avg':'—', volSignal(r.m15Vol?.ratio, r.m15Vol?.spike))}
+                ${indRow('Candle (15m)', r.m15Candle?(r.m15Candle.replace(/_/g,' ')):'—', signalPill(r.m15Candle?.includes('BULL')||r.m15Candle?.includes('ENGULF')||r.m15Candle?.includes('PIN_BAR_BULL')?'🟢 Bullish':r.m15Candle?.includes('BEAR')?'🔴 Bearish':'Neutral', r.m15Candle?.includes('BULL')?'bull':r.m15Candle?.includes('BEAR')?'bear':'neut'))}
+                ${indRow('Prev Day H/L', r.prevDayHigh&&r.prevDayLow?`H: $${r.prevDayHigh.toFixed(4)} / L: $${r.prevDayLow.toFixed(4)}`:'—', '')}
+                ${indRow('ATR (4H)', r.atr4h?'$'+r.atr4h.toFixed(4):'—', '')}
+                ${indRow('ATR (1H)', r.atr1h?'$'+r.atr1h.toFixed(4):'—', '')}
+            </div>
+        </div>
+    </div>`;
+
+    // ── AI Level Cards ──
+    function levelCard(icon, title, badge, badgeClass, fields, open) {
+        const id   = 'lc_' + Math.random().toString(36).slice(2,7);
+        const rows = fields.map(([lbl,val]) => `<div class="data-row"><span class="data-lbl">${lbl}</span><span class="data-val">${val||'—'}</span></div>`).join('');
+        return `<div class="level-card">
+            <div class="level-card-head" onclick="toggleLC('${id}')">
+                <div class="level-title">${icon} <span>${title}</span></div>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <span class="level-badge ${badgeClass}">${badge}</span>
+                    <span style="font-size:0.7rem;color:var(--text-dim);" id="arr_${id}">▼</span>
+                </div>
+            </div>
+            <div class="level-card-body${open?' open':''}" id="${id}">${rows}</div>
+        </div>`;
+    }
+
+    const html = scoreHtml + warnHtml + snapshotHtml +
+
+    levelCard('📊','Market Context (Macro)',a.level1?.macroConclusion||'—',biasClass(a.level1?.macroConclusion),[
         ['BTC Trend (1D)', a.level1?.btcTrend],
         ['Funding Rate',   a.level1?.fundingSignal],
         ['Open Interest',  a.level1?.oiSignal],
-    ], true)}
+    ], false) +
 
-    ${levelCard('🏗️','HTF Structure (Daily + 4H)',a.level2?.structureConclusion||'—',biasClass(a.level2?.structureConclusion),[
-        ['Daily BOS/CHoCH', a.level2?.dailyStructure],
-        ['Daily EMA 20/50/200', a.level2?.dailyEMA],
-        ['4H BOS/CHoCH',   a.level2?.h4Structure],
-        ['4H EMA',         a.level2?.h4EMA],
-        ['4H RSI Div',     a.level2?.h4Divergence],
-        ['Key S/R Levels', a.level2?.keyLevels],
-        ['Order Block',    a.level2?.orderBlock],
-        ['FVG Zones',      a.level2?.fvgZones],
-    ], false)}
+    levelCard('🏗️','HTF Structure (Daily + 4H)',a.level2?.structureConclusion||'—',biasClass(a.level2?.structureConclusion),[
+        ['Daily BOS/CHoCH',    a.level2?.dailyStructure],
+        ['Daily EMA 20/50/200',a.level2?.dailyEMA],
+        ['4H BOS/CHoCH',       a.level2?.h4Structure],
+        ['4H EMA',             a.level2?.h4EMA],
+        ['4H RSI Divergence',  a.level2?.h4Divergence],
+        ['Key S/R Levels',     a.level2?.keyLevels],
+        ['Order Block',        a.level2?.orderBlock],
+        ['FVG Zones',          a.level2?.fvgZones],
+    ], false) +
 
-    ${levelCard('⚡','Momentum (1H)',a.level3?.momentumConclusion||'—',biasClass(a.level3?.momentumConclusion),[
-        ['1H BOS/CHoCH',  a.level3?.h1Structure],
-        ['1H EMA',        a.level3?.h1EMA||'—'],
-        ['1H RSI',        a.level3?.h1RSI],
-        ['1H Divergence', a.level3?.h1Divergence],
-        ['MACD (1H)',     a.level3?.macdSignal],
-        ['Bollinger (1H)',a.level3?.bollingerSignal],
-        ['Volume',        a.level3?.volumeSignal],
-    ], false)}
+    levelCard('⚡','Momentum (1H)',a.level3?.momentumConclusion||'—',biasClass(a.level3?.momentumConclusion),[
+        ['1H BOS/CHoCH',   a.level3?.h1Structure],
+        ['1H EMA',         a.level3?.h1EMA||'—'],
+        ['1H RSI',         a.level3?.h1RSI],
+        ['1H Divergence',  a.level3?.h1Divergence],
+        ['MACD (1H)',      a.level3?.macdSignal],
+        ['Bollinger (1H)', a.level3?.bollingerSignal],
+        ['Volume',         a.level3?.volumeSignal],
+    ], false) +
 
-    ${levelCard('🎯','Entry Timing (15m)',a.level4?.entryConclusion||'—',biasClass(a.level4?.entryConclusion),[
+    levelCard('🎯','Entry Timing (15m)',a.level4?.entryConclusion||'—',biasClass(a.level4?.entryConclusion),[
         ['15m Structure',  a.level4?.m15Structure],
         ['15m RSI',        a.level4?.m15RSI],
         ['15m Divergence', a.level4?.m15Divergence],
@@ -720,10 +878,9 @@ function renderFullAnalysis(data, container) {
         ['Volume Confirm', a.level4?.volumeConfirm],
         ['FVG Entry',      a.level4?.fvgEntry],
         ['Session',        a.level4?.sessionNote],
-    ], false)}
+    ], false) +
 
-    <!-- Trade Setup -->
-    <div class="trade-setup-box">
+    `<div class="trade-setup-box">
         <div style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--gold);font-family:'JetBrains Mono',monospace;margin-bottom:10px;">💰 Trade Setup</div>
         <div class="setup-grid">
             <div class="setup-item"><div class="setup-lbl">Direction</div><div class="setup-val" style="color:${biasClr(a.level5?.direction)}">${a.level5?.direction||'—'}</div></div>
@@ -746,13 +903,12 @@ function renderFullAnalysis(data, container) {
     </div>
 
     <div style="font-size:0.65rem;color:var(--text-dim);text-align:center;padding-top:4px;">
-        Powered by Gemini AI · Real Binance Futures Data · ${new Date().toLocaleTimeString()}
+        Powered by Groq AI · Real Binance Futures Data · ${new Date().toLocaleTimeString()}
     </div>`;
 
     container.innerHTML = html;
 }
 
-/* ══ Toggle level card ══ */
 window.toggleLC = function(id) {
     const el  = document.getElementById(id);
     const arr = document.getElementById('arr_' + id);
