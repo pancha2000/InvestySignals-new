@@ -349,7 +349,7 @@
         const navBackdrop = document.getElementById('navBackdrop');
         
         function closeNavMenu() {
-            if (authNavMenu) authNavMenu.classList.remove('open');
+            if (authNavMenu) authNavMenu.classList.remove('open'); if(document.getElementById('navBackdrop')) document.getElementById('navBackdrop').style.pointerEvents='none';
             if (navBackdrop) navBackdrop.classList.remove('open');
         }
         

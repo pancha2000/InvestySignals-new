@@ -1040,10 +1040,12 @@ select.input-control {
     top: 64px;
     background: rgba(0, 0, 0, 0.5);
     z-index: 1000;
+    pointer-events: none;
   }
 
   .nav-backdrop.open {
     display: block;
+    pointer-events: auto;
   }
 
   /* Nav divider in sidebar */

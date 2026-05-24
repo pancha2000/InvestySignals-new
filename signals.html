@@ -218,13 +218,14 @@
     const _navBackdrop = document.getElementById('navBackdrop');
     
     function closeNavMenu() {
-        if (_authNavMenu) _authNavMenu.classList.remove('open');
+        if (_authNavMenu) _authNavMenu.classList.remove('open'); if(document.getElementById('navBackdrop')) document.getElementById('navBackdrop').style.pointerEvents='none'; if(_navBackdrop) _navBackdrop.style.pointerEvents='none';
         if (_navBackdrop) _navBackdrop.classList.remove('open');
     }
     
     if (_authHamburger) {
         _authHamburger.addEventListener('click', () => {
             const isOpen = _authNavMenu.classList.toggle('open');
+        if(_navBackdrop) _navBackdrop.style.pointerEvents = _authNavMenu.classList.contains('open') ? 'auto' : 'none';
             if (_navBackdrop) _navBackdrop.classList.toggle('open', isOpen);
         });
     }
