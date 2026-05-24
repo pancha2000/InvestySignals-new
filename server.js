@@ -1345,6 +1345,14 @@ Based on this REAL data, provide analysis in this EXACT JSON format (no markdown
         h1BB, h1Vol, m15Vol,
         m15Candle, atr4h, atr1h,
         entryLow, entryHigh, sl, tp1, tp2, tp3,
+        // Extra fields for UI display
+        h1Ema20, h1Ema50, h1Ema200,
+        h4Ema20, h4Ema50, h4Ema200,
+        d1Ema20, d1Ema50, d1Ema200,
+        h4SR, d1SR,
+        h4FVGs, h1FVGs, m15FVGs,
+        h4OB, d1OB,
+        prevDayHigh, prevDayLow,
       },
       analysis,
     });
