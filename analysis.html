@@ -239,7 +239,7 @@
     </style>
 </head>
 <body>
-<div class="nav-backdrop" id="navBackdrop"></div>
+<div class="nav-backdrop" id="navBackdrop" style="pointer-events:none;"></div>
 <nav class="auth-nav">
     <div class="auth-nav-left">
         <button class="auth-hamburger" id="authHamburger">☰</button>
@@ -363,7 +363,7 @@ const auth = getAuth(initializeApp({
   apiKey:"AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk",
   authDomain:"investysignals-890ba.firebaseapp.com", projectId:"investysignals-890ba",
   storageBucket:"investysignals-890ba.firebasestorage.app", messagingSenderId:"1045281522975",
-  appId:"1:1045281522975:web:534501aab2ceeb887bdc2a"
+  appId:"1:1045281522975:web:47c4b8d32c5f235a7bdc2a"
 }));
 onAuthStateChanged(auth, u => {
   if (!u) { window.location.href = 'login.html'; return; }
@@ -519,6 +519,7 @@ window.selectCoin = function() {
 function openCoinPanel(coin, priceStr) {
     document.getElementById('crpCoinName').textContent  = coin + ' / USDT';
     document.getElementById('crpCoinPrice').textContent = priceStr || '';
+    document.getElementById('runAnalysisBtn').style.display = 'flex';
     document.getElementById('runAnalysisBtn').disabled  = false;
     document.getElementById('runBtnIcon').textContent   = '🧠';
     document.getElementById('runBtnLabel').textContent  = 'Run Deep Analysis';
@@ -749,7 +750,7 @@ function renderFullAnalysis(data, container) {
             </div>
             <div class="level-card-body open" id="snap_btc">
                 ${indRow('BTC 1D Trend', r.btcTrend, signalPill(r.btcTrend?.includes('STRONG_BULL')?'Strong Bull':r.btcTrend?.includes('BULL')?'Bull':r.btcTrend?.includes('STRONG_BEAR')?'Strong Bear':'Bear', r.btcTrend?.includes('BULL')?'bull':'bear'))}
-                ${indRow('Funding Rate', r.fundingRate!=null?(r.fundingRate>0?'+':'')+r.fundingRate.toFixed(4)+'%', signalPill(r.fundingBias==='LONGS_PAYING'?'Longs Paying':r.fundingBias==='SHORTS_PAYING'?'Shorts Paying':'Neutral', r.fundingBias==='LONGS_PAYING'?'bear':r.fundingBias==='SHORTS_PAYING'?'bull':'neut'))}
+                ${indRow('Funding Rate', r.fundingRate!=null?(r.fundingRate>0?'+':'')+r.fundingRate.toFixed(4)+'%':'—', signalPill(r.fundingBias==='LONGS_PAYING'?'Longs Paying':r.fundingBias==='SHORTS_PAYING'?'Shorts Paying':'Neutral', r.fundingBias==='LONGS_PAYING'?'bear':r.fundingBias==='SHORTS_PAYING'?'bull':'neut'))}
                 ${indRow('Structure (1D)', '', structSignal(r.d1Struct))}
             </div>
         </div>

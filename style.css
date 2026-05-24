@@ -1008,10 +1008,14 @@ select.input-control {
     transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     z-index: 1001;
     overflow-y: auto;
+    pointer-events: none;
+    visibility: hidden;
   }
 
   .auth-nav-menu.open {
     left: 0;
+    pointer-events: auto;
+    visibility: visible;
   }
 
   .auth-nav-link {
