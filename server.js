@@ -555,9 +555,10 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
       const e12=calcEMAArr(closes,12),e26=calcEMAArr(closes,26);
       const ml=e12.slice(e12.length-e26.length).map((v,i)=>v-e26[i]);
       const s9=calcEMAArr(ml,9);
+      const prevH2=ml.length>=2&&s9.length>=2?ml[ml.length-2]-s9[s9.length-2]:0;
       return { macd:ml[ml.length-1], signal:s9[s9.length-1],
         histogram:ml[ml.length-1]-s9[s9.length-1],
-        prevHistogram:ml[ml.length-2]-s9[s9.length-2] };
+        prevHistogram:prevH2 };
     }
 
     function calcBB(closes,period=20) {
@@ -599,26 +600,32 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
       return 'NEUTRAL';
     }
 
-    // [F5] RSI Divergence — proper swing pivot (10-candle lookback)
+    // [F5-fix] RSI Divergence — proper swing pivot comparison
+    // Compare first half vs second half of 10-candle window
     function detectDivergence(closes,rsiArr) {
       if (closes.length<10||rsiArr.length<10) return 'NONE';
-      // Find recent price swing pivot (last 10 candles)
       const pSlice=closes.slice(-10);
       const rSlice=rsiArr.slice(-10);
-      const pPrev=Math.min(...pSlice.slice(0,5));  // recent low (bull div)
-      const pCurr=pSlice[pSlice.length-1];
-      const rPrev=rSlice[0];
-      const rCurr=rSlice[rSlice.length-1];
-      const pUp=pCurr>pSlice[0];
-      const rUp=rCurr>rPrev;
-      // Bullish divergence: price lower low, RSI higher low
-      if (!pUp&&rUp&&pCurr<pSlice[0]) return 'BULLISH_DIV';
-      // Bearish divergence: price higher high, RSI lower high
-      if (pUp&&!rUp&&pCurr>pSlice[0])  return 'BEARISH_DIV';
-      // Hidden bullish: price higher low, RSI lower low
-      if (pUp&&!rUp&&pCurr>pPrev)      return 'HIDDEN_BULLISH';
-      // Hidden bearish: price lower high, RSI higher high
-      if (!pUp&&rUp)                    return 'HIDDEN_BEARISH';
+      // Split into two halves for swing comparison
+      const half=Math.floor(pSlice.length/2);
+      // First half: "previous" swing
+      const prevPriceHigh=Math.max(...pSlice.slice(0,half));
+      const prevPriceLow =Math.min(...pSlice.slice(0,half));
+      const prevRSIHigh  =Math.max(...rSlice.slice(0,half));
+      const prevRSILow   =Math.min(...rSlice.slice(0,half));
+      // Second half: "current" swing
+      const currPriceHigh=Math.max(...pSlice.slice(half));
+      const currPriceLow =Math.min(...pSlice.slice(half));
+      const currRSIHigh  =Math.max(...rSlice.slice(half));
+      const currRSILow   =Math.min(...rSlice.slice(half));
+      // Regular Bullish: price lower low, RSI higher low
+      if (currPriceLow<prevPriceLow&&currRSILow>prevRSILow) return 'BULLISH_DIV';
+      // Regular Bearish: price higher high, RSI lower high
+      if (currPriceHigh>prevPriceHigh&&currRSIHigh<prevRSIHigh) return 'BEARISH_DIV';
+      // Hidden Bullish: price higher low (uptrend), RSI lower low
+      if (currPriceLow>prevPriceLow&&currRSILow<prevRSILow) return 'HIDDEN_BULLISH';
+      // Hidden Bearish: price lower high (downtrend), RSI higher high
+      if (currPriceHigh<prevPriceHigh&&currRSIHigh>prevRSIHigh) return 'HIDDEN_BEARISH';
       return 'NONE';
     }
 
@@ -741,30 +748,35 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
       }
     }
 
-    // [F10] SR-aware TP — avoid placing TP inside SR cluster
+    // [F10-fix] SR-aware TP with entry validation
     function calcSRAwareTP(isBullish,entry,riskAmt,srLevels,ratio) {
       const raw=isBullish?entry+riskAmt*ratio:entry-riskAmt*ratio;
-      // Check if raw TP lands inside an SR zone (±0.3%)
+      let adjusted=raw;
+      // Adjust if raw TP lands inside an SR cluster (±0.3%)
       for (const sr of srLevels) {
-        if (Math.abs(raw-sr)/sr<0.003) {
-          // Adjust TP to just before the SR level
-          return parseFloat((isBullish?sr*0.997:sr*1.003).toFixed(4));
+        if (Math.abs(adjusted-sr)/sr<0.003) {
+          adjusted=isBullish?sr*0.997:sr*1.003;
+          break;
         }
       }
-      return parseFloat(raw.toFixed(4));
+      // Safety: TP must always be on correct side of entry
+      if (isBullish&&adjusted<=entry) adjusted=raw;   // revert to raw if adjusted wrong
+      if (!isBullish&&adjusted>=entry) adjusted=raw;
+      return parseFloat(adjusted.toFixed(4));
     }
 
-    // [F2] Direction-aware entry zone
+    // [F2-fix] Direction-aware entry zone with minimum width guarantee
     function calcEntryZone(isBullish,currentPrice,atr1h,atr15m) {
-      const atrBuffer=Math.min(atr1h,atr15m*3); // use smaller of 1H or 3×15m ATR
+      // Use smaller ATR but guarantee minimum width of 0.2% of price
+      const atrBuffer=Math.max(Math.min(atr1h,atr15m*3), currentPrice*0.002);
       if (isBullish) {
-        // LONG: wait for pullback — entry below current price
+        // LONG: pullback zone below current price
         return {
           entryLow:  parseFloat((currentPrice-atrBuffer*0.6).toFixed(4)),
           entryHigh: parseFloat((currentPrice-atrBuffer*0.1).toFixed(4))
         };
       } else {
-        // SHORT: wait for push — entry above current price
+        // SHORT: push zone above current price
         return {
           entryLow:  parseFloat((currentPrice+atrBuffer*0.1).toFixed(4)),
           entryHigh: parseFloat((currentPrice+atrBuffer*0.6).toFixed(4))
@@ -812,10 +824,25 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
       btcClose1d>btcEma50?'BULL':btcClose1d<btcEma200?'STRONG_BEAR':'BEAR';
     // [F8] BTC 4H structure
     const btcStruct4h=detectStructure(btc4h.closes,btc4h.highs,btc4h.lows);
-    const btcTrend=btcTrend1d==='STRONG_BULL'&&['BOS_BULLISH','CHOCH_BULLISH','NEUTRAL'].includes(btcStruct4h)?'STRONG_BULL':
-      btcTrend1d==='STRONG_BEAR'&&['BOS_BEARISH','CHOCH_BEARISH','NEUTRAL'].includes(btcStruct4h)?'STRONG_BEAR':
-      btcStruct4h==='BOS_BULLISH'||btcStruct4h==='CHOCH_BULLISH'?'BULL':
-      btcStruct4h==='BOS_BEARISH'||btcStruct4h==='CHOCH_BEARISH'?'BEAR':btcTrend1d;
+    // [F8-fix] BTC 4H pullback in strong 1D trend = still BULL/BEAR (not reversal)
+    // 1D trend is the anchor — 4H only upgrades to STRONG or confirms, never overrides
+    const btcTrend=(()=>{
+      const bullish1d=btcTrend1d==='STRONG_BULL'||btcTrend1d==='BULL';
+      const bearish1d=btcTrend1d==='STRONG_BEAR'||btcTrend1d==='BEAR';
+      const h4Bull=['BOS_BULLISH','CHOCH_BULLISH'].includes(btcStruct4h);
+      const h4Bear=['BOS_BEARISH','CHOCH_BEARISH'].includes(btcStruct4h);
+      // STRONG only when both 1D and 4H agree
+      if (btcTrend1d==='STRONG_BULL'&&h4Bull) return 'STRONG_BULL';
+      if (btcTrend1d==='STRONG_BEAR'&&h4Bear) return 'STRONG_BEAR';
+      // 1D STRONG + 4H pullback = still strong (pullback not reversal)
+      if (btcTrend1d==='STRONG_BULL'&&!h4Bear) return 'STRONG_BULL';
+      if (btcTrend1d==='STRONG_BEAR'&&!h4Bull) return 'STRONG_BEAR';
+      // 1D BULL + 4H confirms
+      if (bullish1d&&h4Bull) return 'BULL';
+      if (bearish1d&&h4Bear) return 'BEAR';
+      // 1D BULL + 4H bearish = pullback, stay with 1D
+      return btcTrend1d;
+    })();
 
     const fundingRate=fundingRaw[0]?.fundingRate?parseFloat(fundingRaw[0].fundingRate)*100:0;
     const fundingBias=fundingRate>0.05?'LONGS_PAYING':fundingRate<-0.01?'SHORTS_PAYING':'NEUTRAL';
