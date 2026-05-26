@@ -321,62 +321,155 @@ NGINXEOF
 }
 
 # ================================================================
-#  FIX serviceAccount.json
+#  FIX serviceAccount.json  (Web Upload — mobile friendly)
 # ================================================================
 cmd_fix_sa() {
   check_root fix-sa
   section "Fix serviceAccount.json"
 
+  VPS_IP=$(hostname -I | awk '{print $1}')
+  UPLOAD_PORT=9988
+
+  # Open firewall temporarily
+  ufw allow ${UPLOAD_PORT}/tcp 2>/dev/null || true
+
+  info "Temporary web upload server starting on port ${UPLOAD_PORT}..."
+  echo ""
+  echo -e "  ${GREEN}Phone browser එකෙන් මේ URL open කරන්න:${NC}"
+  echo -e "  ${CYAN}http://${VPS_IP}:${UPLOAD_PORT}${NC}"
+  echo ""
   warn "Firebase Console → Project Settings → Service Accounts"
-  warn "→ 'Generate new private key' → JSON file open කරන්න"
-  echo ""
-  info "JSON content සම්පූර්ණයෙන් copy කරලා paste කරන්න"
-  info "Paste කළාට නව line එකේ:  END  type කරලා Enter press කරන්න"
+  warn "→ 'Generate new private key' → JSON download කරන්න"
+  warn "→ ඒ file browser page එකේ upload කරන්න"
   echo ""
 
-  python3 - << 'PYEOF'
-import sys, json, os
+  python3 - << PYEOF
+import http.server, json, os, sys, urllib.parse
 
-lines = []
-for line in sys.stdin:
-    if line.strip() == 'END':
-        break
-    lines.append(line)
+APP_DIR = "/var/www/investysignals"
+PORT    = ${UPLOAD_PORT}
 
-content = ''.join(lines).strip()
+HTML = """<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>InvestySignals - Firebase Setup</title>
+<style>
+  body{font-family:sans-serif;max-width:500px;margin:40px auto;padding:20px;background:#1a1a2e;color:#eee}
+  h2{color:#00d4ff}
+  textarea{width:100%;height:200px;background:#0f0f23;color:#eee;border:1px solid #333;padding:10px;border-radius:8px;font-size:12px}
+  input[type=file]{color:#eee;margin:10px 0;display:block}
+  button{background:#00d4ff;color:#000;border:none;padding:12px 30px;border-radius:8px;font-size:16px;cursor:pointer;width:100%;margin-top:10px}
+  .ok{color:#00ff88;font-size:18px;font-weight:bold}
+  .err{color:#ff4444}
+  p{color:#aaa;font-size:14px}
+</style>
+</head>
+<body>
+<h2>Firebase Service Account</h2>
+<p>serviceAccount.json file එක select කරන්න හෝ JSON paste කරන්න:</p>
+<form method="POST" enctype="multipart/form-data">
+  <input type="file" name="jsonfile" accept=".json">
+  <p>හෝ JSON content paste කරන්න:</p>
+  <textarea name="jsontext" placeholder='{ "type": "service_account", ... }'></textarea>
+  <button type="submit">Upload &amp; Save</button>
+</form>
+</body>
+</html>"""
 
-# Remove BOM if present
-if content.startswith('\ufeff'):
-    content = content[1:]
+SUCCESS_HTML = """<!DOCTYPE html>
+<html>
+<head><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Done</title>
+<style>body{font-family:sans-serif;text-align:center;padding:60px 20px;background:#1a1a2e;color:#eee}</style>
+</head>
+<body>
+<div style="font-size:60px">✅</div>
+<h2 style="color:#00ff88">serviceAccount.json saved!</h2>
+<p style="color:#aaa">Terminal එකට යන්න — App restart වෙනවා</p>
+</body>
+</html>"""
 
-# Try to parse JSON
-try:
-    data = json.loads(content)
-except json.JSONDecodeError as e:
-    print(f"[ERROR] Invalid JSON: {e}")
-    sys.exit(1)
+class Handler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
 
-# Validate required fields
-required = ['type', 'project_id', 'private_key', 'client_email']
-for key in required:
-    if key not in data:
-        print(f"[ERROR] Missing field: {key}")
-        sys.exit(1)
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type","text/html; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(HTML.encode())
 
-# Validate it's a service account
-if data.get('type') != 'service_account':
-    print("[ERROR] Not a service account JSON")
-    sys.exit(1)
+    def do_POST(self):
+        ctype = self.headers.get("Content-Type","")
+        length = int(self.headers.get("Content-Length",0))
+        body = self.rfile.read(length)
+        content = ""
 
-# Save cleanly
-with open('/var/www/investysignals/serviceAccount.json', 'w') as f:
-    json.dump(data, f, indent=2)
+        if "multipart" in ctype:
+            # Parse file upload
+            boundary = ctype.split("boundary=")[-1].encode()
+            parts = body.split(b"--" + boundary)
+            for part in parts:
+                if b'filename' in part and b'.json' in part:
+                    content = part.split(b"\r\n\r\n",1)[-1].rstrip(b"\r\n--").decode("utf-8","ignore")
+                elif b'name="jsontext"' in part:
+                    txt = part.split(b"\r\n\r\n",1)[-1].rstrip(b"\r\n--").decode("utf-8","ignore").strip()
+                    if txt:
+                        content = txt
+        else:
+            params = urllib.parse.parse_qs(body.decode("utf-8","ignore"))
+            content = params.get("jsontext",[""])[0].strip()
 
-print("[OK] serviceAccount.json saved successfully")
+        # Remove BOM
+        if content.startswith("\ufeff"):
+            content = content[1:]
+
+        # Validate
+        try:
+            data = json.loads(content)
+        except Exception as e:
+            self.send_response(200)
+            self.send_header("Content-type","text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(f"<h2 style='color:red'>Error: {e}</h2><a href='/'>Back</a>".encode())
+            return
+
+        required = ["type","project_id","private_key","client_email"]
+        for k in required:
+            if k not in data:
+                self.send_response(200)
+                self.send_header("Content-type","text/html; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(f"<h2 style='color:red'>Missing: {k}</h2><a href='/'>Back</a>".encode())
+                return
+
+        # Save
+        with open(os.path.join(APP_DIR,"serviceAccount.json"),"w") as f:
+            json.dump(data, f, indent=2)
+
+        self.send_response(200)
+        self.send_header("Content-type","text/html; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(SUCCESS_HTML.encode())
+
+        # Signal success and stop server
+        print("__UPLOAD_SUCCESS__")
+        sys.stdout.flush()
+        os._exit(0)
+
+print(f"Server ready on port {PORT}")
+sys.stdout.flush()
+httpd = http.server.HTTPServer(("0.0.0.0", PORT), Handler)
+httpd.serve_forever()
 PYEOF
 
-  if [ $? -eq 0 ]; then
-    log "serviceAccount.json valid and saved"
+  STATUS=$?
+
+  # Close firewall port
+  ufw delete allow ${UPLOAD_PORT}/tcp 2>/dev/null || true
+
+  if [ $STATUS -eq 0 ]; then
+    log "serviceAccount.json saved successfully"
     echo ""
     info "App restarting..."
     pm2 restart "$APP_NAME" --update-env 2>/dev/null || \
@@ -386,9 +479,9 @@ PYEOF
     echo ""
     pm2 status
     echo ""
-    pm2 logs "$APP_NAME" --lines 10 --nostream
+    pm2 logs "$APP_NAME" --lines 15 --nostream
   else
-    error "JSON invalid — Firebase Console එකෙන් නැවත download කරන්න"
+    warn "Upload නොවුනා — නැවත try කරන්න"
   fi
 }
 
