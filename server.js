@@ -51,7 +51,8 @@ const User         = require('./models/User');
 const PaperTrade   = require('./models/PaperTrade');
 const Settings     = require('./models/Settings');
 const Announcement = require('./models/Announcement');
-const Report       = require('./models/Report');
+const Report          = require('./models/Report');
+const BalanceRequest  = require('./models/BalanceRequest');
 
 // ── Firebase ─────────────────────────────────────────────────
 try {
@@ -360,6 +361,354 @@ app.get('/api/my-reports', verifyToken, async (req, res) => {
 });
 
 app.get('/api/registration-status', (req, res) => res.json({ success:true, open:globalSettings.allowRegistrations!==false }));
+
+// ============================================================
+//  PAPER TRADE SYSTEM v2 — Full featured
+// ============================================================
+
+// ── Balance ───────────────────────────────────────────────────
+app.get('/api/paper/balance', verifyToken, async (req, res) => {
+  try {
+    const u = await User.findOne({ uid: req.user.uid });
+    res.json({ success: true, balance: u ? u.paperBalance : 1000 });
+  } catch(err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// User sets own custom balance (self-service, max 1,000,000)
+app.post('/api/paper/balance/set', verifyToken, async (req, res) => {
+  try {
+    const amount = parseFloat(req.body.amount);
+    if (!amount || amount < 100 || amount > 1_000_000 || !isFinite(amount))
+      return res.status(400).json({ success: false, error: 'Amount must be between 100 and 1,000,000 USDT.' });
+    // Cancel all open/pending trades first
+    await PaperTrade.updateMany(
+      { userUid: req.user.uid, status: { $in: ['OPEN','PENDING'] } },
+      { status: 'CANCELLED', closedAt: new Date(), notes: 'Cancelled — balance reset by user' }
+    );
+    await User.updateOne({ uid: req.user.uid }, { paperBalance: amount });
+    res.json({ success: true, balance: amount, message: 'Balance updated. All open trades cancelled.' });
+  } catch(err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── Balance Requests ──────────────────────────────────────────
+app.post('/api/paper/balance/request', verifyToken, async (req, res) => {
+  try {
+    const { requestType, requestedAmount, reason } = req.body;
+    if (!['RESET','TOPUP','CUSTOM'].includes(requestType))
+      return res.status(400).json({ success: false, error: 'Invalid request type.' });
+    const amount = parseFloat(requestedAmount);
+    if (!amount || amount < 100 || amount > 1_000_000 || !isFinite(amount))
+      return res.status(400).json({ success: false, error: 'Amount must be 100–1,000,000.' });
+    // Limit: 1 pending request at a time
+    const existing = await BalanceRequest.findOne({ userUid: req.user.uid, status: 'pending' });
+    if (existing)
+      return res.json({ success: false, error: 'You already have a pending balance request. Wait for admin review.' });
+    const u = await User.findOne({ uid: req.user.uid });
+    const req2 = await BalanceRequest.create({
+      userUid: req.user.uid,
+      userEmail: (req.user.email || '').toLowerCase(),
+      displayName: u?.displayName || '',
+      requestType,
+      requestedAmount: amount,
+      currentBalance: u?.paperBalance || 0,
+      reason: (reason || '').slice(0, 300),
+    });
+    broadcastToAll({ type: 'balance_request', requestId: req2._id, uid: req.user.uid });
+    res.json({ success: true, message: 'Request submitted. Admin will review shortly.' });
+  } catch(err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.get('/api/paper/balance/my-requests', verifyToken, async (req, res) => {
+  try {
+    const data = await BalanceRequest.find({ userUid: req.user.uid }).sort({ createdAt: -1 }).limit(10);
+    res.json({ success: true, data });
+  } catch(err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── Open Trade ────────────────────────────────────────────────
+app.post('/api/paper/trade', verifyToken, async (req, res) => {
+  try {
+    const { pair, direction, orderType, entry, triggerPrice, tp1, tp2, tp3, sl, leverage, size } = req.body;
+
+    // Validate
+    if (!pair || !direction || !['LONG','SHORT'].includes(direction))
+      return res.status(400).json({ success: false, error: 'Invalid pair or direction.' });
+    if (!['MARKET','LIMIT'].includes(orderType))
+      return res.status(400).json({ success: false, error: 'Invalid order type.' });
+
+    const tradeSize = parseFloat(size);
+    if (!tradeSize || tradeSize < 1 || tradeSize > 100_000 || !isFinite(tradeSize))
+      return res.status(400).json({ success: false, error: 'Size must be 1–100,000 USDT.' });
+
+    const entryPrice = parseFloat(entry);
+    if (!entryPrice || entryPrice <= 0)
+      return res.status(400).json({ success: false, error: 'Invalid entry price.' });
+
+    const lev = Math.min(Math.max(parseInt(leverage) || 10, 1), 125);
+
+    const u = await User.findOne({ uid: req.user.uid });
+    if (!u || u.paperBalance < tradeSize)
+      return res.json({ success: false, error: 'Insufficient paper balance.' });
+
+    // Check max open trades (5)
+    const openCount = await PaperTrade.countDocuments({ userUid: req.user.uid, status: { $in: ['OPEN','PENDING'] } });
+    if (openCount >= 5)
+      return res.json({ success: false, error: 'Max 5 open trades allowed.' });
+
+    const status = orderType === 'LIMIT' ? 'PENDING' : 'OPEN';
+    const trade = await PaperTrade.create({
+      userUid:       req.user.uid,
+      pair:          pair.toUpperCase(),
+      direction,
+      orderType,
+      entry:         entryPrice,
+      triggerPrice:  parseFloat(triggerPrice) || entryPrice,
+      tp1:           parseFloat(tp1) || null,
+      tp2:           parseFloat(tp2) || null,
+      tp3:           parseFloat(tp3) || null,
+      sl:            parseFloat(sl)  || null,
+      leverage:      lev,
+      size:          tradeSize,
+      remainingSize: tradeSize,
+      status,
+      filledAt:      status === 'OPEN' ? new Date() : null,
+    });
+
+    // Deduct balance
+    await User.updateOne({ uid: req.user.uid }, { $inc: { paperBalance: -tradeSize } });
+
+    broadcastToAll({ type: 'paper_trade_opened', trade, uid: req.user.uid });
+    res.json({ success: true, trade, message: status === 'PENDING' ? 'Limit order placed. Will fill when price reaches trigger.' : 'Market order opened.' });
+  } catch(err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── Get User Trades ───────────────────────────────────────────
+app.get('/api/paper/trades', verifyToken, async (req, res) => {
+  try {
+    const trades = await PaperTrade.find({ userUid: req.user.uid }).sort({ createdAt: -1 }).limit(50);
+    res.json({ success: true, trades, data: trades });
+  } catch(err) { res.status(500).json({ success: false, error: err.message }); }
+});
+app.get('/api/paper-trades', verifyToken, async (req, res) => {
+  try {
+    const trades = await PaperTrade.find({ userUid: req.user.uid }).sort({ createdAt: -1 }).limit(50);
+    res.json({ success: true, trades, data: trades });
+  } catch(err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── Manual Close ──────────────────────────────────────────────
+app.patch('/api/paper/trade/:id/close', verifyToken, async (req, res) => {
+  try {
+    const trade = await PaperTrade.findOne({ _id: req.params.id, userUid: req.user.uid });
+    if (!trade) return res.status(404).json({ success: false, error: 'Trade not found.' });
+    if (!['OPEN','PENDING'].includes(trade.status)) return res.json({ success: false, error: 'Trade already closed.' });
+
+    const closePrice = parseFloat(req.body.closePrice);
+    if (!closePrice || closePrice <= 0 || !isFinite(closePrice))
+      return res.status(400).json({ success: false, error: 'Invalid close price.' });
+
+    const priceDiff = trade.direction === 'LONG' ? closePrice - trade.entry : trade.entry - closePrice;
+    const pnlPct    = (priceDiff / trade.entry) * trade.leverage * 100;
+    const pnl       = parseFloat(((pnlPct / 100) * trade.size).toFixed(2));
+
+    await PaperTrade.findByIdAndUpdate(trade._id, {
+      status: 'CLOSED', closePrice, closedAt: new Date(),
+      pnl, pnlPct: parseFloat(pnlPct.toFixed(2)),
+    });
+    await User.updateOne({ uid: req.user.uid }, { $inc: { paperBalance: trade.size + pnl } });
+    res.json({ success: true, pnl, pnlPct });
+  } catch(err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── Cancel Pending ────────────────────────────────────────────
+app.patch('/api/paper/trade/:id/cancel', verifyToken, async (req, res) => {
+  try {
+    const trade = await PaperTrade.findOne({ _id: req.params.id, userUid: req.user.uid });
+    if (!trade) return res.status(404).json({ success: false, error: 'Trade not found.' });
+    if (trade.status !== 'PENDING') return res.json({ success: false, error: 'Only pending trades can be cancelled.' });
+    await PaperTrade.findByIdAndUpdate(trade._id, { status: 'CANCELLED', closedAt: new Date() });
+    await User.updateOne({ uid: req.user.uid }, { $inc: { paperBalance: trade.size } }); // refund
+    res.json({ success: true, message: 'Order cancelled. Balance refunded.' });
+  } catch(err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── Trade Stats ───────────────────────────────────────────────
+app.get('/api/paper/stats', verifyToken, async (req, res) => {
+  try {
+    const uid    = req.user.uid;
+    const closed = await PaperTrade.find({ userUid: uid, status: { $in: ['TP1_HIT','TP2_HIT','TP3_HIT','SL_HIT','CLOSED'] } });
+    const wins   = closed.filter(t => ['TP1_HIT','TP2_HIT','TP3_HIT'].includes(t.status) || (t.status==='CLOSED' && t.pnl > 0)).length;
+    const losses = closed.length - wins;
+    const totalPnl = closed.reduce((s, t) => s + (t.pnl || 0), 0);
+    const u = await User.findOne({ uid });
+    res.json({
+      success: true,
+      stats: {
+        balance:    u?.paperBalance || 0,
+        totalTrades: closed.length,
+        wins, losses,
+        winRate: closed.length > 0 ? parseFloat((wins / closed.length * 100).toFixed(1)) : 0,
+        totalPnl: parseFloat(totalPnl.toFixed(2)),
+        openTrades: await PaperTrade.countDocuments({ userUid: uid, status: 'OPEN' }),
+        pendingTrades: await PaperTrade.countDocuments({ userUid: uid, status: 'PENDING' }),
+      }
+    });
+  } catch(err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── Admin: Balance Requests ───────────────────────────────────
+app.get('/api/admin/balance-requests', verifyAdmin, async (req, res) => {
+  try {
+    const { status, skip=0, limit=50 } = req.query;
+    const filter = status ? { status } : {};
+    const [data, total] = await Promise.all([
+      BalanceRequest.find(filter).sort({ createdAt: -1 }).skip(+skip).limit(+limit),
+      BalanceRequest.countDocuments(filter),
+    ]);
+    res.json({ success: true, data, total, pending: await BalanceRequest.countDocuments({ status:'pending' }) });
+  } catch(err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.patch('/api/admin/balance-requests/:id', verifyAdmin, async (req, res) => {
+  try {
+    const { action, adminNote } = req.body; // action: 'approve' | 'reject'
+    if (!['approve','reject'].includes(action))
+      return res.status(400).json({ success: false, error: 'Invalid action.' });
+
+    const request = await BalanceRequest.findById(req.params.id);
+    if (!request) return res.status(404).json({ success: false, error: 'Request not found.' });
+    if (request.status !== 'pending') return res.json({ success: false, error: 'Request already processed.' });
+
+    const newStatus = action === 'approve' ? 'approved' : 'rejected';
+    await BalanceRequest.findByIdAndUpdate(req.params.id, {
+      status: newStatus, adminNote: adminNote || '',
+      processedBy: req.dbUser.email || 'admin',
+      processedAt: new Date(),
+    });
+
+    if (action === 'approve') {
+      // Cancel open trades, set new balance
+      await PaperTrade.updateMany(
+        { userUid: request.userUid, status: { $in: ['OPEN','PENDING'] } },
+        { status: 'CANCELLED', closedAt: new Date(), notes: 'Cancelled — admin balance reset' }
+      );
+      await User.updateOne({ uid: request.userUid }, { paperBalance: request.requestedAmount });
+      broadcastToAll({ type: 'balance_approved', uid: request.userUid, amount: request.requestedAmount });
+    } else {
+      broadcastToAll({ type: 'balance_rejected', uid: request.userUid });
+    }
+
+    res.json({ success: true, status: newStatus });
+  } catch(err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── Admin: All Paper Trades ───────────────────────────────────
+app.get('/api/admin/paper-trades', verifyAdmin, async (req, res) => {
+  try {
+    const trades = await PaperTrade.find({}).sort({ createdAt: -1 }).limit(200);
+    res.json({ success: true, data: trades });
+  } catch(err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ============================================================
+//  AUTO TP/SL CHECK ENGINE — runs every 30 seconds
+// ============================================================
+async function runTPSLCheck() {
+  try {
+    const trades = await PaperTrade.find({ status: { $in: ['OPEN','PENDING'] } });
+    if (trades.length === 0) return;
+
+    // Group by pair to minimize price fetches
+    const pairs = [...new Set(trades.map(t => t.pair))];
+    const prices = {};
+    await Promise.all(pairs.map(async p => {
+      const price = await getLivePrice(p);
+      if (price) prices[p] = price;
+    }));
+
+    for (const trade of trades) {
+      const livePrice = prices[trade.pair];
+      if (!livePrice) continue;
+
+      let newStatus = null;
+      let closePrice = livePrice;
+      let partialUpdate = {};
+
+      // PENDING → check if limit price hit
+      if (trade.status === 'PENDING') {
+        const trigger = trade.triggerPrice || trade.entry;
+        const filled = trade.direction === 'LONG'
+          ? livePrice <= trigger
+          : livePrice >= trigger;
+        if (filled) {
+          await PaperTrade.findByIdAndUpdate(trade._id, {
+            status: 'OPEN', filledAt: new Date(), entry: trigger
+          });
+          broadcastToAll({ type: 'paper_trade_filled', tradeId: trade._id, pair: trade.pair, price: trigger });
+        }
+        continue;
+      }
+
+      // OPEN → check SL / TP
+      if (trade.direction === 'LONG') {
+        if (trade.sl && livePrice <= trade.sl) {
+          newStatus = 'SL_HIT'; closePrice = trade.sl;
+        } else if (trade.tp3 && livePrice >= trade.tp3) {
+          newStatus = 'TP3_HIT'; closePrice = trade.tp3;
+        } else if (trade.tp2 && livePrice >= trade.tp2 && !trade.tp2Closed) {
+          newStatus = 'TP2_HIT'; closePrice = trade.tp2;
+        } else if (trade.tp1 && livePrice >= trade.tp1 && !trade.tp1Closed) {
+          newStatus = 'TP1_HIT'; closePrice = trade.tp1;
+        }
+      } else {
+        if (trade.sl && livePrice >= trade.sl) {
+          newStatus = 'SL_HIT'; closePrice = trade.sl;
+        } else if (trade.tp3 && livePrice <= trade.tp3) {
+          newStatus = 'TP3_HIT'; closePrice = trade.tp3;
+        } else if (trade.tp2 && livePrice <= trade.tp2 && !trade.tp2Closed) {
+          newStatus = 'TP2_HIT'; closePrice = trade.tp2;
+        } else if (trade.tp1 && livePrice <= trade.tp1 && !trade.tp1Closed) {
+          newStatus = 'TP1_HIT'; closePrice = trade.tp1;
+        }
+      }
+
+      if (!newStatus) continue;
+
+      const priceDiff = trade.direction === 'LONG' ? closePrice - trade.entry : trade.entry - closePrice;
+      const pnlPct    = (priceDiff / trade.entry) * trade.leverage * 100;
+      let   pnl       = parseFloat(((pnlPct / 100) * trade.size).toFixed(2));
+      const isFinal   = ['SL_HIT','TP3_HIT'].includes(newStatus);
+
+      if (isFinal) {
+        await PaperTrade.findByIdAndUpdate(trade._id, {
+          status: newStatus, closePrice, closedAt: new Date(), pnl, pnlPct: parseFloat(pnlPct.toFixed(2)),
+        });
+        // Return margin + PnL
+        await User.updateOne({ uid: trade.userUid }, { $inc: { paperBalance: trade.size + pnl } });
+      } else {
+        // TP1 or TP2 hit — partial close (50%), move SL to entry (BE)
+        const partialPnl = parseFloat(((pnlPct / 100) * (trade.size * 0.5)).toFixed(2));
+        const update = newStatus === 'TP1_HIT'
+          ? { status: 'OPEN', tp1Closed: true, sl: trade.entry, remainingSize: trade.size * 0.5 }
+          : { status: 'OPEN', tp2Closed: true, sl: trade.tp1 || trade.entry, remainingSize: trade.size * 0.25 };
+        await PaperTrade.findByIdAndUpdate(trade._id, update);
+        await User.updateOne({ uid: trade.userUid }, { $inc: { paperBalance: trade.size * 0.5 + partialPnl } });
+        pnl = partialPnl;
+      }
+
+      broadcastToAll({
+        type: 'paper_trade_update',
+        tradeId: trade._id, pair: trade.pair,
+        status: newStatus, closePrice, pnl,
+        uid: trade.userUid,
+      });
+      console.log(`📊 Paper trade ${trade._id}: ${newStatus} @ ${closePrice} PnL: ${pnl}`);
+    }
+  } catch(err) {
+    console.error('TP/SL check error:', err.message);
+  }
+}
+
 
 // ============================================================
 //  ADMIN ROUTES
@@ -1552,8 +1901,11 @@ app.use(express.static(path.join(__dirname)));
 
 const PORT=process.env.PORT||3000;
 server.listen(PORT,()=>{
-  console.log(`\n🚀 InvestySignals v4 running on port ${PORT}`);
+  console.log(`\n🚀 InvestySignals v5 running on port ${PORT}`);
   connectBinance();
+  // Start auto TP/SL check engine
+  setInterval(runTPSLCheck, 30 * 1000);
+  console.log('⚡ Auto TP/SL engine started (30s interval)');
 });
 process.on('SIGTERM',()=>server.close(()=>process.exit(0)));
 process.on('SIGINT', ()=>server.close(()=>process.exit(0)));

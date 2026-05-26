@@ -236,7 +236,118 @@
             .setup-grid { grid-template-columns:1fr; }
             .coin-ready-panel { padding:14px; }
         }
-    </style>
+    
+        /* ── Paper Trade Panel ── */
+        .pt-panel {
+            background: linear-gradient(135deg, rgba(0,217,126,0.06), rgba(0,217,126,0.02));
+            border: 1px solid rgba(0,217,126,0.3); border-radius: var(--radius-sm);
+            padding: 16px; margin-top: 10px; animation: fadeSlide 0.3s ease;
+        }
+        .pt-header {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 14px;
+        }
+        .pt-title {
+            font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.12em; color: var(--green); font-family: 'JetBrains Mono', monospace;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .pt-balance-chip {
+            font-size: 0.7rem; font-family: 'JetBrains Mono', monospace; font-weight: 700;
+            background: rgba(0,217,126,0.1); border: 1px solid rgba(0,217,126,0.25);
+            color: var(--green); padding: 3px 10px; border-radius: 20px;
+        }
+        .pt-order-toggle {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 12px;
+            background: var(--bg3); border: 1px solid var(--border-soft); border-radius: var(--radius-xs); padding: 3px;
+        }
+        .pt-order-btn {
+            padding: 8px; text-align: center; border: none; border-radius: 4px; cursor: pointer;
+            font-size: 0.76rem; font-weight: 700; font-family: 'JetBrains Mono', monospace;
+            transition: var(--transition); background: transparent; color: var(--text-muted);
+        }
+        .pt-order-btn.active { background: var(--surface2); color: var(--text); }
+        .pt-order-btn.active.long-active { color: var(--green); background: rgba(0,217,126,0.1); }
+        .pt-order-btn.active.short-active { color: var(--red); background: rgba(255,59,92,0.1); }
+        .pt-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+        .pt-row.single { grid-template-columns: 1fr; }
+        .pt-field label {
+            display: block; font-size: 0.57rem; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.08em; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;
+            margin-bottom: 4px;
+        }
+        .pt-field input {
+            width: 100%; background: var(--surface); border: 1px solid var(--border-soft);
+            color: var(--text); padding: 9px 12px; border-radius: var(--radius-xs);
+            font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; outline: none;
+            transition: var(--transition); box-sizing: border-box;
+        }
+        .pt-field input:focus { border-color: var(--green); box-shadow: 0 0 0 2px rgba(0,217,126,0.12); }
+        .pt-field input.sl-input:focus { border-color: var(--red); box-shadow: 0 0 0 2px rgba(255,59,92,0.12); }
+        .pt-submit-btn {
+            width: 100%; padding: 13px; border: none; border-radius: var(--radius-xs);
+            font-size: 0.9rem; font-weight: 700; cursor: pointer; transition: var(--transition);
+            font-family: 'Space Grotesk', sans-serif; letter-spacing: 0.03em; margin-top: 4px;
+        }
+        .pt-submit-btn.long-btn {
+            background: linear-gradient(135deg, rgba(0,217,126,0.2), rgba(0,217,126,0.08));
+            border: 1px solid rgba(0,217,126,0.5); color: var(--green);
+        }
+        .pt-submit-btn.short-btn {
+            background: linear-gradient(135deg, rgba(255,59,92,0.2), rgba(255,59,92,0.08));
+            border: 1px solid rgba(255,59,92,0.4); color: var(--red);
+        }
+        .pt-submit-btn:hover { filter: brightness(1.15); transform: translateY(-1px); }
+        .pt-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .pt-divider { border: none; border-top: 1px solid var(--border-dim); margin: 12px 0; }
+        .pt-open-btn {
+            width: 100%; padding: 13px; margin-top: 10px;
+            background: linear-gradient(135deg, rgba(0,217,126,0.1), rgba(0,217,126,0.04));
+            border: 1px solid rgba(0,217,126,0.35); border-radius: var(--radius-xs);
+            color: var(--green); font-weight: 700; font-size: 0.88rem; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+            transition: var(--transition); font-family: 'Space Grotesk', sans-serif;
+        }
+        .pt-open-btn:hover { background: linear-gradient(135deg, rgba(0,217,126,0.18), rgba(0,217,126,0.08)); }
+
+        /* Open trades mini list */
+        .pt-trades-wrap { margin-top: 10px; }
+        .pt-trade-row {
+            background: var(--surface); border: 1px solid var(--border-soft);
+            border-radius: var(--radius-xs); padding: 10px 12px; margin-bottom: 6px;
+            display: flex; align-items: center; gap: 8px; font-size: 0.75rem;
+        }
+        .pt-trade-dir { font-weight: 700; font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; padding: 2px 7px; border-radius: 3px; }
+        .pt-trade-dir.long { background: rgba(0,217,126,0.12); color: var(--green); }
+        .pt-trade-dir.short { background: rgba(255,59,92,0.1); color: var(--red); }
+        .pt-trade-info { flex: 1; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; }
+        .pt-trade-pnl { font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+        .pt-close-btn {
+            padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border-soft);
+            background: transparent; color: var(--text-muted); font-size: 0.68rem; cursor: pointer;
+            transition: var(--transition);
+        }
+        .pt-close-btn:hover { border-color: var(--red); color: var(--red); }
+
+        /* Balance request modal */
+        .pt-modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 9000;
+            display: flex; align-items: center; justify-content: center; padding: 20px;
+        }
+        .pt-modal {
+            background: var(--bg2); border: 1px solid var(--border-soft);
+            border-radius: var(--radius); padding: 24px; max-width: 420px; width: 100%;
+            animation: fadeSlide 0.2s ease;
+        }
+        .pt-modal h3 { font-size: 1rem; margin: 0 0 6px; }
+        .pt-modal p { font-size: 0.78rem; color: var(--text-muted); margin: 0 0 16px; }
+        .pt-modal-actions { display: flex; gap: 8px; margin-top: 16px; }
+        .pt-modal-actions button { flex: 1; padding: 10px; border-radius: var(--radius-xs); cursor: pointer; font-weight: 700; transition: var(--transition); font-family: 'Space Grotesk', sans-serif; }
+        .pt-msg { font-size: 0.74rem; padding: 8px 12px; border-radius: var(--radius-xs); margin-top: 8px; text-align: center; }
+        .pt-msg.ok { background: rgba(0,217,126,0.1); color: var(--green); border: 1px solid rgba(0,217,126,0.2); }
+        .pt-msg.err { background: rgba(255,59,92,0.08); color: var(--red); border: 1px solid rgba(255,59,92,0.2); }
+
+        </style>
 </head>
 <body>
 <div class="nav-backdrop" id="navBackdrop" style="pointer-events:none;"></div>
@@ -901,13 +1012,402 @@ function renderFullAnalysis(data, container) {
             <span style="color:var(--gold);font-weight:700;">Re-entry: </span>${a.level5?.reEntry||'—'}
         </div>
         ${a.level5?.riskNote ? `<div style="margin-top:6px;font-size:0.72rem;color:var(--red);">⚠️ ${a.level5.riskNote}</div>` : ''}
-    </div>
+    </div>` +
 
-    <div style="font-size:0.65rem;color:var(--text-dim);text-align:center;padding-top:4px;">
+    `<div id="ptPanelWrap"></div>` +
+
+    `<div style="font-size:0.65rem;color:var(--text-dim);text-align:center;padding-top:4px;">
         Powered by Groq AI · Real Binance Futures Data · ${new Date().toLocaleTimeString()}
     </div>`;
 
     container.innerHTML = html;
+
+    // Inject paper trade panel after DOM is set
+    const ptWrap = document.getElementById('ptPanelWrap');
+    if (ptWrap) ptWrap.innerHTML = buildPaperTradePanel(data);
+    initPaperTrade();
+}
+
+
+
+// ══════════════════════════════════════════
+//  PAPER TRADE SYSTEM
+// ══════════════════════════════════════════
+let ptCurrentData  = null;
+let ptOrderType    = 'MARKET';
+let ptOpenTrades   = [];
+let ptBalance      = 0;
+
+async function getToken() {
+    return window._authUser ? await window._authUser.getIdToken() : null;
+}
+
+function buildPaperTradePanel(data) {
+    ptCurrentData = data;
+    const dir   = data?.analysis?.overallBias || 'LONG';
+    const isLong = dir !== 'SHORT';
+    const raw    = data?.rawData || {};
+
+    const entryDef = isLong
+        ? (raw.entryHigh || raw.entryLow || '').toString()
+        : (raw.entryLow  || raw.entryHigh || '').toString();
+    const slDef  = (raw.sl  || '').toString();
+    const tp1Def = (raw.tp1 || '').toString();
+    const tp2Def = (raw.tp2 || '').toString();
+    const tp3Def = (raw.tp3 || '').toString();
+    const levDef = '10';
+    const coin   = data?.coin || '';
+
+    return `
+<div class="pt-panel" id="ptMainPanel">
+    <div class="pt-header">
+        <div class="pt-title">🚀 Paper Trade — ${coin}</div>
+        <div class="pt-balance-chip" id="ptBalChip">Balance: $—</div>
+    </div>
+
+    <!-- Order type toggle -->
+    <div class="pt-order-toggle">
+        <button class="pt-order-btn active ${isLong?'long-active':'short-active'}" id="ptBtnMkt" onclick="ptSetOrderType('MARKET')">⚡ MARKET</button>
+        <button class="pt-order-btn" id="ptBtnLmt" onclick="ptSetOrderType('LIMIT')">🎯 LIMIT</button>
+    </div>
+
+    <!-- Direction & Size -->
+    <div class="pt-row">
+        <div class="pt-field">
+            <label>Direction</label>
+            <input type="text" id="ptDir" value="${dir}" readonly style="color:${isLong?'var(--green)':'var(--red)'};font-weight:700;">
+        </div>
+        <div class="pt-field">
+            <label>Size (USDT)</label>
+            <input type="number" id="ptSize" value="50" min="1" max="100000" placeholder="50">
+        </div>
+    </div>
+
+    <!-- Entry & Trigger -->
+    <div class="pt-row" id="ptEntryRow">
+        <div class="pt-field">
+            <label id="ptEntryLbl">Entry Price</label>
+            <input type="number" id="ptEntry" value="${entryDef}" step="any" placeholder="Entry">
+        </div>
+        <div class="pt-field" id="ptTriggerWrap" style="display:none;">
+            <label>Trigger (Limit)</label>
+            <input type="number" id="ptTrigger" value="${entryDef}" step="any" placeholder="Trigger">
+        </div>
+        <div class="pt-field" id="ptLevWrap">
+            <label>Leverage</label>
+            <input type="number" id="ptLev" value="${levDef}" min="1" max="125">
+        </div>
+    </div>
+
+    <!-- SL / TP -->
+    <div class="pt-row">
+        <div class="pt-field">
+            <label>Stop Loss</label>
+            <input type="number" id="ptSL" value="${slDef}" step="any" placeholder="SL" class="sl-input">
+        </div>
+        <div class="pt-field">
+            <label>TP1</label>
+            <input type="number" id="ptTP1" value="${tp1Def}" step="any" placeholder="TP1">
+        </div>
+    </div>
+    <div class="pt-row">
+        <div class="pt-field">
+            <label>TP2</label>
+            <input type="number" id="ptTP2" value="${tp2Def}" step="any" placeholder="TP2">
+        </div>
+        <div class="pt-field">
+            <label>TP3</label>
+            <input type="number" id="ptTP3" value="${tp3Def}" step="any" placeholder="TP3">
+        </div>
+    </div>
+
+    <div id="ptMsg"></div>
+
+    <button class="pt-submit-btn ${isLong?'long-btn':'short-btn'}" id="ptSubmitBtn" onclick="ptSubmit()">
+        ${isLong?'📈 OPEN LONG':'📉 OPEN SHORT'} — PAPER TRADE
+    </button>
+
+    <hr class="pt-divider">
+
+    <!-- Balance management -->
+    <div style="display:flex;gap:8px;align-items:center;">
+        <div style="flex:1;font-size:0.7rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace;">Balance</div>
+        <button onclick="ptShowBalModal()" style="padding:5px 12px;border-radius:4px;border:1px solid var(--border-soft);background:transparent;color:var(--text-muted);font-size:0.7rem;cursor:pointer;">⚙️ Manage</button>
+    </div>
+</div>
+
+<!-- Open trades -->
+<div class="pt-trades-wrap" id="ptTradesWrap" style="display:none;">
+    <div style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);font-family:'JetBrains Mono',monospace;margin:10px 0 6px;">Open Trades</div>
+    <div id="ptTradesList"></div>
+</div>
+
+<!-- Balance modal -->
+<div class="pt-modal-overlay" id="ptBalModal" style="display:none;" onclick="if(event.target===this)ptHideBalModal()">
+    <div class="pt-modal">
+        <h3>⚙️ Manage Paper Balance</h3>
+        <p>Set your own starting balance or request an admin reset.</p>
+
+        <div class="pt-field" style="margin-bottom:10px;">
+            <label>Set Custom Balance (100 – 1,000,000 USDT)</label>
+            <input type="number" id="ptCustomBal" min="100" max="1000000" placeholder="e.g. 10000" style="width:100%;background:var(--surface);border:1px solid var(--border-soft);color:var(--text);padding:9px 12px;border-radius:var(--radius-xs);font-family:'JetBrains Mono',monospace;font-size:0.85rem;outline:none;box-sizing:border-box;">
+        </div>
+        <p style="font-size:0.7rem;color:var(--red);margin:0 0 8px;">⚠️ Setting a new balance will cancel all open trades.</p>
+
+        <div class="pt-field" style="margin-bottom:10px;">
+            <label>Reason (for admin request)</label>
+            <input type="text" id="ptReqReason" placeholder="e.g. Testing new strategy" style="width:100%;background:var(--surface);border:1px solid var(--border-soft);color:var(--text);padding:9px 12px;border-radius:var(--radius-xs);font-family:'JetBrains Mono',monospace;font-size:0.82rem;outline:none;box-sizing:border-box;">
+        </div>
+
+        <div id="ptBalMsg"></div>
+
+        <div class="pt-modal-actions">
+            <button onclick="ptSetCustomBalance()" style="background:rgba(0,217,126,0.12);border:1px solid rgba(0,217,126,0.3);color:var(--green);">
+                ✅ Set Balance
+            </button>
+            <button onclick="ptRequestReset()" style="background:var(--surface);border:1px solid var(--border-soft);color:var(--text-muted);">
+                📩 Request Admin Reset
+            </button>
+        </div>
+        <div class="pt-modal-actions" style="margin-top:6px;">
+            <button onclick="ptHideBalModal()" style="background:transparent;border:1px solid var(--border-soft);color:var(--text-muted);">
+                Close
+            </button>
+        </div>
+    </div>
+</div>
+    `;
+}
+
+function ptSetOrderType(type) {
+    ptOrderType = type;
+    document.getElementById('ptBtnMkt').classList.toggle('active', type==='MARKET');
+    document.getElementById('ptBtnLmt').classList.toggle('active', type==='LIMIT');
+    const dir = document.getElementById('ptDir')?.value || 'LONG';
+    document.getElementById('ptBtnMkt').className = 'pt-order-btn' + (type==='MARKET'?' active '+(dir==='LONG'?'long-active':'short-active'):'');
+    document.getElementById('ptBtnLmt').className = 'pt-order-btn' + (type==='LIMIT'?' active '+(dir==='LONG'?'long-active':'short-active'):'');
+    // Show/hide trigger price
+    const tw = document.getElementById('ptTriggerWrap');
+    const lw = document.getElementById('ptLevWrap');
+    if (tw) tw.style.display = type==='LIMIT' ? '' : 'none';
+    if (lw) lw.style.display = type==='LIMIT' ? 'none' : '';
+}
+
+async function ptLoadBalance() {
+    try {
+        const tok = await getToken();
+        if (!tok) return;
+        const r = await fetch('/api/paper/balance', { headers: { Authorization: 'Bearer '+tok } });
+        const d = await r.json();
+        if (d.success) {
+            ptBalance = d.balance;
+            const chip = document.getElementById('ptBalChip');
+            if (chip) chip.textContent = 'Balance: $' + ptBalance.toLocaleString('en',{maximumFractionDigits:2});
+        }
+    } catch(e) {}
+}
+
+async function ptLoadTrades() {
+    try {
+        const tok = await getToken();
+        if (!tok) return;
+        const r = await fetch('/api/paper/trades', { headers: { Authorization: 'Bearer '+tok } });
+        const d = await r.json();
+        if (!d.success) return;
+        ptOpenTrades = (d.trades || []).filter(t => ['OPEN','PENDING'].includes(t.status));
+        renderPTTrades();
+    } catch(e) {}
+}
+
+function renderPTTrades() {
+    const wrap = document.getElementById('ptTradesWrap');
+    const list = document.getElementById('ptTradesList');
+    if (!wrap || !list) return;
+    if (ptOpenTrades.length === 0) { wrap.style.display = 'none'; return; }
+    wrap.style.display = '';
+    list.innerHTML = ptOpenTrades.map(t => {
+        const pnlColor = t.pnl >= 0 ? 'var(--green)' : 'var(--red)';
+        const statusLabel = t.status === 'PENDING' ? '⏳ PENDING' : '🟢 OPEN';
+        return `<div class="pt-trade-row">
+            <div class="pt-trade-dir ${t.direction.toLowerCase()}">${t.direction}</div>
+            <div class="pt-trade-info">
+                ${t.pair} · ${t.leverage}x · $${t.size}<br>
+                Entry: ${t.entry} · ${statusLabel}
+            </div>
+            <div class="pt-trade-pnl" style="color:${pnlColor};font-size:0.7rem;">
+                ${t.pnl >= 0 ? '+' : ''}$${(t.pnl||0).toFixed(2)}
+            </div>
+            <button class="pt-close-btn" onclick="ptCloseTrade('${t._id}', ${t.entry})">✕</button>
+        </div>`;
+    }).join('');
+}
+
+function ptShowMsg(msg, isErr=false) {
+    const el = document.getElementById('ptMsg');
+    if (!el) return;
+    el.className = 'pt-msg ' + (isErr?'err':'ok');
+    el.textContent = msg;
+    setTimeout(() => { el.textContent = ''; el.className = ''; }, 4000);
+}
+
+async function ptSubmit() {
+    const btn = document.getElementById('ptSubmitBtn');
+    if (!btn) return;
+    const tok = await getToken();
+    if (!tok) { ptShowMsg('Not logged in.', true); return; }
+
+    const dir      = document.getElementById('ptDir')?.value || 'LONG';
+    const size     = parseFloat(document.getElementById('ptSize')?.value || 0);
+    const entry    = parseFloat(document.getElementById('ptEntry')?.value || 0);
+    const trigger  = parseFloat(document.getElementById('ptTrigger')?.value || entry);
+    const lev      = parseInt(document.getElementById('ptLev')?.value || 10);
+    const sl       = parseFloat(document.getElementById('ptSL')?.value || 0) || null;
+    const tp1      = parseFloat(document.getElementById('ptTP1')?.value || 0) || null;
+    const tp2      = parseFloat(document.getElementById('ptTP2')?.value || 0) || null;
+    const tp3      = parseFloat(document.getElementById('ptTP3')?.value || 0) || null;
+    const coin     = ptCurrentData?.coin || '';
+
+    if (!size || size < 1) { ptShowMsg('Enter a valid size.', true); return; }
+    if (!entry)             { ptShowMsg('Enter a valid entry price.', true); return; }
+    if (size > ptBalance)   { ptShowMsg(`Insufficient balance ($${ptBalance.toFixed(2)}).`, true); return; }
+
+    btn.disabled = true;
+    btn.textContent = 'Opening...';
+
+    try {
+        const r = await fetch('/api/paper/trade', {
+            method: 'POST',
+            headers: { 'Content-Type':'application/json', Authorization:'Bearer '+tok },
+            body: JSON.stringify({
+                pair: coin, direction: dir, orderType: ptOrderType,
+                entry, triggerPrice: ptOrderType==='LIMIT'?trigger:entry,
+                tp1, tp2, tp3, sl, leverage: lev, size,
+            })
+        });
+        const d = await r.json();
+        if (d.success) {
+            ptShowMsg(d.message || 'Trade opened!');
+            await ptLoadBalance();
+            await ptLoadTrades();
+        } else {
+            ptShowMsg(d.error || 'Failed.', true);
+        }
+    } catch(e) {
+        ptShowMsg('Network error.', true);
+    }
+    btn.disabled = false;
+    const isLong = dir !== 'SHORT';
+    btn.textContent = isLong ? '📈 OPEN LONG — PAPER TRADE' : '📉 OPEN SHORT — PAPER TRADE';
+}
+
+async function ptCloseTrade(id, entryPrice) {
+    const tok = await getToken();
+    if (!tok) return;
+    // Get live price for close
+    const coin = ptOpenTrades.find(t=>t._id===id)?.pair || '';
+    let closePrice = entryPrice;
+    try {
+        const pr = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${coin}`);
+        const pd = await pr.json();
+        if (pd.price) closePrice = parseFloat(pd.price);
+    } catch(e) {}
+
+    if (!confirm(`Close trade at $${closePrice.toFixed(4)}?`)) return;
+    try {
+        const r = await fetch(`/api/paper/trade/${id}/close`, {
+            method: 'PATCH',
+            headers: { 'Content-Type':'application/json', Authorization:'Bearer '+tok },
+            body: JSON.stringify({ closePrice })
+        });
+        const d = await r.json();
+        if (d.success) {
+            ptShowMsg(`Closed. PnL: ${d.pnl >= 0 ? '+' : ''}$${d.pnl.toFixed(2)}`);
+            await ptLoadBalance();
+            await ptLoadTrades();
+        } else {
+            ptShowMsg(d.error || 'Close failed.', true);
+        }
+    } catch(e) { ptShowMsg('Network error.', true); }
+}
+
+function ptShowBalModal() {
+    const m = document.getElementById('ptBalModal');
+    if (m) m.style.display = 'flex';
+}
+function ptHideBalModal() {
+    const m = document.getElementById('ptBalModal');
+    if (m) m.style.display = 'none';
+    const bm = document.getElementById('ptBalMsg');
+    if (bm) { bm.textContent=''; bm.className=''; }
+}
+
+async function ptSetCustomBalance() {
+    const amount = parseFloat(document.getElementById('ptCustomBal')?.value || 0);
+    if (!amount || amount < 100) {
+        showBalMsg('Enter a valid amount (min 100).', true); return;
+    }
+    if (!confirm(`Set balance to $${amount.toLocaleString()}? All open trades will be cancelled.`)) return;
+    const tok = await getToken();
+    try {
+        const r = await fetch('/api/paper/balance/set', {
+            method: 'POST',
+            headers: { 'Content-Type':'application/json', Authorization:'Bearer '+tok },
+            body: JSON.stringify({ amount })
+        });
+        const d = await r.json();
+        if (d.success) {
+            showBalMsg(`Balance set to $${amount.toLocaleString()}.`);
+            await ptLoadBalance();
+            await ptLoadTrades();
+            setTimeout(ptHideBalModal, 1500);
+        } else showBalMsg(d.error || 'Failed.', true);
+    } catch(e) { showBalMsg('Network error.', true); }
+}
+
+async function ptRequestReset() {
+    const amount = parseFloat(document.getElementById('ptCustomBal')?.value || 10000);
+    const reason = document.getElementById('ptReqReason')?.value || '';
+    if (!amount || amount < 100) { showBalMsg('Enter the amount you want.', true); return; }
+    const tok = await getToken();
+    try {
+        const r = await fetch('/api/paper/balance/request', {
+            method: 'POST',
+            headers: { 'Content-Type':'application/json', Authorization:'Bearer '+tok },
+            body: JSON.stringify({ requestType:'RESET', requestedAmount: amount, reason })
+        });
+        const d = await r.json();
+        if (d.success) showBalMsg('Request sent! Admin will review soon.');
+        else showBalMsg(d.error || 'Failed.', true);
+    } catch(e) { showBalMsg('Network error.', true); }
+}
+
+function showBalMsg(msg, isErr=false) {
+    const el = document.getElementById('ptBalMsg');
+    if (!el) return;
+    el.className = 'pt-msg ' + (isErr?'err':'ok');
+    el.textContent = msg;
+}
+
+// Init paper trade when analysis result shown
+async function initPaperTrade() {
+    await ptLoadBalance();
+    await ptLoadTrades();
+    ptSetOrderType('MARKET');
+}
+
+// WS events for trade updates
+function handlePTWebSocket(d) {
+    if (d.type === 'paper_trade_update' || d.type === 'paper_trade_filled') {
+        ptLoadBalance();
+        ptLoadTrades();
+    }
+    if (d.type === 'balance_approved') {
+        ptLoadBalance();
+        ptShowMsg('✅ Balance request approved!');
+    }
+    if (d.type === 'balance_rejected') {
+        ptShowMsg('❌ Balance request was rejected.', true);
+    }
 }
 
 window.toggleLC = function(id) {
