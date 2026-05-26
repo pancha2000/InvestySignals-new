@@ -12,6 +12,7 @@ const UserSchema = new mongoose.Schema({
   maintenance:   { type: Boolean, default: false },   // per-user maintenance override
   maintenanceMsg:{ type: String, default: '' },
   paperBalance:  { type: Number, default: 1000 },
+  hasSetInitialBalance: { type: Boolean, default: false }, // first-time self-set allowed once
   createdAt:     { type: Date, default: Date.now },
   lastLogin:     { type: Date }
 });

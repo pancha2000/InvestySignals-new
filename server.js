@@ -145,7 +145,7 @@ function sanitizeCandles(klines) {
 // ── [13] State + [11] Throttle ───────────────────────────────
 const analysisState    = new Map();
 const lastAnalysisTime = new Map();
-const ANALYSIS_COOLDOWN = 30 * 1000;
+const ANALYSIS_COOLDOWN = 0; // No cooldown — removed per user request
 
 // ── Express ───────────────────────────────────────────────────
 const app = express();
@@ -306,11 +306,11 @@ app.get('/api/paper-trades', getPaperTrades);
 app.get('/api/paper/trades',  getPaperTrades);
 
 app.get('/api/paper/balance', verifyToken, async (req, res) => {
-  try { const u=await User.findOne({uid:req.user.uid}); res.json({ success:true, balance:u?u.paperBalance:1000 }); }
+  try { const u=await User.findOne({uid:req.user.uid}); res.json({ success:true, balance:u?u.paperBalance:1000, hasSetInitialBalance: u?!!u.hasSetInitialBalance:false }); }
   catch(err) { res.status(500).json({ success:false, error:err.message }); }
 });
 
-// NOTE: old duplicate endpoint removed — new full endpoint is below
+// NOTE: old duplicate /api/paper/trade endpoint removed — correct endpoint is below
 
 app.post('/api/reports', async (req, res) => {
   try {
@@ -341,7 +341,7 @@ app.get('/api/registration-status', (req, res) => res.json({ success:true, open:
 app.get('/api/paper/balance', verifyToken, async (req, res) => {
   try {
     const u = await User.findOne({ uid: req.user.uid });
-    res.json({ success: true, balance: u ? u.paperBalance : 1000 });
+    res.json({ success: true, balance: u ? u.paperBalance : 1000, hasSetInitialBalance: u ? !!u.hasSetInitialBalance : false });
   } catch(err) { res.status(500).json({ success: false, error: err.message }); }
 });
 
@@ -351,13 +351,17 @@ app.post('/api/paper/balance/set', verifyToken, async (req, res) => {
     const amount = parseFloat(req.body.amount);
     if (!amount || amount < 100 || amount > 1_000_000 || !isFinite(amount))
       return res.status(400).json({ success: false, error: 'Amount must be between 100 and 1,000,000 USDT.' });
+    const u = await User.findOne({ uid: req.user.uid });
+    // Only allow self-set ONCE — after that must request admin
+    if (u && u.hasSetInitialBalance)
+      return res.json({ success: false, error: 'Balance already set. Please request an admin reset.' });
     // Cancel all open/pending trades first
     await PaperTrade.updateMany(
       { userUid: req.user.uid, status: { $in: ['OPEN','PENDING'] } },
       { status: 'CANCELLED', closedAt: new Date(), notes: 'Cancelled — balance reset by user' }
     );
-    await User.updateOne({ uid: req.user.uid }, { paperBalance: amount });
-    res.json({ success: true, balance: amount, message: 'Balance updated. All open trades cancelled.' });
+    await User.updateOne({ uid: req.user.uid }, { paperBalance: amount, hasSetInitialBalance: true });
+    res.json({ success: true, balance: amount, message: 'Balance set! You can now start paper trading.' });
   } catch(err) { res.status(500).json({ success: false, error: err.message }); }
 });
 

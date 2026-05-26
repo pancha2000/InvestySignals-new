@@ -1146,30 +1146,43 @@ function buildPaperTradePanel(data) {
 <!-- Balance modal -->
 <div class="pt-modal-overlay" id="ptBalModal" style="display:none;" onclick="if(event.target===this)ptHideBalModal()">
     <div class="pt-modal">
-        <h3>⚙️ Manage Paper Balance</h3>
-        <p>Set your own starting balance or request an admin reset.</p>
+        <h3>⚙️ Paper Balance</h3>
 
-        <div class="pt-field" style="margin-bottom:10px;">
-            <label>Set Custom Balance (100 – 1,000,000 USDT)</label>
-            <input type="number" id="ptCustomBal" min="100" max="1000000" placeholder="e.g. 10000" style="width:100%;background:var(--surface);border:1px solid var(--border-soft);color:var(--text);padding:9px 12px;border-radius:var(--radius-xs);font-family:'JetBrains Mono',monospace;font-size:0.85rem;outline:none;box-sizing:border-box;">
+        <!-- First-time set section — hidden after first use -->
+        <div id="ptFirstTimeSection">
+            <p style="font-size:0.8rem;color:var(--text-muted);">ඔබේ paper trading balance set කරන්න. <strong>එකවරක් විතරයි</strong> ඔබට directly set කරන්න පුළුවන්.</p>
+            <div class="pt-field" style="margin-bottom:10px;">
+                <label>Starting Balance (100 – 1,000,000 USDT)</label>
+                <input type="number" id="ptCustomBal" min="100" max="1000000" placeholder="e.g. 10000" style="width:100%;background:var(--surface);border:1px solid var(--border-soft);color:var(--text);padding:9px 12px;border-radius:var(--radius-xs);font-family:'JetBrains Mono',monospace;font-size:0.85rem;outline:none;box-sizing:border-box;">
+            </div>
+            <div class="pt-modal-actions">
+                <button onclick="ptSetCustomBalance()" style="background:rgba(0,217,126,0.12);border:1px solid rgba(0,217,126,0.3);color:var(--green);">
+                    ✅ Set Balance
+                </button>
+            </div>
+            <hr style="border-color:var(--border-soft);margin:14px 0 10px;">
         </div>
-        <p style="font-size:0.7rem;color:var(--red);margin:0 0 8px;">⚠️ Setting a new balance will cancel all open trades.</p>
 
-        <div class="pt-field" style="margin-bottom:10px;">
-            <label>Reason (for admin request)</label>
-            <input type="text" id="ptReqReason" placeholder="e.g. Testing new strategy" style="width:100%;background:var(--surface);border:1px solid var(--border-soft);color:var(--text);padding:9px 12px;border-radius:var(--radius-xs);font-family:'JetBrains Mono',monospace;font-size:0.82rem;outline:none;box-sizing:border-box;">
+        <!-- Admin request section — always visible -->
+        <div id="ptAdminSection">
+            <p style="font-size:0.8rem;color:var(--text-muted);" id="ptAdminLabel">Balance reset කරන්න admin request කරන්න:</p>
+            <div class="pt-field" style="margin-bottom:8px;">
+                <label>Amount (USDT)</label>
+                <input type="number" id="ptReqAmount" min="100" max="1000000" placeholder="e.g. 10000" style="width:100%;background:var(--surface);border:1px solid var(--border-soft);color:var(--text);padding:9px 12px;border-radius:var(--radius-xs);font-family:'JetBrains Mono',monospace;font-size:0.85rem;outline:none;box-sizing:border-box;">
+            </div>
+            <div class="pt-field" style="margin-bottom:10px;">
+                <label>Reason <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+                <input type="text" id="ptReqReason" placeholder="e.g. strategy test" style="width:100%;background:var(--surface);border:1px solid var(--border-soft);color:var(--text);padding:9px 12px;border-radius:var(--radius-xs);font-family:'JetBrains Mono',monospace;font-size:0.82rem;outline:none;box-sizing:border-box;">
+            </div>
+            <div class="pt-modal-actions">
+                <button onclick="ptRequestReset()" style="background:var(--surface);border:1px solid var(--border-soft);color:var(--text-muted);">
+                    📩 Request Admin Reset
+                </button>
+            </div>
         </div>
 
         <div id="ptBalMsg"></div>
 
-        <div class="pt-modal-actions">
-            <button onclick="ptSetCustomBalance()" style="background:rgba(0,217,126,0.12);border:1px solid rgba(0,217,126,0.3);color:var(--green);">
-                ✅ Set Balance
-            </button>
-            <button onclick="ptRequestReset()" style="background:var(--surface);border:1px solid var(--border-soft);color:var(--text-muted);">
-                📩 Request Admin Reset
-            </button>
-        </div>
         <div class="pt-modal-actions" style="margin-top:6px;">
             <button onclick="ptHideBalModal()" style="background:transparent;border:1px solid var(--border-soft);color:var(--text-muted);">
                 Close
@@ -1331,9 +1344,22 @@ async function ptCloseTrade(id, entryPrice) {
     } catch(e) { ptShowMsg('Network error.', true); }
 }
 
-function ptShowBalModal() {
+async function ptShowBalModal() {
     const m = document.getElementById('ptBalModal');
     if (m) m.style.display = 'flex';
+    // Check if user has already set initial balance
+    try {
+        const tok = await getToken();
+        if (!tok) return;
+        const r = await fetch('/api/paper/balance', { headers: { Authorization: 'Bearer '+tok } });
+        const d = await r.json();
+        const ft = document.getElementById('ptFirstTimeSection');
+        const lbl = document.getElementById('ptAdminLabel');
+        if (ft) ft.style.display = d.hasSetInitialBalance ? 'none' : '';
+        if (lbl) lbl.textContent = d.hasSetInitialBalance
+            ? 'Balance reset කරන්න admin request කරන්න:'
+            : 'හෝ admin reset request කරන්න:';
+    } catch(e) {}
 }
 function ptHideBalModal() {
     const m = document.getElementById('ptBalModal');
@@ -1347,7 +1373,7 @@ async function ptSetCustomBalance() {
     if (!amount || amount < 100) {
         showBalMsg('Enter a valid amount (min 100).', true); return;
     }
-    if (!confirm(`Set balance to $${amount.toLocaleString()}? All open trades will be cancelled.`)) return;
+    if (!confirm(`Set balance to $${amount.toLocaleString()}? This can only be done once.`)) return;
     const tok = await getToken();
     try {
         const r = await fetch('/api/paper/balance/set', {
@@ -1357,18 +1383,30 @@ async function ptSetCustomBalance() {
         });
         const d = await r.json();
         if (d.success) {
-            showBalMsg(`Balance set to $${amount.toLocaleString()}.`);
+            showBalMsg(`✅ Balance set to $${amount.toLocaleString()}!`);
             await ptLoadBalance();
             await ptLoadTrades();
-            setTimeout(ptHideBalModal, 1500);
-        } else showBalMsg(d.error || 'Failed.', true);
+            // Hide first-time section since it's now used
+            const ft = document.getElementById('ptFirstTimeSection');
+            if (ft) ft.style.display = 'none';
+            const lbl = document.getElementById('ptAdminLabel');
+            if (lbl) lbl.textContent = 'Balance reset කරන්න admin request කරන්න:';
+            setTimeout(ptHideBalModal, 1800);
+        } else {
+            showBalMsg(d.error || 'Failed.', true);
+            // If already set, hide the first-time section
+            if (d.error && d.error.includes('already set')) {
+                const ft = document.getElementById('ptFirstTimeSection');
+                if (ft) ft.style.display = 'none';
+            }
+        }
     } catch(e) { showBalMsg('Network error.', true); }
 }
 
 async function ptRequestReset() {
-    const amount = parseFloat(document.getElementById('ptCustomBal')?.value || 10000);
-    const reason = document.getElementById('ptReqReason')?.value || '';
-    if (!amount || amount < 100) { showBalMsg('Enter the amount you want.', true); return; }
+    const amount = parseFloat(document.getElementById('ptReqAmount')?.value || 0);
+    const reason = document.getElementById('ptReqReason')?.value?.trim() || '';
+    if (!amount || amount < 100) { showBalMsg('Amount enter කරන්න (min 100).', true); return; }
     const tok = await getToken();
     try {
         const r = await fetch('/api/paper/balance/request', {
@@ -1377,7 +1415,7 @@ async function ptRequestReset() {
             body: JSON.stringify({ requestType:'RESET', requestedAmount: amount, reason })
         });
         const d = await r.json();
-        if (d.success) showBalMsg('Request sent! Admin will review soon.');
+        if (d.success) showBalMsg('✅ Request sent! Admin will review soon.');
         else showBalMsg(d.error || 'Failed.', true);
     } catch(e) { showBalMsg('Network error.', true); }
 }
