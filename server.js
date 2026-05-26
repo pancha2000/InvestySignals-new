@@ -490,8 +490,296 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
       return res.status(503).json({ success:false, error:globalSettings.highImpactMsg||'Signals paused.', code:'NEWS_BLACKOUT' });
 
     // ===========================================================
-    //  INDICATOR FUNCTIONS — All fixed v4
+    //  INDICATOR FUNCTIONS — v5 (Phase 1+2 upgrades)
     // ===========================================================
+
+    // [NEW] Liquidity Zones — Equal Highs / Equal Lows detection
+    // Price always hunts liquidity before reversing
+    function findLiquidityZones(highs, lows, tolerance=0.003) {
+      const buyLiq  = []; // equal highs = buy-side liquidity (stops above)
+      const sellLiq = []; // equal lows  = sell-side liquidity (stops below)
+      const h = highs.slice(-50), l = lows.slice(-50);
+      for (let i = 0; i < h.length - 1; i++) {
+        for (let j = i + 1; j < h.length; j++) {
+          if (Math.abs(h[i] - h[j]) / h[i] < tolerance) {
+            const zone = parseFloat(((h[i] + h[j]) / 2).toFixed(4));
+            if (!buyLiq.some(z => Math.abs(z - zone) / zone < tolerance)) buyLiq.push(zone);
+          }
+        }
+      }
+      for (let i = 0; i < l.length - 1; i++) {
+        for (let j = i + 1; j < l.length; j++) {
+          if (Math.abs(l[i] - l[j]) / l[i] < tolerance) {
+            const zone = parseFloat(((l[i] + l[j]) / 2).toFixed(4));
+            if (!sellLiq.some(z => Math.abs(z - zone) / zone < tolerance)) sellLiq.push(zone);
+          }
+        }
+      }
+      return { buyLiq: buyLiq.slice(-5), sellLiq: sellLiq.slice(-5) };
+    }
+
+    // [NEW] Premium / Discount Zones
+    // Equilibrium = 50% of range. Discount < 50% (good to buy), Premium > 50% (good to sell)
+    function calcPremiumDiscount(highs, lows, currentPrice, lookback=20) {
+      const rangeHigh = Math.max(...highs.slice(-lookback));
+      const rangeLow  = Math.min(...lows.slice(-lookback));
+      const rangeSize = rangeHigh - rangeLow;
+      if (rangeSize === 0) return { zone: 'EQUILIBRIUM', pct: 50, rangeHigh, rangeLow };
+      const pct = ((currentPrice - rangeLow) / rangeSize) * 100;
+      const zone = pct >= 75 ? 'PREMIUM' : pct <= 25 ? 'DISCOUNT' : pct >= 55 ? 'UPPER_EQ' : pct <= 45 ? 'LOWER_EQ' : 'EQUILIBRIUM';
+      return { zone, pct: parseFloat(pct.toFixed(1)), rangeHigh, rangeLow, equilibrium: parseFloat(((rangeHigh + rangeLow) / 2).toFixed(4)) };
+    }
+
+    // [NEW] Fibonacci Retracement Levels from recent swing
+    function calcFibLevels(highs, lows, isBullish, lookback=50) {
+      const h = Math.max(...highs.slice(-lookback));
+      const l = Math.min(...lows.slice(-lookback));
+      const range = h - l;
+      if (range === 0) return null;
+      // Key fib levels
+      const fibs = isBullish
+        ? { // In uptrend: retracement from high to low (buy zones)
+            fib236: parseFloat((h - range * 0.236).toFixed(4)),
+            fib382: parseFloat((h - range * 0.382).toFixed(4)),
+            fib500: parseFloat((h - range * 0.500).toFixed(4)),
+            fib618: parseFloat((h - range * 0.618).toFixed(4)),
+            fib705: parseFloat((h - range * 0.705).toFixed(4)),
+            fib786: parseFloat((h - range * 0.786).toFixed(4)),
+          }
+        : { // In downtrend: retracement from low to high (sell zones)
+            fib236: parseFloat((l + range * 0.236).toFixed(4)),
+            fib382: parseFloat((l + range * 0.382).toFixed(4)),
+            fib500: parseFloat((l + range * 0.500).toFixed(4)),
+            fib618: parseFloat((l + range * 0.618).toFixed(4)),
+            fib705: parseFloat((l + range * 0.705).toFixed(4)),
+            fib786: parseFloat((l + range * 0.786).toFixed(4)),
+          };
+      return { ...fibs, swingHigh: h, swingLow: l };
+    }
+
+    // [NEW] Nearest Fibonacci zone to current price
+    function nearestFib(fibLevels, currentPrice) {
+      if (!fibLevels) return null;
+      const levels = ['fib236','fib382','fib500','fib618','fib705','fib786'];
+      let nearest = null, minDist = Infinity;
+      for (const key of levels) {
+        const dist = Math.abs(fibLevels[key] - currentPrice);
+        if (dist < minDist) { minDist = dist; nearest = { level: key, price: fibLevels[key] }; }
+      }
+      const pct = minDist / currentPrice * 100;
+      return { ...nearest, distPct: parseFloat(pct.toFixed(2)), withinZone: pct < 0.5 };
+    }
+
+    // [NEW] VWAP calculation
+    function calcVWAP(klines) {
+      let cumTPV = 0, cumVol = 0;
+      for (const k of klines) {
+        const h=parseFloat(k[2]),l=parseFloat(k[3]),c=parseFloat(k[4]),v=parseFloat(k[5]);
+        const tp = (h + l + c) / 3;
+        cumTPV += tp * v;
+        cumVol += v;
+      }
+      return cumVol > 0 ? parseFloat((cumTPV / cumVol).toFixed(4)) : null;
+    }
+
+    // [NEW] Trading Session High/Low (UTC based)
+    // Asia: 00:00-08:00, London: 07:00-16:00, NY: 12:00-21:00
+    function getSessionContext(klines) {
+      const now = new Date();
+      const utcHour = now.getUTCHours();
+      let currentSession = utcHour >= 0 && utcHour < 8 ? 'ASIA'
+        : utcHour >= 7 && utcHour < 16 ? 'LONDON' : 'NEW_YORK';
+      // Find session high/low from 1H klines (last 24H)
+      const last24 = klines.slice(-24);
+      const asiaK    = klines.slice(-24).filter((_,i)=>{ const h=new Date(parseFloat(klines[klines.length-24+i][0])).getUTCHours(); return h>=0&&h<8; });
+      const londonK  = klines.slice(-24).filter((_,i)=>{ const h=new Date(parseFloat(klines[klines.length-24+i][0])).getUTCHours(); return h>=7&&h<16; });
+      const nyK      = klines.slice(-24).filter((_,i)=>{ const h=new Date(parseFloat(klines[klines.length-24+i][0])).getUTCHours(); return h>=12&&h<21; });
+      const getHL = k => k.length > 0 ? { high: Math.max(...k.map(c=>parseFloat(c[2]))), low: Math.min(...k.map(c=>parseFloat(c[3]))) } : null;
+      return {
+        current: currentSession,
+        asia:    getHL(asiaK),
+        london:  getHL(londonK),
+        ny:      getHL(nyK),
+        prevDayH: Math.max(...last24.map(c=>parseFloat(c[2]))),
+        prevDayL: Math.min(...last24.map(c=>parseFloat(c[3]))),
+      };
+    }
+
+    // [NEW] Breaker Block detection — failed OB that becomes opposing zone
+    function findBreakerBlock(klines) {
+      const breakers = [];
+      for (let i = klines.length - 5; i >= Math.max(0, klines.length - 60); i--) {
+        if (i + 2 >= klines.length) continue;
+        const op = parseFloat(klines[i][1]), cl = parseFloat(klines[i][4]);
+        const hi = parseFloat(klines[i][2]), lo = parseFloat(klines[i][3]);
+        const body = Math.abs(cl - op), range = hi - lo;
+        if (range === 0 || body / range <= 0.6) continue;
+        const isBull = cl > op;
+        // Check if subsequent price broke through this OB (mitigated it)
+        const subL = klines.slice(i + 1).map(k => parseFloat(k[3]));
+        const subH = klines.slice(i + 1).map(k => parseFloat(k[2]));
+        const wasMitigated = isBull
+          ? subL.some(l => l < lo)   // Bull OB broken by price going below
+          : subH.some(h => h > hi);  // Bear OB broken by price going above
+        if (wasMitigated) {
+          // Failed OB = Breaker Block (now acts as opposite zone)
+          breakers.push({ high: hi, low: lo, type: isBull ? 'BEAR_BREAKER' : 'BULL_BREAKER', index: i });
+        }
+      }
+      return breakers.slice(-2); // Return last 2 breakers
+    }
+
+    // [NEW] OI Change Direction (previous vs current)
+    async function getOIChange(symbol) {
+      try {
+        const r = await fetch(`https://fapi.binance.com/fapi/v1/openInterestHist?symbol=${symbol}&period=1h&limit=3`);
+        if (!r.ok) return { change: 'UNKNOWN', pct: 0 };
+        const data = await r.json();
+        if (!data || data.length < 2) return { change: 'UNKNOWN', pct: 0 };
+        const prev = parseFloat(data[data.length - 2].sumOpenInterest);
+        const curr = parseFloat(data[data.length - 1].sumOpenInterest);
+        const pct  = parseFloat(((curr - prev) / prev * 100).toFixed(3));
+        return { change: pct > 0.1 ? 'INCREASING' : pct < -0.1 ? 'DECREASING' : 'STABLE', pct, prev, curr };
+      } catch(e) { return { change: 'UNKNOWN', pct: 0 }; }
+    }
+
+    // [UPGRADED] Candle Pattern — now includes more patterns + scoring weight
+    function detectCandlePattern(klines) {
+      if (klines.length < 3) return { pattern: 'NONE', strength: 0, bullish: null };
+      const c0 = klines[klines.length-1]; // current
+      const c1 = klines[klines.length-2]; // prev
+      const c2 = klines[klines.length-3]; // prev prev
+      const o0=parseFloat(c0[1]),c0c=parseFloat(c0[4]),h0=parseFloat(c0[2]),l0=parseFloat(c0[3]);
+      const o1=parseFloat(c1[1]),c1c=parseFloat(c1[4]),h1=parseFloat(c1[2]),l1=parseFloat(c1[3]);
+      const o2=parseFloat(c2[1]),c2c=parseFloat(c2[4]);
+      const body0=Math.abs(c0c-o0),range0=h0-l0;
+      const body1=Math.abs(c1c-o1);
+      if (range0 === 0) return { pattern: 'NONE', strength: 0, bullish: null };
+      const uw0=h0-Math.max(o0,c0c), lw0=Math.min(o0,c0c)-l0;
+      // Strength 3 = very strong, 2 = strong, 1 = moderate
+      if (lw0>body0*2.5&&uw0<body0*0.3&&range0>0) return { pattern:'HAMMER', strength:3, bullish:true };
+      if (uw0>body0*2.5&&lw0<body0*0.3&&range0>0) return { pattern:'SHOOTING_STAR', strength:3, bullish:false };
+      if (c0c>h1&&o0<c1c&&body0>body1) return { pattern:'BULLISH_ENGULFING', strength:3, bullish:true };
+      if (c0c<l1&&o0>c1c&&body0>body1) return { pattern:'BEARISH_ENGULFING', strength:3, bullish:false };
+      // Piercing / Dark Cloud
+      if (c1c<o1&&o0<l1&&c0c>=(o1+c1c)/2&&c0c<o1) return { pattern:'PIERCING', strength:2, bullish:true };
+      if (c1c>o1&&o0>h1&&c0c<=(o1+c1c)/2&&c0c>o1) return { pattern:'DARK_CLOUD', strength:2, bullish:false };
+      // Morning / Evening Star (3-candle)
+      const doji1=body1/Math.max(h1-l1,0.0001)<0.15;
+      if (c2c<o2&&doji1&&c0c>o0&&c0c>(o2+c2c)/2) return { pattern:'MORNING_STAR', strength:3, bullish:true };
+      if (c2c>o2&&doji1&&c0c<o0&&c0c<(o2+c2c)/2) return { pattern:'EVENING_STAR', strength:3, bullish:false };
+      // Doji / Spinning top
+      if (body0/range0<0.1) return { pattern:'DOJI', strength:1, bullish:null };
+      if (c0c>o0&&body0/range0>0.7) return { pattern:'STRONG_BULL', strength:2, bullish:true };
+      if (c0c<o0&&body0/range0>0.7) return { pattern:'STRONG_BEAR', strength:2, bullish:false };
+      if (lw0>body0*2&&uw0<body0) return { pattern:'PIN_BAR_BULL', strength:2, bullish:true };
+      if (uw0>body0*2&&lw0<body0) return { pattern:'PIN_BAR_BEAR', strength:2, bullish:false };
+      return { pattern:'NONE', strength:0, bullish:null };
+    }
+
+    // [UPGRADED] Structure-aware SL v5 — Liquidity + Fib + Breaker aware
+    function calcStructureSLv5(isBullish, currentPrice, atr4h, h4OB, highs4h, lows4h, srLevels, liquidityZones, fibLevels, breakers) {
+      const atrSL = isBullish ? currentPrice - atr4h * 1.5 : currentPrice + atr4h * 1.5;
+      if (isBullish) {
+        const swingLow   = Math.min(...lows4h.slice(-15));
+        const obFloor    = (h4OB && h4OB.type==='BULL_OB') ? h4OB.low : null;
+        const srBelow    = srLevels.filter(l => l < currentPrice * 0.997).pop() || null;
+        // Sell-side liquidity below = natural SL target for stop hunts
+        const liqBelow   = liquidityZones.sellLiq.filter(l => l < currentPrice * 0.997).pop() || null;
+        // Fibonacci support nearby (618 / 786 = golden zone)
+        const fibSupport = fibLevels ? [fibLevels.fib618, fibLevels.fib786].filter(f => f < currentPrice * 0.997).pop() : null;
+        // Breaker block below (BULL_BREAKER = support)
+        const breakerFloor = breakers.filter(b => b.type==='BULL_BREAKER' && b.low < currentPrice * 0.997).map(b=>b.low).pop() || null;
+        // Gather all structural candidates
+        const candidates = [
+          swingLow * 0.998,
+          obFloor  ? obFloor * 0.997  : null,
+          srBelow  ? srBelow * 0.997  : null,
+          liqBelow ? liqBelow * 0.997 : null,
+          fibSupport ? fibSupport * 0.998 : null,
+          breakerFloor ? breakerFloor * 0.997 : null,
+          atrSL,
+        ].filter(v => v !== null && v > 0 && Math.abs(currentPrice - v) / currentPrice < 0.10);
+        // Pick lowest (widest protection), max 10% from entry
+        return parseFloat(Math.min(...candidates).toFixed(4));
+      } else {
+        const swingHigh  = Math.max(...highs4h.slice(-15));
+        const obCeil     = (h4OB && h4OB.type==='BEAR_OB') ? h4OB.high : null;
+        const srAbove    = srLevels.filter(l => l > currentPrice * 1.003)[0] || null;
+        const liqAbove   = liquidityZones.buyLiq.filter(l => l > currentPrice * 1.003)[0] || null;
+        const fibResist  = fibLevels ? [fibLevels.fib618, fibLevels.fib786].filter(f => f > currentPrice * 1.003)[0] : null;
+        const breakerCeil = breakers.filter(b => b.type==='BEAR_BREAKER' && b.high > currentPrice * 1.003).map(b=>b.high)[0] || null;
+        const candidates = [
+          swingHigh * 1.002,
+          obCeil    ? obCeil * 1.003     : null,
+          srAbove   ? srAbove * 1.003    : null,
+          liqAbove  ? liqAbove * 1.003   : null,
+          fibResist ? fibResist * 1.002  : null,
+          breakerCeil ? breakerCeil * 1.003 : null,
+          atrSL,
+        ].filter(v => v !== null && v > 0 && Math.abs(currentPrice - v) / currentPrice < 0.10);
+        return parseFloat(Math.max(...candidates).toFixed(4));
+      }
+    }
+
+    // [UPGRADED] TP v5 — Liquidity + Fib + Breaker target aware
+    // Day-trader optimized: TP1 realistic, TP2 at next liquidity, TP3 at next major SR
+    function calcTPv5(isBullish, entry, sl, srLevels, liquidityZones, fibLevels, breakers) {
+      const riskAmt = Math.abs(entry - sl);
+      // Raw RR targets
+      const raw1 = isBullish ? entry + riskAmt * 1.5 : entry - riskAmt * 1.5;
+      const raw2 = isBullish ? entry + riskAmt * 2.5 : entry - riskAmt * 2.5;
+      const raw3 = isBullish ? entry + riskAmt * 4.0 : entry - riskAmt * 4.0;
+
+      // Structural targets in direction of trade
+      const structTargets = isBullish
+        ? [
+            ...srLevels.filter(l => l > entry * 1.003),
+            ...liquidityZones.buyLiq.filter(l => l > entry * 1.003),    // buy-side liq = natural target
+            ...breakers.filter(b=>b.type==='BEAR_BREAKER'&&b.low>entry*1.003).map(b=>b.low),
+            ...(fibLevels ? [fibLevels.fib236, fibLevels.fib382].filter(f=>f>entry*1.003) : []),
+          ].sort((a,b) => a - b)
+        : [
+            ...srLevels.filter(l => l < entry * 0.997),
+            ...liquidityZones.sellLiq.filter(l => l < entry * 0.997),   // sell-side liq = natural target
+            ...breakers.filter(b=>b.type==='BULL_BREAKER'&&b.high<entry*0.997).map(b=>b.high),
+            ...(fibLevels ? [fibLevels.fib236, fibLevels.fib382].filter(f=>f<entry*0.997) : []),
+          ].sort((a,b) => b - a);
+
+      // Snap TP to nearest structural target if within 2% of raw RR
+      const snap = (raw, targets) => {
+        for (const t of targets) {
+          if (Math.abs(t - raw) / raw < 0.02) {
+            const adjusted = isBullish ? t * 0.997 : t * 1.003; // just before the level
+            if (isBullish && adjusted > entry) return parseFloat(adjusted.toFixed(4));
+            if (!isBullish && adjusted < entry) return parseFloat(adjusted.toFixed(4));
+          }
+        }
+        return parseFloat(raw.toFixed(4));
+      };
+
+      const tp1 = snap(raw1, structTargets);
+      const tp2 = snap(raw2, structTargets);
+      const tp3 = snap(raw3, structTargets);
+
+      // Ensure TP1 < TP2 < TP3 (LONG) or TP1 > TP2 > TP3 (SHORT)
+      const ordered = isBullish
+        ? [tp1, tp2, tp3].sort((a, b) => a - b)
+        : [tp1, tp2, tp3].sort((a, b) => b - a);
+
+      // Ensure all TPs are on correct side of entry
+      const valid = ordered.filter(t => isBullish ? t > entry : t < entry);
+      if (valid.length === 0) return {
+        tp1: parseFloat(raw1.toFixed(4)),
+        tp2: parseFloat(raw2.toFixed(4)),
+        tp3: parseFloat(raw3.toFixed(4))
+      };
+      return {
+        tp1: valid[0] || parseFloat(raw1.toFixed(4)),
+        tp2: valid[1] || parseFloat(raw2.toFixed(4)),
+        tp3: valid[2] || parseFloat(raw3.toFixed(4)),
+      };
+    }
 
     // [5] ADX(14) — Wilder smoothed
     function calcADX(klines, period=14) {
@@ -589,14 +877,16 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
       // BOS: close must break above/below, not just wick
       if (lastClose>prevHigh) return 'BOS_BULLISH';
       if (lastClose<prevLow)  return 'BOS_BEARISH';
-      // CHoCH: close breaks mid structure
-      const midHigh=Math.max(...rH.slice(5,12));
-      const midLow =Math.min(...rL.slice(5,12));
-      if (lastClose>midHigh) return 'CHOCH_BULLISH';
-      if (lastClose<midLow)  return 'CHOCH_BEARISH';
-      // Wick-based secondary check (weaker signal)
+      // CHoCH: price breaks opposing structure midpoint
+      // Use independent range — older candles (10-18) not overlapping BOS range (0-15)
+      const rH2=highs.slice(-30),rL2=lows.slice(-30);
+      const midHigh=Math.max(...rH2.slice(15,25));  // older highs zone
+      const midLow =Math.min(...rL2.slice(15,25));  // older lows zone
+      if (lastClose>midHigh&&lastClose<prevHigh) return 'CHOCH_BULLISH';
+      if (lastClose<midLow &&lastClose>prevLow)  return 'CHOCH_BEARISH';
+      // Wick-based secondary BOS (weaker signal — close must be ≥99.8% of level)
       if (lastHigh>prevHigh&&lastClose>prevHigh*0.998) return 'BOS_BULLISH';
-      if (lastLow<prevLow&&lastClose<prevLow*1.002)    return 'BOS_BEARISH';
+      if (lastLow<prevLow  &&lastClose<prevLow *1.002) return 'BOS_BEARISH';
       return 'NEUTRAL';
     }
 
@@ -629,23 +919,34 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
       return 'NONE';
     }
 
-    // [F4] FVG — Unmitigated only (price not yet returned to zone)
-    function detectFVG(klines,currentP) {
-      const fvgs=[];
-      for (let i=2;i<klines.length-1;i++) {
-        const pH=parseFloat(klines[i-2][2]),cL=parseFloat(klines[i][3]);
-        const pL=parseFloat(klines[i-2][3]),cH=parseFloat(klines[i][2]);
-        if (cL>pH) {
-          // Bull FVG: check if price has come back to fill it
-          const subLows=klines.slice(i+1).map(k=>parseFloat(k[3]));
-          const mitigated=subLows.some(l=>l<=cL);
-          if (!mitigated) fvgs.push({type:'BULL',high:cL,low:pH,mitigated:false});
+    // [F4-fix] FVG — Unmitigated only, O(n) performance with forward min/max tracking
+    function detectFVG(klines, currentP) {
+      if (klines.length < 3) return [];
+      // Pre-compute forward min lows and max highs from each index onwards (O(n))
+      const n = klines.length;
+      const fwdMinLow  = new Array(n).fill(Infinity);
+      const fwdMaxHigh = new Array(n).fill(-Infinity);
+      fwdMinLow[n-1]  = parseFloat(klines[n-1][3]);
+      fwdMaxHigh[n-1] = parseFloat(klines[n-1][2]);
+      for (let j = n-2; j >= 0; j--) {
+        fwdMinLow[j]  = Math.min(parseFloat(klines[j][3]), fwdMinLow[j+1]);
+        fwdMaxHigh[j] = Math.max(parseFloat(klines[j][2]), fwdMaxHigh[j+1]);
+      }
+      const fvgs = [];
+      for (let i = 2; i < n - 1; i++) {
+        const pH = parseFloat(klines[i-2][2]);  // candle[i-2] high
+        const pL = parseFloat(klines[i-2][3]);  // candle[i-2] low
+        const cH = parseFloat(klines[i][2]);    // candle[i] high
+        const cL = parseFloat(klines[i][3]);    // candle[i] low
+        // Bull FVG: gap between candle[i-2] high and candle[i] low
+        if (cL > pH) {
+          const mitigated = fwdMinLow[i+1] <= cL; // O(1) lookup
+          if (!mitigated) fvgs.push({ type:'BULL', high:cL, low:pH });
         }
-        if (cH<pL) {
-          // Bear FVG: check if price has come back to fill it
-          const subHighs=klines.slice(i+1).map(k=>parseFloat(k[2]));
-          const mitigated=subHighs.some(h=>h>=cH);
-          if (!mitigated) fvgs.push({type:'BEAR',high:pL,low:cH,mitigated:false});
+        // Bear FVG: gap between candle[i] high and candle[i-2] low
+        if (cH < pL) {
+          const mitigated = fwdMaxHigh[i+1] >= cH; // O(1) lookup
+          if (!mitigated) fvgs.push({ type:'BEAR', high:pL, low:cH });
         }
       }
       return fvgs.slice(-3);
@@ -657,15 +958,22 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
       return {ratio:parseFloat((last/avg).toFixed(2)),spike:last>avg*1.5};
     }
 
-    function findSRLevels(highs,lows) {
-      const all=[...highs.slice(-50),...lows.slice(-50)].sort((a,b)=>a-b);
-      const clusters=[]; let i=0;
-      while(i<all.length){
-        const base=all[i],cl=all.filter(v=>Math.abs(v-base)/base<0.005);
-        if(cl.length>=2)clusters.push(parseFloat((cl.reduce((a,b)=>a+b,0)/cl.length).toFixed(4)));
-        i+=Math.max(1,cl.length);
+    function findSRLevels(highs, lows) {
+      const all = [...highs.slice(-50), ...lows.slice(-50)].sort((a, b) => a - b);
+      const clusters = [];
+      let i = 0;
+      while (i < all.length) {
+        const base = all[i];
+        const cl = all.filter(v => Math.abs(v - base) / base < 0.005);
+        if (cl.length >= 2) {
+          const avg = parseFloat((cl.reduce((a,b) => a+b, 0) / cl.length).toFixed(4));
+          // Only add if not already close to an existing cluster
+          const isDup = clusters.some(c => Math.abs(c - avg) / avg < 0.005);
+          if (!isDup) clusters.push(avg);
+        }
+        i += Math.max(1, cl.length);
       }
-      return [...new Set(clusters)].slice(-8);
+      return clusters.slice(-8);
     }
 
     // [8] OB — Explosive Move + Mitigation Validated
@@ -688,22 +996,6 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
       return null;
     }
 
-    function detectCandlePattern(klines) {
-      const last=klines[klines.length-1],prev=klines[klines.length-2];
-      const o=parseFloat(last[1]),c=parseFloat(last[4]),h=parseFloat(last[2]),l=parseFloat(last[3]);
-      const po=parseFloat(prev[1]),pc=parseFloat(prev[4]);
-      const body=Math.abs(c-o),range=h-l;
-      if (range===0) return 'NONE';
-      const uw=h-Math.max(o,c),lw=Math.min(o,c)-l;
-      if (lw>body*2&&uw<body*0.5) return 'PIN_BAR_BULL';
-      if (uw>body*2&&lw<body*0.5) return 'PIN_BAR_BEAR';
-      if (c>po&&o<pc) return 'BULLISH_ENGULFING';
-      if (c<po&&o>pc) return 'BEARISH_ENGULFING';
-      if (body/range<0.1) return 'DOJI';
-      if (c>o&&body/range>0.7) return 'STRONG_BULL';
-      if (c<o&&body/range>0.7) return 'STRONG_BEAR';
-      return 'NONE';
-    }
 
     // [F12] CVD Proxy — volume-weighted bull/bear pressure
     function calcCVDProxy(klines,lookback=20) {
@@ -787,16 +1079,17 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     // ===========================================================
     //  FETCH DATA
     // ===========================================================
-    const [rawK1d,rawK4h,rawK1h,rawK15m,rawBtcK1d,rawBtcK4h,fundingRaw,oiRaw,livePrice]=await Promise.all([
+    const [rawK1d,rawK4h,rawK1h,rawK15m,rawBtcK1d,rawBtcK4h,fundingRaw,oiRaw,livePrice,oiChange]=await Promise.all([
       fetchKlinesCached(pair,'1d',200),
       fetchKlinesCached(pair,'4h',200),
       fetchKlinesCached(pair,'1h',200),
       fetchKlinesCached(pair,'15m',200),
       fetchKlinesCached('BTCUSDT','1d',200),
-      fetchKlinesCached('BTCUSDT','4h',100),   // [F8] BTC 4H added
+      fetchKlinesCached('BTCUSDT','4h',100),
       fetch(`https://fapi.binance.com/fapi/v1/fundingRate?symbol=${pair}&limit=1`).then(r=>r.json()).catch(()=>[]),
       fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${pair}`).then(r=>r.json()).catch(()=>({})),
-      getLivePrice(pair),   // [F3] Live price
+      getLivePrice(pair),
+      getOIChange(pair),  // [NEW] OI change direction
     ]);
 
     // [4] Exclude forming candle  [3] Sanitize outliers
@@ -864,6 +1157,16 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     const prevDayHigh=Math.max(...h4.highs.slice(-6)),prevDayLow=Math.min(...h4.lows.slice(-6));
     const allSR=[...new Set([...d1SR,...h4SR])].sort((a,b)=>a-b);
 
+    // [NEW] Phase 1+2 HTF additions
+    const h4Liq      = findLiquidityZones(h4.highs, h4.lows);
+    const d1Liq      = findLiquidityZones(d1.highs, d1.lows, 0.004);
+    const allLiq     = { buyLiq:[...new Set([...h4Liq.buyLiq,...d1Liq.buyLiq])].slice(-5), sellLiq:[...new Set([...h4Liq.sellLiq,...d1Liq.sellLiq])].slice(-5) };
+    const h4PD       = calcPremiumDiscount(h4.highs, h4.lows, currentPrice, 30);
+    const d1PD       = calcPremiumDiscount(d1.highs, d1.lows, currentPrice, 20);
+    const h4Breakers = findBreakerBlock(k4h);
+    const d1Breakers = findBreakerBlock(k1d);
+    const allBreakers= [...h4Breakers, ...d1Breakers];
+
     // ===========================================================
     //  LEVEL 3 — MOMENTUM (1H)
     // ===========================================================
@@ -880,6 +1183,14 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     const marketCondition=adx1h>=25?'TRENDING':adx1h>=20?'WEAK_TREND':'CHOPPY';
     const isChoppy=adx1h<20&&adx4h<25;
 
+    // [NEW] VWAP
+    const vwap1h = calcVWAP(k1h.slice(-24));
+    const vwap4h = calcVWAP(k4h.slice(-42));
+    const vwapBias = vwap1h ? (currentPrice > vwap1h ? 'ABOVE_VWAP' : 'BELOW_VWAP') : 'UNKNOWN';
+
+    // [NEW] Session context
+    const sessionCtx = getSessionContext(k1h);
+
     // ===========================================================
     //  LEVEL 4 — ENTRY TIMING (15m)
     // ===========================================================
@@ -889,7 +1200,7 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     const m15Div=detectDivergence(m15.closes,m15RSIArr);
     const m15MACD=calcMACD(m15.closes),m15Vol=detectVolumeSpike(m15.volumes);
     const m15FVGs=detectFVG(k15m,currentPrice);
-    const m15Candle=detectCandlePattern(k15m);
+    const m15Candle=detectCandlePattern(k15m);    // [UPGRADED] now returns {pattern,strength,bullish}
     const m15StochRSI=calcStochRSI(m15.closes);   // [F11]
     const m15CVD=calcCVDProxy(k15m,20);            // [F12]
 
@@ -899,6 +1210,12 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     const atr4h=calcATR(k4h,14);
     const atr1h=calcATR(k1h,14);
     const atr15m=calcATR(k15m,14);   // [F9]
+
+    // Preliminary direction for fib calculation (use 4H+1H structure)
+    const prelimBull = ['BOS_BULLISH','CHOCH_BULLISH'].includes(h4Struct) || ['BOS_BULLISH','CHOCH_BULLISH'].includes(h1Struct);
+    // [NEW] Fibonacci levels
+    const h4Fib   = calcFibLevels(h4.highs, h4.lows, prelimBull, 60);
+    const nearFib = nearestFib(h4Fib, currentPrice);
 
     // [6][7] Net Scoring — Weighted Direction
     let bullScore=0,bearScore=0;
@@ -918,16 +1235,20 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     // Funding rate (weight 1)
     if (fundingBias==='SHORTS_PAYING') bullScore+=1; else if (fundingBias==='LONGS_PAYING') bearScore+=1;
 
-    // 1H RSI extreme (weight 1)
-    if (h1RSI<35) bullScore+=1; else if (h1RSI>65) bearScore+=1;
+    // 1H RSI extreme — standard 30/70 thresholds (was too strict at 35/65)
+    if (h1RSI<30) bullScore+=1; else if (h1RSI>70) bearScore+=1;
 
-    // 1H StochRSI (weight 1) [F11]
+    // 1H StochRSI crossover (weight 1)
     if (h1StochRSI.k<20&&h1StochRSI.k>h1StochRSI.d) bullScore+=1;
     else if (h1StochRSI.k>80&&h1StochRSI.k<h1StochRSI.d) bearScore+=1;
 
     // 1H MACD fresh cross (weight 1)
     const h1MacdFreshCross=(h1MACD.histogram>0)!==(h1MACD.prevHistogram>0);
     if (h1MacdFreshCross){h1MACD.histogram>0?bullScore+=1:bearScore+=1;}
+
+    // 1H Bollinger Bands — price position scoring (weight 1)
+    if (currentPrice<=h1BB.lower*1.001) bullScore+=1;       // price at/below lower band
+    else if (currentPrice>=h1BB.upper*0.999) bearScore+=1;  // price at/above upper band
 
     // RSI Divergence (weight 1)
     if (h4Div==='BULLISH_DIV'||h1Div==='BULLISH_DIV') bullScore+=1;
@@ -937,16 +1258,82 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     if (m15Struct==='BOS_BULLISH'||m15Struct==='CHOCH_BULLISH') bullScore+=1;
     else if (m15Struct==='BOS_BEARISH'||m15Struct==='CHOCH_BEARISH') bearScore+=1;
 
-    // Volume + CVD confirmation (weight 1) [F12]
+    // Volume spike — standalone + CVD refined (weight 1)
     if (m15Vol.spike) {
+      // Volume spike alone gives 0.5 weight, CVD confirmation raises to 1
       if (m15CVD.bias==='BULL') bullScore+=1;
       else if (m15CVD.bias==='BEAR') bearScore+=1;
+      else {
+        // Volume spike without CVD — use MACD direction as tiebreaker
+        if (m15MACD.histogram>0) bullScore+=1;
+        else bearScore+=1;
+      }
     }
+
+    // H4 Order Block proximity — price near valid OB (weight 1)
+    if (h4OB) {
+      const obMid=(h4OB.high+h4OB.low)/2;
+      const distPct=Math.abs(currentPrice-obMid)/currentPrice;
+      if (distPct<0.015) {
+        if (h4OB.type==='BULL_OB') bullScore+=1;
+        else bearScore+=1;
+      }
+    }
+
+    // [NEW] OI change direction — confirms or warns (weight 1)
+    if (oiChange.change === 'INCREASING') {
+      // OI increasing + price direction = new money entering
+      if (h4Struct.includes('BULLISH') || h1Struct.includes('BULLISH')) bullScore += 1;
+      else bearScore += 1;
+    } else if (oiChange.change === 'DECREASING') {
+      // OI decreasing = positions closing, trend may exhaust
+      // No score — signal quality reduced
+    }
+
+    // [NEW] VWAP position (weight 1)
+    if (vwap1h) {
+      if (currentPrice > vwap1h * 1.002) bullScore += 1;  // above VWAP = bullish bias
+      else if (currentPrice < vwap1h * 0.998) bearScore += 1;
+    }
+
+    // [NEW] Premium/Discount zone scoring (weight 1)
+    // Best LONG entry = Discount zone, Best SHORT entry = Premium zone
+    if (h4PD.zone === 'DISCOUNT' || h4PD.zone === 'LOWER_EQ') bullScore += 1;
+    else if (h4PD.zone === 'PREMIUM' || h4PD.zone === 'UPPER_EQ') bearScore += 1;
+
+    // [NEW] Fibonacci golden zone proximity (618/786) (weight 1)
+    if (nearFib && nearFib.withinZone && (nearFib.level === 'fib618' || nearFib.level === 'fib786')) {
+      if (prelimBull) bullScore += 1;  // price at fib support in uptrend
+      else bearScore += 1;             // price at fib resistance in downtrend
+    }
+
+    // [NEW] Candle pattern scoring — strength-weighted (weight 1-2)
+    if (m15Candle.strength >= 2 && m15Candle.bullish !== null) {
+      if (m15Candle.bullish) bullScore += m15Candle.strength === 3 ? 2 : 1;
+      else bearScore += m15Candle.strength === 3 ? 2 : 1;
+    }
+
+    // [NEW] Breaker Block proximity — price near breaker zone (weight 1)
+    for (const b of allBreakers) {
+      const bMid = (b.high + b.low) / 2;
+      if (Math.abs(currentPrice - bMid) / currentPrice < 0.01) {
+        if (b.type === 'BULL_BREAKER') bullScore += 1;  // price at support breaker
+        else bearScore += 1;                             // price at resistance breaker
+        break;
+      }
+    }
+
+    // [NEW] Liquidity proximity — price near equal highs/lows (weight 1)
+    // Price sweeping sell-side liq below = bullish reversal incoming
+    const nearSellLiq = allLiq.sellLiq.some(l => Math.abs(currentPrice - l) / currentPrice < 0.005);
+    const nearBuyLiq  = allLiq.buyLiq.some(l => Math.abs(currentPrice - l) / currentPrice < 0.005);
+    if (nearSellLiq) bullScore += 1;  // sweeping lows = likely bullish reversal
+    if (nearBuyLiq)  bearScore += 1;  // sweeping highs = likely bearish reversal
 
     const netScore=bullScore-bearScore;
     const isBullish=netScore>0;
-    // [F6] Score reflects NET (bull-bear) normalized 0-10
-    const score=Math.max(0,Math.min(10,Math.round((netScore+13)/2.6)));
+    // Max possible bullScore ≈ 22 (3+2+2+1+1+1+1+1+1+1+1+1+1+1+2+1+1) → normalize to 0-10
+    const score=Math.max(0,Math.min(10,Math.round((netScore+22)/4.4)));
 
     // [10] HTF/LTF Conflict
     const htfBull=['BOS_BULLISH','CHOCH_BULLISH'].includes(d1Struct)||['BOS_BULLISH','CHOCH_BULLISH'].includes(h4Struct);
@@ -960,12 +1347,12 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     // [F2] Direction-aware entry zone
     const {entryLow,entryHigh}=calcEntryZone(isBullish,currentPrice,atr1h,atr15m);
 
-    // [9][F7][F10] Structure SL + SR-aware TP
-    const sl=calcStructureSL(isBullish,currentPrice,atr4h,h4OB,h4.highs,h4.lows,allSR);
+    // [v5] Structure SL — Liquidity + Fib + Breaker aware
+    const sl=calcStructureSLv5(isBullish,currentPrice,atr4h,h4OB,h4.highs,h4.lows,allSR,allLiq,h4Fib,allBreakers);
     const riskAmt=Math.abs(currentPrice-sl);
-    const tp1=calcSRAwareTP(isBullish,currentPrice,riskAmt,allSR,1.5);
-    const tp2=calcSRAwareTP(isBullish,currentPrice,riskAmt,allSR,2.5);
-    const tp3=calcSRAwareTP(isBullish,currentPrice,riskAmt,allSR,4.0);
+
+    // [v5] TP — Liquidity + Fib + Breaker target aware, day-trader optimized
+    const {tp1,tp2,tp3}=calcTPv5(isBullish,currentPrice,sl,allSR,allLiq,h4Fib,allBreakers);
 
     // [14] Signal freshness
     const signalTs=Date.now();
@@ -986,52 +1373,64 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
       ?`⚠️ CHOPPY MARKET: ADX 1H=${adx1h.toFixed(1)}, 4H=${adx4h.toFixed(1)}. Oscillator signals unreliable.`
       :`Trending market: ADX 1H=${adx1h.toFixed(1)}, 4H=${adx4h.toFixed(1)}.`;
 
-    const prompt=`You are a professional crypto futures analyst. Analyze this REAL calculated data for ${pair} and respond in the exact JSON format below. No markdown, no extra text.
+    const riskPct = parseFloat((Math.abs(currentPrice-sl)/currentPrice*100).toFixed(2));
+    const rrTp1   = riskAmt > 0 ? parseFloat((Math.abs(tp1-currentPrice)/riskAmt).toFixed(2)) : 0;
+    const rrTp2   = riskAmt > 0 ? parseFloat((Math.abs(tp2-currentPrice)/riskAmt).toFixed(2)) : 0;
+    const rrTp3   = riskAmt > 0 ? parseFloat((Math.abs(tp3-currentPrice)/riskAmt).toFixed(2)) : 0;
+
+    const prompt=`You are a professional crypto futures analyst. Analyze this REAL data for ${pair} and respond ONLY in the exact JSON below. No markdown, no extra text.
 
 LIVE PRICE: $${currentPrice}
-NET SCORE: Bull ${bullScore} vs Bear ${bearScore} → Net ${adjustedNetScore>0?'+':''}${adjustedNetScore} | Score: ${score}/10
+SCORE: Bull ${bullScore} vs Bear ${bearScore} → Net ${adjustedNetScore>0?'+':''}${adjustedNetScore} | ${score}/10
 ${conflictNote}
 ${choppyNote}
 
 === LEVEL 1: MACRO ===
-BTC 1D Trend: ${btcTrend1d} | BTC 4H Structure: ${btcStruct4h} | Combined: ${btcTrend}
+BTC 1D: ${btcTrend1d} | 4H: ${btcStruct4h} | Combined: ${btcTrend}
 BTC Price: $${btcClose1d.toFixed(2)} | EMA20:${btcEma20.toFixed(0)} EMA50:${btcEma50.toFixed(0)} EMA200:${btcEma200.toFixed(0)}
-Funding: ${fundingRate.toFixed(4)}% (${fundingBias}) | OI: ${openInterest?openInterest.toFixed(0):'N/A'}
+Funding: ${fundingRate.toFixed(4)}% (${fundingBias}) | OI: ${openInterest?openInterest.toFixed(0):'N/A'} | OI Change: ${oiChange.change} (${oiChange.pct}%)
 
 === LEVEL 2: HTF STRUCTURE ===
 Daily: ${d1Struct} | EMA20:${d1Ema20.toFixed(2)} EMA50:${d1Ema50.toFixed(2)} EMA200:${d1Ema200.toFixed(2)}
-Daily SR: ${d1SR.join(', ')} | Daily OB: ${d1OB?`${d1OB.type} H:${d1OB.high.toFixed(2)} L:${d1OB.low.toFixed(2)} explosive:${d1OB.explosive}`:'None'}
+Daily SR: ${d1SR.join(', ')} | OB: ${d1OB?`${d1OB.type} H:${d1OB.high.toFixed(2)} L:${d1OB.low.toFixed(2)}`:'None'}
 4H: ${h4Struct} | EMA20:${h4Ema20.toFixed(2)} EMA50:${h4Ema50.toFixed(2)} EMA200:${h4Ema200.toFixed(2)}
 4H RSI:${h4RSI} Div:${h4Div} | SR: ${h4SR.join(', ')}
-4H OB: ${h4OB?`${h4OB.type} H:${h4OB.high.toFixed(2)} L:${h4OB.low.toFixed(2)} explosive:${h4OB.explosive}`:'None'}
-4H FVG (unmitigated): ${JSON.stringify(h4FVGs)} | PrevDay H:${prevDayHigh.toFixed(2)} L:${prevDayLow.toFixed(2)}
+4H OB: ${h4OB?`${h4OB.type} H:${h4OB.high.toFixed(2)} L:${h4OB.low.toFixed(2)}`:'None'}
+4H FVG: ${JSON.stringify(h4FVGs)} | PrevDay H:${prevDayHigh.toFixed(2)} L:${prevDayLow.toFixed(2)}
+Buy-side Liq: ${allLiq.buyLiq.join(', ')||'None'} | Sell-side Liq: ${allLiq.sellLiq.join(', ')||'None'}
+Breakers: ${allBreakers.length>0?allBreakers.map(b=>`${b.type} H:${b.high.toFixed(2)} L:${b.low.toFixed(2)}`).join(' | '):'None'}
+Premium/Discount 4H: ${h4PD.zone} (${h4PD.pct}%) | Daily: ${d1PD.zone} (${d1PD.pct}%)
+Fibonacci: ${h4Fib?`618:${h4Fib.fib618} 786:${h4Fib.fib786} SwHi:${h4Fib.swingHigh} SwLo:${h4Fib.swingLow}`:'N/A'}
+Nearest Fib: ${nearFib?`${nearFib.level} @ ${nearFib.price} (${nearFib.distPct}% away${nearFib.withinZone?' IN ZONE':''})`: 'N/A'}
 
 === LEVEL 3: MOMENTUM 1H ===
 Structure: ${h1Struct} | EMA20:${h1Ema20.toFixed(2)} EMA50:${h1Ema50.toFixed(2)} EMA200:${h1Ema200.toFixed(2)}
 RSI:${h1RSI} Div:${h1Div} | StochRSI K:${h1StochRSI.k} D:${h1StochRSI.d}
 MACD:${h1MACD.macd.toFixed(4)} Sig:${h1MACD.signal.toFixed(4)} Hist:${h1MACD.histogram.toFixed(4)} FreshCross:${h1MacdFreshCross}
 BB Upper:${h1BB.upper.toFixed(2)} Mid:${h1BB.middle.toFixed(2)} Lower:${h1BB.lower.toFixed(2)}
-Volume spike:${h1Vol.spike} (${h1Vol.ratio}x) | CVD:${h1CVD.bias} Bull:${h1CVD.bullPct}% Bear:${h1CVD.bearPct}%
+Volume:${h1Vol.spike} (${h1Vol.ratio}x) | CVD:${h1CVD.bias} Bull:${h1CVD.bullPct}% Bear:${h1CVD.bearPct}%
+VWAP 1H:${vwap1h?vwap1h.toFixed(2):'N/A'} (${vwapBias}) | VWAP 4H:${vwap4h?vwap4h.toFixed(2):'N/A'}
 ADX:${adx1h.toFixed(1)} (${marketCondition}) | 1H FVG: ${JSON.stringify(h1FVGs)}
+Session: ${sessionCtx.current} | Asia:${sessionCtx.asia?`${sessionCtx.asia.high.toFixed(2)}/${sessionCtx.asia.low.toFixed(2)}`:'N/A'} London:${sessionCtx.london?`${sessionCtx.london.high.toFixed(2)}/${sessionCtx.london.low.toFixed(2)}`:'N/A'} NY:${sessionCtx.ny?`${sessionCtx.ny.high.toFixed(2)}/${sessionCtx.ny.low.toFixed(2)}`:'N/A'}
 
 === LEVEL 4: ENTRY TIMING 15m ===
 Structure: ${m15Struct} | EMA20:${m15Ema20.toFixed(2)} EMA50:${m15Ema50.toFixed(2)}
 RSI:${m15RSI} Div:${m15Div} | StochRSI K:${m15StochRSI.k} D:${m15StochRSI.d}
 MACD Hist:${m15MACD.histogram.toFixed(4)} FreshCross:${(m15MACD.histogram>0)!==(m15MACD.prevHistogram>0)}
-Candle:${m15Candle} | Volume:${m15Vol.spike} (${m15Vol.ratio}x) | CVD:${m15CVD.bias}
-15m FVG (unmitigated): ${JSON.stringify(m15FVGs)}
+Candle: ${m15Candle.pattern} (strength:${m15Candle.strength}/3${m15Candle.bullish!==null?','+(m15Candle.bullish?'BULL':'BEAR'):''})
+Volume:${m15Vol.spike} (${m15Vol.ratio}x) | CVD:${m15CVD.bias} | 15m FVG: ${JSON.stringify(m15FVGs)}
 ATR 4H:${atr4h.toFixed(4)} 1H:${atr1h.toFixed(4)} 15m:${atr15m.toFixed(4)}
 
 === LEVEL 5: TRADE SETUP ===
-Direction: ${isBullish?'LONG':'SHORT'} (Bull:${bullScore} Bear:${bearScore} Net:${adjustedNetScore})
-Entry Zone (direction-aware): $${entryLow} — $${entryHigh}
-SL (structure+ATR): $${sl}
-TP1:$${tp1} TP2:$${tp2} TP3:$${tp3} (SR-aware)
-Risk: ${(Math.abs(currentPrice-sl)/currentPrice*100).toFixed(2)}% | RR 1:1.5 / 1:2.5 / 1:4
-Conflict: ${conflictType} | Market: ${marketCondition} | Score: ${score}/10
+Direction: ${isBullish?'LONG':'SHORT'} | Bull:${bullScore} Bear:${bearScore} Net:${adjustedNetScore}
+Entry Zone (${isBullish?'pullback':'push'}): $${entryLow}–$${entryHigh}
+Stop Loss: $${sl} | Risk: ${riskPct}%
+TP1:$${tp1} (RR:${rrTp1}) | TP2:$${tp2} (RR:${rrTp2}) | TP3:$${tp3} (RR:${rrTp3})
+Zone quality: ${h4PD.zone} — ${h4PD.zone==='DISCOUNT'&&isBullish?'IDEAL LONG':h4PD.zone==='PREMIUM'&&!isBullish?'IDEAL SHORT':'SUBOPTIMAL'}
+Conflict:${conflictType} | Market:${marketCondition} | Score:${score}/10
 
 Respond ONLY in this JSON (no markdown):
-{"overallBias":"LONG or SHORT or NEUTRAL","confluenceScore":${score},"netScore":${adjustedNetScore},"grade":"S or A or B or C or D","conflictWarning":"${conflictType}","marketCondition":"${marketCondition}","level1":{"btcTrend":"one sentence","fundingSignal":"one sentence","oiSignal":"one sentence","macroConclusion":"BULLISH or BEARISH or NEUTRAL"},"level2":{"dailyStructure":"one sentence","h4Structure":"one sentence","keyLevels":"key SR to watch","orderBlock":"OB analysis","fvgZones":"FVG analysis","structureConclusion":"BULLISH or BEARISH or NEUTRAL"},"level3":{"h1Structure":"one sentence","rsiSignal":"RSI + StochRSI combined","divergence":"div analysis","macdSignal":"one sentence","bollingerSignal":"one sentence","volumeCVD":"volume + CVD analysis","adxSignal":"trend strength","momentumConclusion":"STRONG_BULL or BULL or NEUTRAL or BEAR or STRONG_BEAR"},"level4":{"m15Structure":"one sentence","entryTiming":"RSI + StochRSI + candle combined","macdCross":"one sentence","volumeConfirm":"volume + CVD","fvgEntry":"FVG entry zone analysis","sessionNote":"session timing","entryConclusion":"CONFIRMED or WAIT or AVOID"},"level5":{"direction":"${isBullish?'LONG':'SHORT'}","entryZone":"$${entryLow} — $${entryHigh}","stopLoss":"$${sl}","tp1":"$${tp1}","tp2":"$${tp2}","tp3":"$${tp3}","invalidationLevel":"key level","leverage":"range based on volatility","positionSize":"1-2% risk guidance","tradeManagement":"SL to BE + trail plan","reEntry":"re-entry conditions","riskNote":"full risk summary"},"summary":"2-3 sentence summary","warning":"major risks including conflict, chop, news"}`;
+{"overallBias":"LONG or SHORT or NEUTRAL","confluenceScore":${score},"netScore":${adjustedNetScore},"grade":"S or A or B or C or D","conflictWarning":"${conflictType}","marketCondition":"${marketCondition}","level1":{"btcTrend":"one sentence","fundingSignal":"one sentence","oiChange":"interpret OI change — new money or closing?","macroConclusion":"BULLISH or BEARISH or NEUTRAL"},"level2":{"dailyStructure":"one sentence","h4Structure":"one sentence","keyLevels":"key SR levels to watch","orderBlock":"OB analysis","breakerBlocks":"breaker block analysis if any","fvgZones":"FVG analysis","liquidityZones":"buy/sell liquidity targets — where price may hunt","fibonacci":"fib zone analysis — is price at golden zone 618/786?","premiumDiscount":"zone quality for this trade direction","structureConclusion":"BULLISH or BEARISH or NEUTRAL"},"level3":{"h1Structure":"one sentence","rsiSignal":"RSI+StochRSI combined","divergence":"divergence type and meaning","macdSignal":"one sentence","bollingerSignal":"one sentence","vwapSignal":"VWAP position analysis","volumeCVD":"volume+CVD analysis","sessionContext":"current session risk and key session levels","adxSignal":"trend strength","momentumConclusion":"STRONG_BULL or BULL or NEUTRAL or BEAR or STRONG_BEAR"},"level4":{"m15Structure":"one sentence","entryTiming":"RSI+StochRSI+candle combined","candleAnalysis":"${m15Candle.pattern} pattern significance","macdCross":"one sentence","volumeConfirm":"volume+CVD","fvgEntry":"nearest FVG entry zone","entryConclusion":"CONFIRMED or WAIT or AVOID"},"level5":{"direction":"${isBullish?'LONG':'SHORT'}","entryZone":"$${entryLow}–$${entryHigh}","stopLoss":"$${sl}","slLogic":"why this SL is safe — structure+liq below/above","tp1":"$${tp1} (RR:${rrTp1})","tp2":"$${tp2} (RR:${rrTp2})","tp3":"$${tp3} (RR:${rrTp3})","tpLogic":"TP targets reasoning — liq/fib/SR levels used","invalidationLevel":"exact price that invalidates setup","leverage":"specific range e.g. 3-5x","positionSize":"1-2% account risk sizing guidance","tradeManagement":"SL to BE plan + trail + partial close","reEntry":"conditions for valid re-entry if stopped","riskNote":"full risk — conflict, session trap, liquidity hunt, news"},"summary":"2-3 sentence day-trader summary","warning":"specific risks this setup faces"}`;
 
     const groqRes=await fetch('https://api.groq.com/openai/v1/chat/completions',{
       method:'POST',
