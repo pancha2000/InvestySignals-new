@@ -331,18 +331,17 @@ cmd_fix_sa() {
   warn "→ 'Generate new private key' → JSON file open කරන්න"
   echo ""
   info "JSON content සම්පූර්ණයෙන් copy කරලා paste කරන්න"
-  info "Paste කළාට Enter press කරලා Ctrl+D press කරන්න:"
+  info "Paste කළාට නව line එකේ:  END  type කරලා Enter press කරන්න"
   echo ""
 
   python3 - << 'PYEOF'
 import sys, json, os
 
 lines = []
-try:
-    for line in sys.stdin:
-        lines.append(line)
-except EOFError:
-    pass
+for line in sys.stdin:
+    if line.strip() == 'END':
+        break
+    lines.append(line)
 
 content = ''.join(lines).strip()
 
