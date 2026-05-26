@@ -310,36 +310,7 @@ app.get('/api/paper/balance', verifyToken, async (req, res) => {
   catch(err) { res.status(500).json({ success:false, error:err.message }); }
 });
 
-app.post('/api/paper/trade', verifyToken, async (req, res) => {
-  try {
-    const {signalId,size}=req.body;
-    const ts=parseFloat(size);
-    if (!ts||ts<=0||ts>100000||!isFinite(ts)) return res.status(400).json({ success:false, error:'Invalid trade size.' });
-    const signal=await Signal.findById(signalId);
-    if (!signal) return res.json({ success:false, error:'Signal not found' });
-    const u=await User.findOne({uid:req.user.uid});
-    if (u&&u.paperBalance<ts) return res.json({ success:false, error:'Insufficient paper balance' });
-    const trade=await PaperTrade.create({userUid:req.user.uid,signalId:signal._id,pair:signal.pair,direction:signal.direction,entry:signal.entry,tp1:signal.tp1,tp2:signal.tp2,sl:signal.sl,leverage:signal.leverage,size:ts,status:'OPEN'});
-    if (u) await User.updateOne({uid:req.user.uid},{$inc:{paperBalance:-ts}});
-    res.json({ success:true, trade });
-  } catch(err) { res.status(500).json({ success:false, error:err.message }); }
-});
-
-app.patch('/api/paper/trade/:id/close', verifyToken, async (req, res) => {
-  try {
-    const trade=await PaperTrade.findOne({_id:req.params.id,userUid:req.user.uid});
-    if (!trade) return res.status(404).json({ success:false, error:'Trade not found' });
-    if (trade.status!=='OPEN') return res.json({ success:false, error:'Already closed' });
-    const cp=parseFloat(req.body.closePrice);
-    if (!cp||cp<=0||!isFinite(cp)) return res.status(400).json({ success:false, error:'Invalid close price.' });
-    const pd=trade.direction==='LONG'?cp-trade.entry:trade.entry-cp;
-    const pnlPct=(pd/trade.entry)*trade.leverage*100;
-    const pnl=parseFloat(((pnlPct/100)*trade.size).toFixed(2));
-    const closed=await PaperTrade.findByIdAndUpdate(trade._id,{status:'CLOSED',closePrice:cp,closedAt:new Date(),pnl,pnlPct:parseFloat(pnlPct.toFixed(2))},{new:true});
-    await User.updateOne({uid:req.user.uid},{$inc:{paperBalance:trade.size+pnl}});
-    res.json({ success:true, trade:closed });
-  } catch(err) { res.status(500).json({ success:false, error:err.message }); }
-});
+// NOTE: old duplicate endpoint removed — new full endpoint is below
 
 app.post('/api/reports', async (req, res) => {
   try {

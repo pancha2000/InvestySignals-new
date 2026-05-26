@@ -928,7 +928,7 @@ function renderFullAnalysis(data, container) {
                 ${indRow('Order Block (1D)', '', obHtml(r.d1OB))}
                 ${indRow('Volume Spike (1H)', r.h1Vol?.ratio!=null?r.h1Vol.ratio+'x avg':'—', volSignal(r.h1Vol?.ratio, r.h1Vol?.spike))}
                 ${indRow('Volume Spike (15m)', r.m15Vol?.ratio!=null?r.m15Vol.ratio+'x avg':'—', volSignal(r.m15Vol?.ratio, r.m15Vol?.spike))}
-                ${indRow('Candle (15m)', r.m15Candle?.pattern?(r.m15Candle.pattern.replace(/_/g,' ')):'—', signalPill(r.m15Candle?.pattern?.includes('BULL')||r.m15Candle?.pattern?.includes('ENGULF')||r.m15Candle?.pattern?.includes('PIN_BAR_BULL')?'🟢 Bullish':r.m15Candle?.pattern?.includes('BEAR')?'🔴 Bearish':'Neutral', r.m15Candle?.pattern?.includes('BULL')?'bull':r.m15Candle?.pattern?.includes('BEAR')?'bear':'neut'))}
+                ${indRow('Candle (15m)', r.m15Candle?(r.m15Candle.replace(/_/g,' ')):'—', signalPill(r.m15Candle?.includes('BULL')||r.m15Candle?.includes('ENGULF')||r.m15Candle?.includes('PIN_BAR_BULL')?'🟢 Bullish':r.m15Candle?.includes('BEAR')?'🔴 Bearish':'Neutral', r.m15Candle?.includes('BULL')?'bull':r.m15Candle?.includes('BEAR')?'bear':'neut'))}
                 ${indRow('Prev Day H/L', r.prevDayHigh&&r.prevDayLow?`H: $${r.prevDayHigh.toFixed(4)} / L: $${r.prevDayLow.toFixed(4)}`:'—', '')}
                 ${indRow('ATR (4H)', r.atr4h?'$'+r.atr4h.toFixed(4):'—', '')}
                 ${indRow('ATR (1H)', r.atr1h?'$'+r.atr1h.toFixed(4):'—', '')}
@@ -1065,11 +1065,12 @@ function buildPaperTradePanel(data) {
         <div class="pt-balance-chip" id="ptBalChip">Balance: $—</div>
     </div>
 
-    <!-- Order type toggle -->
+    <!-- Order type toggle — auto set by analysis, user can still override -->
     <div class="pt-order-toggle">
         <button class="pt-order-btn active ${isLong?'long-active':'short-active'}" id="ptBtnMkt" onclick="ptSetOrderType('MARKET')">⚡ MARKET</button>
         <button class="pt-order-btn" id="ptBtnLmt" onclick="ptSetOrderType('LIMIT')">🎯 LIMIT</button>
     </div>
+    <div style="font-size:0.65rem;color:var(--text-muted);text-align:center;margin:-4px 0 6px;">📊 Analysis result මත auto-set වෙනවා</div>
 
     <!-- Direction & Size -->
     <div class="pt-row">
@@ -1392,7 +1393,42 @@ function showBalMsg(msg, isErr=false) {
 async function initPaperTrade() {
     await ptLoadBalance();
     await ptLoadTrades();
-    ptSetOrderType('MARKET');
+
+    // Auto-detect order type from analysis
+    const a = ptCurrentData?.analysis;
+    const entryConclusion = a?.level4?.entryConclusion || '';
+    const overallBias     = a?.overallBias || 'NEUTRAL';
+    const raw             = ptCurrentData?.rawData || {};
+
+    // If analysis says WAIT → LIMIT order (price not at entry yet)
+    // If analysis says CONFIRMED → MARKET order (price is at entry now)
+    // If AVOID → still allow but default LIMIT as safer
+    let autoType = 'LIMIT'; // safe default
+    if (entryConclusion === 'CONFIRMED') autoType = 'MARKET';
+
+    ptSetOrderType(autoType);
+
+    // Make direction readonly (analysis decides direction)
+    const dirInput = document.getElementById('ptDir');
+    if (dirInput) {
+        dirInput.readOnly = true;
+        dirInput.style.cursor = 'not-allowed';
+        dirInput.title = 'Direction is set by analysis';
+    }
+
+    // Show a small info badge about why this order type was chosen
+    const msgEl = document.getElementById('ptMsg');
+    if (msgEl) {
+        const label = entryConclusion === 'CONFIRMED'
+            ? '✅ Entry CONFIRMED — Market order set automatically'
+            : entryConclusion === 'WAIT'
+            ? '⏳ Entry is WAIT — Limit order set (safer entry)'
+            : '⚠️ Entry is ' + (entryConclusion||'unknown') + ' — Limit order set by default';
+        const color = entryConclusion === 'CONFIRMED' ? 'var(--green)'
+                    : entryConclusion === 'AVOID'     ? 'var(--red)'
+                    : 'var(--gold)';
+        msgEl.innerHTML = `<span style="color:${color};font-size:0.72rem;">${label}</span>`;
+    }
 }
 
 // WS events for trade updates
