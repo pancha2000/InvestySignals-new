@@ -928,7 +928,7 @@ function renderFullAnalysis(data, container) {
                 ${indRow('Order Block (1D)', '', obHtml(r.d1OB))}
                 ${indRow('Volume Spike (1H)', r.h1Vol?.ratio!=null?r.h1Vol.ratio+'x avg':'—', volSignal(r.h1Vol?.ratio, r.h1Vol?.spike))}
                 ${indRow('Volume Spike (15m)', r.m15Vol?.ratio!=null?r.m15Vol.ratio+'x avg':'—', volSignal(r.m15Vol?.ratio, r.m15Vol?.spike))}
-                ${indRow('Candle (15m)', r.m15Candle?(r.m15Candle.replace(/_/g,' ')):'—', signalPill(r.m15Candle?.includes('BULL')||r.m15Candle?.includes('ENGULF')||r.m15Candle?.includes('PIN_BAR_BULL')?'🟢 Bullish':r.m15Candle?.includes('BEAR')?'🔴 Bearish':'Neutral', r.m15Candle?.includes('BULL')?'bull':r.m15Candle?.includes('BEAR')?'bear':'neut'))}
+                ${indRow('Candle (15m)', r.m15Candle?.pattern?(r.m15Candle.pattern.replace(/_/g,' ')):'—', signalPill(r.m15Candle?.pattern?.includes('BULL')||r.m15Candle?.pattern?.includes('ENGULF')||r.m15Candle?.pattern?.includes('PIN_BAR_BULL')?'🟢 Bullish':r.m15Candle?.pattern?.includes('BEAR')?'🔴 Bearish':'Neutral', r.m15Candle?.pattern?.includes('BULL')?'bull':r.m15Candle?.pattern?.includes('BEAR')?'bear':'neut'))}
                 ${indRow('Prev Day H/L', r.prevDayHigh&&r.prevDayLow?`H: $${r.prevDayHigh.toFixed(4)} / L: $${r.prevDayLow.toFixed(4)}`:'—', '')}
                 ${indRow('ATR (4H)', r.atr4h?'$'+r.atr4h.toFixed(4):'—', '')}
                 ${indRow('ATR (1H)', r.atr1h?'$'+r.atr1h.toFixed(4):'—', '')}
