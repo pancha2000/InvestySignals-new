@@ -6,161 +6,101 @@
     <title>Paper Trading | InvestySignals</title>
     <link rel="stylesheet" href="style.css">
     <style>
-        .dash-container {
-            padding: 100px 24px 40px;
-            max-width: 1200px;
-            margin: 0 auto;
-            width: 100%;
-        }
+        .dash-container { padding: 100px 24px 40px; max-width: 1200px; margin: 0 auto; width: 100%; }
         .balance-bar {
-            background: linear-gradient(135deg, var(--bg2) 0%, rgba(245, 200, 66, 0.05) 100%);
-            border: 1px solid var(--border-soft);
-            border-radius: var(--radius);
-            padding: 28px 32px;
-            margin-bottom: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-end;
-            flex-wrap: wrap;
-            gap: 20px;
+            background: linear-gradient(135deg, var(--bg2) 0%, rgba(245,200,66,0.05) 100%);
+            border: 1px solid var(--border-soft); border-radius: var(--radius);
+            padding: 28px 32px; margin-bottom: 20px;
+            display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 20px;
         }
         .balance-group { display: flex; gap: 40px; flex-wrap: wrap; }
         .balance-item { display: flex; flex-direction: column; gap: 6px; }
-        .b-label {
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-        }
-        .b-val {
-            font-family: 'Space Grotesk', sans-serif;
-            font-size: 2.25rem;
-            font-weight: 800;
-            color: var(--text);
-        }
+        .b-label { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; }
+        .b-val { font-family: 'Space Grotesk', sans-serif; font-size: 2.25rem; font-weight: 800; color: var(--text); }
         .b-val.gold { color: var(--gold); }
         .b-val.green { color: var(--green); }
         .b-val.red { color: var(--red); }
 
-        .stats-strip {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 16px;
-            margin-bottom: 28px;
-        }
-        .ss-card {
-            background: var(--bg2);
-            border: 1px solid var(--border-soft);
-            border-radius: var(--radius-sm);
-            padding: 16px 20px;
-        }
+        .stats-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px; }
+        .ss-card { background: var(--bg2); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); padding: 16px 20px; }
         .ss-label { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
         .ss-val { font-family: 'JetBrains Mono', monospace; font-size: 1.25rem; font-weight: 700; }
 
-        .tabs {
-            display: flex;
-            gap: 28px;
-            border-bottom: 1px solid var(--border-soft);
-            margin-bottom: 24px;
-            overflow-x: auto;
-        }
-        .tab-btn {
-            background: none;
-            border: none;
-            padding: 0 0 14px;
-            color: var(--text-muted);
-            font-size: 0.95rem;
-            font-weight: 500;
-            cursor: pointer;
-            position: relative;
-            white-space: nowrap;
-            font-family: 'Space Grotesk', sans-serif;
-            transition: var(--transition);
-        }
+        .tabs { display: flex; gap: 28px; border-bottom: 1px solid var(--border-soft); margin-bottom: 24px; overflow-x: auto; }
+        .tab-btn { background: none; border: none; padding: 0 0 14px; color: var(--text-muted); font-size: 0.95rem; font-weight: 500; cursor: pointer; position: relative; white-space: nowrap; font-family: 'Space Grotesk', sans-serif; transition: var(--transition); }
         .tab-btn:hover { color: var(--text); }
         .tab-btn.active { color: var(--gold); }
-        .tab-btn.active::after {
-            content: '';
-            position: absolute;
-            bottom: -1px; left: 0; right: 0;
-            height: 2px;
-            background: var(--gold);
-            border-radius: 2px;
-        }
-
+        .tab-btn.active::after { content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 2px; background: var(--gold); border-radius: 2px; }
         .tab-panel { display: none; }
         .tab-panel.active { display: block; }
 
         /* Empty state */
-        .empty-state-panel {
-            background: var(--bg2);
-            border: 1px solid var(--border-soft);
-            border-radius: var(--radius);
-            padding: 64px 24px;
-            text-align: center;
-            color: var(--text-muted);
-        }
+        .empty-state-panel { background: var(--bg2); border: 1px solid var(--border-soft); border-radius: var(--radius); padding: 64px 24px; text-align: center; color: var(--text-muted); }
         .empty-icon { font-size: 2.5rem; margin-bottom: 16px; opacity: 0.4; }
         .empty-state-panel h3 { color: var(--text); margin-bottom: 8px; font-size: 1.2rem; }
         .empty-state-panel p { font-size: 0.88rem; max-width: 360px; margin: 0 auto; }
 
-        /* Trade card (for when real trades exist) */
-        .trade-card {
-            background: var(--bg2);
-            border: 1px solid var(--border-soft);
-            border-radius: var(--radius);
-            padding: 24px;
-            margin-bottom: 16px;
-            transition: var(--transition);
-        }
+        /* Trade Cards */
+        .trade-card { background: var(--bg2); border: 1px solid var(--border-soft); border-radius: var(--radius); padding: 20px 24px; margin-bottom: 14px; transition: var(--transition); }
         .trade-card:hover { border-color: rgba(245,200,66,0.2); }
-        .tc-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 16px;
-        }
-        .tc-pair {
-            font-family: 'Space Grotesk', sans-serif;
-            font-size: 1.1rem;
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .tc-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 14px;
-        }
+        .trade-card.pending { border-color: rgba(245,200,66,0.25); background: linear-gradient(135deg, var(--bg2) 0%, rgba(245,200,66,0.03) 100%); }
+        .trade-card.tp1-hit { border-color: rgba(0,255,136,0.25); background: linear-gradient(135deg, var(--bg2) 0%, rgba(0,255,136,0.03) 100%); }
+        .trade-card.closed-win { border-color: rgba(0,255,136,0.2); opacity: 0.85; }
+        .trade-card.closed-loss { border-color: rgba(255,61,90,0.2); opacity: 0.85; }
+
+        .tc-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px; }
+        .tc-pair { font-family: 'Space Grotesk', sans-serif; font-size: 1.05rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+        .tc-badges { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+        .tc-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+        .tc-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 14px; }
         .tc-item { display: flex; flex-direction: column; gap: 4px; }
-        .tc-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; }
-        .tc-val { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 0.9rem; }
+        .tc-label { font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+        .tc-val { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 0.88rem; }
 
-        .new-trade-btn {
-            background: var(--gold);
-            color: var(--bg);
-            border: none;
-            padding: 10px 20px;
-            border-radius: 100px;
-            font-weight: 600;
-            cursor: pointer;
-            font-family: 'Space Grotesk', sans-serif;
-            transition: var(--transition);
-            font-size: 0.9rem;
-        }
-        .new-trade-btn:hover { background: var(--gold-dark); transform: translateY(-1px); }
+        /* Live price progress bar */
+        .tc-prog-wrap { margin: 10px 0 6px; }
+        .tc-prog-labels { display: flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-bottom: 5px; font-family: 'JetBrains Mono', monospace; }
+        .tc-prog-track { height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; position: relative; overflow: hidden; }
+        .tc-prog-fill { height: 100%; border-radius: 3px; background: var(--gold); transition: width 0.5s ease; }
+        .tc-prog-fill.bull { background: linear-gradient(90deg, rgba(0,255,136,0.4), var(--green)); }
+        .tc-prog-fill.danger { background: linear-gradient(90deg, rgba(255,61,90,0.4), var(--red)); }
 
-        @media (max-width: 992px) {
-            .stats-strip { grid-template-columns: repeat(2, 1fr); }
-            .b-val { font-size: 1.75rem; }
-        }
-        @media (max-width: 600px) {
-            .tc-grid { grid-template-columns: repeat(2, 1fr); }
-            .balance-bar { padding: 20px; }
-            .balance-group { gap: 24px; }
-            .b-val { font-size: 1.5rem; }
-        }
+        /* PnL Row */
+        .tc-pnl-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: rgba(255,255,255,0.03); border-radius: var(--radius-sm); border: 1px solid var(--border-dim); margin-top: 8px; flex-wrap: wrap; gap: 8px; }
+        .pnl-grp { display: flex; flex-direction: column; }
+        .pnl-lbl { font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 2px; }
+        .pnl-num { font-family: 'JetBrains Mono', monospace; font-size: 1.1rem; font-weight: 700; }
+
+        /* BE notice */
+        .be-notice { font-size: 0.78rem; color: var(--green); background: rgba(0,255,136,0.06); border: 1px solid rgba(0,255,136,0.2); border-radius: var(--radius-sm); padding: 8px 12px; margin-top: 8px; }
+
+        /* Pending notice */
+        .pending-notice { font-size: 0.8rem; color: var(--gold); background: rgba(245,200,66,0.06); border: 1px solid rgba(245,200,66,0.2); border-radius: var(--radius-sm); padding: 8px 12px; margin-top: 8px; }
+
+        /* History table */
+        .hist-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .hist-table th { padding: 10px 14px; text-align: left; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); border-bottom: 1px solid var(--border-soft); background: rgba(255,255,255,0.02); }
+        .hist-table td { padding: 12px 14px; border-bottom: 1px solid var(--border-dim); vertical-align: middle; }
+        .hist-table tr:hover td { background: rgba(255,255,255,0.01); }
+
+        /* Balance set modal */
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
+        .modal-overlay.open { display: flex; }
+        .modal-box { background: var(--bg2); border: 1px solid var(--border-soft); border-radius: var(--radius); padding: 32px; max-width: 440px; width: 90%; }
+        .modal-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 8px; }
+        .modal-sub { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 24px; line-height: 1.5; }
+
+        .new-trade-btn { background: var(--gold); color: var(--bg); border: none; padding: 10px 20px; border-radius: 100px; font-weight: 600; cursor: pointer; font-family: 'Space Grotesk', sans-serif; transition: var(--transition); font-size: 0.9rem; }
+        .new-trade-btn:hover { opacity: 0.88; transform: translateY(-1px); }
+        .btn-sm { padding: 6px 14px; font-size: 0.8rem; border-radius: 8px; border: 1px solid var(--border-soft); background: var(--surface); color: var(--text); cursor: pointer; font-family: 'Space Grotesk', sans-serif; transition: var(--transition); }
+        .btn-sm:hover { border-color: var(--border); }
+        .btn-sm.danger { border-color: rgba(255,61,90,0.3); color: var(--red); }
+        .btn-sm.danger:hover { background: rgba(255,61,90,0.08); }
+        .btn-sm.success { border-color: rgba(0,255,136,0.3); color: var(--green); }
+
+        @media (max-width: 992px) { .stats-strip { grid-template-columns: repeat(2, 1fr); } .b-val { font-size: 1.75rem; } .tc-grid { grid-template-columns: repeat(3, 1fr); } }
+        @media (max-width: 600px) { .tc-grid { grid-template-columns: repeat(2, 1fr); } .balance-bar { padding: 20px; } .balance-group { gap: 24px; } .b-val { font-size: 1.5rem; } .dash-container { padding: 88px 16px 40px; } }
     </style>
 </head>
 <body>
@@ -197,6 +137,24 @@
         </div>
     </nav>
 
+    <!-- Balance Set / Request Modal -->
+    <div class="modal-overlay" id="balModal">
+        <div class="modal-box">
+            <div class="modal-title" id="balModalTitle">💰 Set Your Paper Balance</div>
+            <div class="modal-sub" id="balModalSub">ඔබේ paper trading balance set කරන්න. <strong>මෙය එකවරක් පමණයි</strong> ඔබට directly set කරන්න පුළුවන්. ඊට පසු admin approval අවශ්‍යයි.</div>
+            <div style="margin-bottom:16px;">
+                <label style="font-size:0.8rem;color:var(--text-muted);display:block;margin-bottom:8px;">Amount (USDT)</label>
+                <input type="number" id="balModalInput" placeholder="e.g. 1000" min="100" max="1000000" step="100"
+                    style="width:100%;padding:12px 16px;background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--radius-sm);color:var(--text);font-size:1rem;font-family:'JetBrains Mono',monospace;">
+            </div>
+            <div id="balModalMsg" style="font-size:0.82rem;margin-bottom:12px;display:none;"></div>
+            <div style="display:flex;gap:10px;">
+                <button class="new-trade-btn" id="balModalBtn" style="font-size:0.9rem;padding:10px 24px;">Set Balance</button>
+                <button class="btn-sm" onclick="document.getElementById('balModal').classList.remove('open')">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <div class="dash-container">
 
         <!-- Balance Overview -->
@@ -204,19 +162,20 @@
             <div class="balance-group">
                 <div class="balance-item">
                     <div class="b-label">Virtual Balance</div>
-                    <div class="b-val" id="virtualBalance">$10,000.00</div>
-                </div>
-                <div class="balance-item">
-                    <div class="b-label">Equity</div>
-                    <div class="b-val gold" id="equityVal">$10,000.00</div>
+                    <div class="b-val" id="virtualBalance">—</div>
                 </div>
                 <div class="balance-item">
                     <div class="b-label">Unrealized P&L</div>
-                    <div class="b-val" id="unrealizedPL" style="color: var(--text-muted);">$0.00</div>
+                    <div class="b-val" id="unrealizedPL" style="color:var(--text-muted);">$0.00</div>
+                </div>
+                <div class="balance-item">
+                    <div class="b-label">Total P&L</div>
+                    <div class="b-val" id="totalPLTop" style="color:var(--text-muted);">$0.00</div>
                 </div>
             </div>
-            <div>
-                <button class="new-trade-btn" id="resetBalanceBtn">Reset Balance</button>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                <button class="btn-sm" id="reqBalBtn" style="font-size:0.82rem;">💰 Request Balance Reset</button>
+                <a href="analysis.html" class="new-trade-btn" style="text-decoration:none;font-size:0.88rem;">🧠 New Analysis</a>
             </div>
         </div>
 
@@ -232,40 +191,58 @@
             </div>
             <div class="ss-card">
                 <div class="ss-label">Win Rate</div>
-                <div class="ss-val" id="winRate" style="color: var(--text-muted);">—</div>
+                <div class="ss-val" id="winRate" style="color:var(--text-muted);">—</div>
             </div>
             <div class="ss-card">
-                <div class="ss-label">Total P&L</div>
-                <div class="ss-val" id="totalPL" style="color: var(--text-muted);">$0.00</div>
+                <div class="ss-label">Closed P&L</div>
+                <div class="ss-val" id="totalPL" style="color:var(--text-muted);">$0.00</div>
             </div>
         </div>
 
         <!-- Tabs -->
         <div class="tabs">
-            <button class="tab-btn active" data-tab="open">Open Trades</button>
-            <button class="tab-btn" data-tab="history">Trade History</button>
+            <button class="tab-btn active" data-tab="open">📂 Open Trades</button>
+            <button class="tab-btn" data-tab="pending">⏳ Pending <span id="pendingCount" style="display:none;background:var(--gold);color:#000;font-size:0.65rem;padding:1px 6px;border-radius:100px;margin-left:4px;"></span></button>
+            <button class="tab-btn" data-tab="history">🕐 History</button>
         </div>
 
         <!-- Open Trades Tab -->
         <div class="tab-panel active" id="tab-open">
-            <div class="empty-state-panel">
-                <div class="empty-icon">📋</div>
-                <h3>No Open Trades</h3>
-                <p>You have no open paper trades. Use the Analysis page to identify setups and track them here.</p>
+            <div id="openTradesContainer">
+                <div class="empty-state-panel">
+                    <div class="empty-icon">📋</div>
+                    <h3>No Open Trades</h3>
+                    <p>Run a deep analysis and open a paper trade from the Analysis page.</p>
+                    <a href="analysis.html" class="new-trade-btn" style="display:inline-block;margin-top:20px;text-decoration:none;">🧠 Go to Analysis</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pending Tab -->
+        <div class="tab-panel" id="tab-pending">
+            <div id="pendingTradesContainer">
+                <div class="empty-state-panel">
+                    <div class="empty-icon">⏳</div>
+                    <h3>No Pending Orders</h3>
+                    <p>Limit orders waiting to fill will appear here.</p>
+                </div>
             </div>
         </div>
 
         <!-- History Tab -->
         <div class="tab-panel" id="tab-history">
-            <div class="empty-state-panel">
-                <div class="empty-icon">🕐</div>
-                <h3>No Trade History</h3>
-                <p>Closed trades will appear here once you start recording paper trades.</p>
+            <div id="historyContainer">
+                <div class="empty-state-panel">
+                    <div class="empty-icon">🕐</div>
+                    <h3>No Trade History</h3>
+                    <p>Closed trades appear here once you open and close paper trades.</p>
+                </div>
             </div>
         </div>
 
     </div>
 
+    <!-- Firebase Auth -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
         import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
@@ -275,112 +252,472 @@
             storageBucket:"investysignals-890ba.firebasestorage.app", messagingSenderId:"1045281522975",
             appId:"1:1045281522975:web:47c4b8d32c5f235a7bdc2a"
         }));
-
         onAuthStateChanged(auth, async (user) => {
             if (!user) { window.location.href = 'login.html'; return; }
-
-            /* Maintenance + suspend check */
             try {
                 const sr = await fetch('/api/user/status', { headers: { 'Authorization': 'Bearer ' + (await user.getIdToken()) } });
                 const sj = await sr.json();
                 if (sj.success) {
                     if (sj.status.maintenance) { document.body.innerHTML='<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg,#0a0e1a);flex-direction:column;gap:16px;font-family:Space Grotesk,sans-serif;text-align:center;padding:24px"><div style="font-size:3rem">🔧</div><div style="font-size:1.8rem;font-weight:700;color:#f0f0f0">Under Maintenance</div></div>'; return; }
-                    if (sj.status.suspended) { document.body.innerHTML='<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg,#0a0e1a);flex-direction:column;gap:20px;font-family:Space Grotesk,sans-serif;text-align:center;padding:24px"><div style="font-size:3rem">🚫</div><div style="font-size:1.8rem;font-weight:700;color:#ff3d5a">Account Suspended</div></div>'; return; }
+                    if (sj.status.suspended) { document.body.innerHTML='<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg,#0a0e1a);flex-direction:column;gap:20px;font-family:Space Grotesk,sans-serif;text-align:center;padding:24px"><div style="font-size:3rem">🚫</div><div style="font-size:1.8rem;font-weight:700;color:#ff3d5a">Account Suspended</div><div style="color:#9ca3af">${sj.status.suspendReason||''}</div></div>'; return; }
+                    if (sj.status.role === 'admin') {
+                        const adminLink = document.createElement('a');
+                        adminLink.href = 'admin.html'; adminLink.className = 'auth-nav-link'; adminLink.textContent = '⚙️ Admin';
+                        adminLink.style.color = 'var(--gold)';
+                        const menu = document.getElementById('authNavMenu'); if(menu) menu.insertBefore(adminLink, menu.lastChild);
+                    }
                 }
             } catch(_) {}
-
             window._auth = auth;
             window.handleSignOut = async () => { try { await signOut(auth); } catch(e) {} window.location.href = 'index.html'; };
             window._currentUser = user;
             const name = user.displayName || user.email?.split('@')[0] || 'Trader';
             const av = document.getElementById('userAvatar'); if(av) av.textContent = name.charAt(0).toUpperCase();
             const un = document.getElementById('userName');   if(un) un.textContent = name;
-            await loadPaperData(user);
-
-            /* Poll for maintenance/suspend */
+            await initPaperTrade(user);
             setInterval(async () => {
                 try { const r=await fetch('/api/user/status', { headers: { 'Authorization': 'Bearer ' + (await user.getIdToken()) } }); const j=await r.json(); if(j.success&&(j.status.maintenance||j.status.suspended))window.location.reload(); } catch(_) {}
             }, 15000);
         });
-
-        async function loadPaperData(user) {
-            try {
-                const idToken = await user.getIdToken();
-                const [tr, bl] = await Promise.all([
-                    fetch('/api/paper/trades', { headers: { Authorization: 'Bearer ' + idToken } }).then(r => r.json()),
-                    fetch('/api/paper/balance', { headers: { Authorization: 'Bearer ' + idToken } }).then(r => r.json()),
-                ]);
-                const trades = tr.success ? (tr.trades || []) : [];
-                const balance = bl.success ? (bl.balance ?? 1000) : 1000;
-                const open   = trades.filter(t => ['OPEN','PENDING_LONG','PENDING_SHORT'].includes(t.status));
-                const closed = trades.filter(t => !['OPEN','PENDING_LONG','PENDING_SHORT','CANCELLED'].includes(t.status));
-                const wins   = closed.filter(t => (t.pnl||0) > 0);
-                const totalPnl = closed.reduce((s,t)=>s+(t.pnl||0),0);
-                const equity = balance + totalPnl;
-
-                const vb = document.getElementById('virtualBalance'); if(vb) vb.textContent = '$' + balance.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-                const ev = document.getElementById('equityVal'); if(ev) ev.textContent = '$' + equity.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-                const upl = document.getElementById('unrealizedPL'); if(upl) { upl.textContent = (totalPnl>=0?'+$':'-$') + Math.abs(totalPnl).toFixed(2); upl.style.color = totalPnl>=0?'var(--green)':'var(--red)'; }
-                const tt = document.getElementById('totalTrades'); if(tt) tt.textContent = trades.length;
-                const ot = document.getElementById('openTrades');  if(ot) ot.textContent = open.length;
-                const wr = document.getElementById('winRate');     if(wr) wr.textContent = closed.length ? Math.round(wins.length/closed.length*100)+'%' : '—';
-                const tp = document.getElementById('totalPL');     if(tp) { tp.textContent = (totalPnl>=0?'+$':'-$') + Math.abs(totalPnl).toFixed(2); tp.style.color = totalPnl>=0?'var(--green)':'var(--red)'; }
-            } catch(e) {
-                /* Server not yet configured — show zero state */
-                const vb=document.getElementById('virtualBalance'); if(vb) vb.textContent='$1,000.00';
-            }
-        }
     </script>
 
     <script>
-        // Tabs
-        document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-                document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-                btn.classList.add('active');
-                document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-            });
-        });
+    /* ═══════════════════════════════════════════════════════
+       PAPER TRADE SYSTEM — Full featured
+       API: /api/paper/trades, /api/paper/balance, /api/paper/stats
+       Trade status: PENDING | OPEN | TP1_HIT | TP2_HIT | TP3_HIT | SL_HIT | CLOSED | CANCELLED
+    ═══════════════════════════════════════════════════════ */
 
-        // Hamburger menu
-                const authHamburger = document.getElementById('authHamburger');
-        const authNavMenu = document.getElementById('authNavMenu');
-        const navBackdrop = document.getElementById('navBackdrop');
-        
-        function closeNavMenu() {
-            if (authNavMenu) authNavMenu.classList.remove('open'); if(document.getElementById('navBackdrop')) document.getElementById('navBackdrop').style.pointerEvents='none';
-            if (navBackdrop) navBackdrop.classList.remove('open');
+    let _user = null, _idToken = null, _trades = [], _balance = 0, _hasSetBal = false;
+    let _livePrices = {};
+    let _priceInterval = null, _tradeInterval = null;
+
+    async function getToken() {
+        if (!_user) return '';
+        try { _idToken = await _user.getIdToken(); return _idToken; } catch(e) { return ''; }
+    }
+
+    function fmtUSD(v) {
+        const abs = Math.abs(v||0);
+        const sign = (v||0) >= 0 ? '+$' : '-$';
+        if (abs >= 1000) return sign + abs.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+        return sign + abs.toFixed(2);
+    }
+    function fmtP(v) {
+        if (!v && v !== 0) return '—';
+        const n = parseFloat(v);
+        if (n >= 10000) return n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+        if (n >= 1) return n.toFixed(4);
+        return n.toFixed(6);
+    }
+    function isOpen(t)    { return t.status === 'OPEN' || t.status === 'TP1_HIT' || t.status === 'TP2_HIT'; }
+    function isPending(t) { return t.status === 'PENDING'; }
+    function isClosed(t)  { return ['TP3_HIT','SL_HIT','CLOSED','CANCELLED'].includes(t.status); }
+
+    /* ── Price Fetching ── */
+    async function fetchLivePrices(pairs) {
+        if (!pairs || !pairs.length) return;
+        try {
+            await Promise.all(pairs.map(async p => {
+                const r = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${p}`);
+                if (!r.ok) return;
+                const d = await r.json();
+                _livePrices[p] = parseFloat(d.price);
+            }));
+        } catch(e) {}
+    }
+
+    /* ── Live PnL calculation ── */
+    function calcLivePnl(trade) {
+        const price = _livePrices[trade.pair];
+        if (!price || !trade.entry) return null;
+        const dir = trade.direction;
+        // After TP1_HIT: only 50% remains, SL moved to entry (BE)
+        if (trade.status === 'TP1_HIT') {
+            const partialPnl = trade.pnl || 0; // already banked TP1 portion
+            const remSize = trade.remainingSize || trade.size * 0.5;
+            const priceDiff = dir === 'LONG' ? price - trade.entry : trade.entry - price;
+            const livePct   = (priceDiff / trade.entry) * trade.leverage * 100;
+            const livePnl   = (livePct / 100) * remSize;
+            return { total: partialPnl + livePnl, live: livePnl, banked: partialPnl };
         }
-        
-        if (authHamburger) {
-            authHamburger.addEventListener('click', () => {
-                const isOpen = authNavMenu.classList.toggle('open');
-                if (navBackdrop) navBackdrop.classList.toggle('open', isOpen);
+        // After TP2_HIT: 25% remains
+        if (trade.status === 'TP2_HIT') {
+            const partialPnl = trade.pnl || 0;
+            const remSize = trade.remainingSize || trade.size * 0.25;
+            const priceDiff = dir === 'LONG' ? price - trade.entry : trade.entry - price;
+            const livePct   = (priceDiff / trade.entry) * trade.leverage * 100;
+            const livePnl   = (livePct / 100) * remSize;
+            return { total: partialPnl + livePnl, live: livePnl, banked: partialPnl };
+        }
+        // OPEN
+        const priceDiff = dir === 'LONG' ? price - trade.entry : trade.entry - price;
+        const pnlPct    = (priceDiff / trade.entry) * trade.leverage * 100;
+        const pnl       = (pnlPct / 100) * trade.size;
+        return { total: pnl, live: pnl, banked: 0 };
+    }
+
+    /* ── Trade Card Renderer ── */
+    function renderTradeCard(trade) {
+        const price  = _livePrices[trade.pair] || null;
+        const pnlObj = (isOpen(trade) && price) ? calcLivePnl(trade) : null;
+        const pnl    = pnlObj ? pnlObj.total : (trade.pnl || 0);
+        const isLong = trade.direction === 'LONG';
+
+        // Status badge
+        const statusMap = {
+            OPEN:     ['Active','badge-green'],
+            TP1_HIT:  ['TP1 Hit 🎯','badge-gold'],
+            TP2_HIT:  ['TP2 Hit ✅','badge-green'],
+            TP3_HIT:  ['TP3 Win 🏆','badge-green'],
+            SL_HIT:   ['SL Hit ❌','badge-red'],
+            CLOSED:   ['Closed','badge-outline'],
+            CANCELLED:['Cancelled','badge-red'],
+            PENDING:  ['Pending ⏳','badge-outline'],
+        };
+        const [statusLabel, statusCls] = statusMap[trade.status] || ['Unknown','badge-outline'];
+
+        // Progress bar (SL → TP2/TP3)
+        let progHtml = '';
+        if (isOpen(trade) && price && trade.sl && (trade.tp2 || trade.tp1)) {
+            const targetTp = trade.tp3 || trade.tp2 || trade.tp1;
+            const currentSl = trade.status === 'TP1_HIT' ? trade.entry : trade.sl; // BE after TP1
+            const range = Math.abs(targetTp - currentSl);
+            let pct = 0;
+            if (range > 0) {
+                pct = isLong
+                    ? ((price - currentSl) / range) * 100
+                    : ((currentSl - price) / range) * 100;
+                pct = Math.max(0, Math.min(100, pct));
+            }
+            const fillCls = pct >= 50 ? 'bull' : pct < 15 ? 'danger' : '';
+            const slPrice  = isLong ? currentSl : currentSl;
+            const tpLabel  = trade.tp3 ? 'TP3' : trade.tp2 ? 'TP2' : 'TP1';
+            progHtml = `
+            <div class="tc-prog-wrap">
+                <div class="tc-prog-labels">
+                    <span>SL ${fmtP(currentSl)}</span>
+                    <span style="color:${pnl>=0?'var(--green)':'var(--red)'};">${price?'$'+fmtP(price):''}</span>
+                    <span>${tpLabel} ${fmtP(targetTp)}</span>
+                </div>
+                <div class="tc-prog-track">
+                    <div class="tc-prog-fill ${fillCls}" style="width:${pct.toFixed(1)}%;"></div>
+                </div>
+            </div>`;
+        }
+
+        // TP1 banked notice
+        const tp1BankedHtml = trade.status === 'TP1_HIT' ? `
+        <div class="be-notice">🛡️ <strong>BE Protection Active</strong> — TP1 locked @ ${fmtP(trade.tp1)} · SL moved to entry. Trailing 50% position. Banked: <strong>${fmtUSD(trade.pnl||0)}</strong></div>` : '';
+        const tp2BankedHtml = trade.status === 'TP2_HIT' ? `
+        <div class="be-notice">✅ TP1+TP2 hit — Trailing 25% to TP3. Total banked: <strong>${fmtUSD(trade.pnl||0)}</strong></div>` : '';
+
+        // PnL row (for OPEN trades)
+        let pnlRowHtml = '';
+        if (isOpen(trade) && price) {
+            const pnlColor = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+            const roe = trade.entry ? ((Math.abs(pnl)/(trade.pnl||0||trade.size))*100) : 0;
+            const pnlPct = trade.entry && trade.size
+                ? ((pnl / trade.size) * 100).toFixed(2) : '—';
+            pnlRowHtml = `
+            <div class="tc-pnl-row">
+                <div class="pnl-grp">
+                    <div class="pnl-lbl">Unrealized P&L</div>
+                    <div class="pnl-num" style="color:${pnlColor};">${fmtUSD(pnl)} <span style="font-size:0.78rem;">(${pnlPct}%)</span></div>
+                </div>
+                <div class="pnl-grp" style="text-align:center;">
+                    <div class="pnl-lbl">Current Price</div>
+                    <div class="pnl-num">$${fmtP(price)}</div>
+                </div>
+                <div class="pnl-grp" style="text-align:right;">
+                    <div class="pnl-lbl">Size · Leverage</div>
+                    <div class="pnl-num" style="font-size:0.88rem;">$${trade.size} · ${trade.leverage}×</div>
+                </div>
+            </div>`;
+        }
+
+        // Actions
+        let actionHtml = '';
+        if (isOpen(trade)) {
+            actionHtml = `<button class="btn-sm danger" onclick="manualClose('${trade._id}', ${price||trade.entry})">✕ Close @ Market</button>`;
+        } else if (isPending(trade)) {
+            actionHtml = `<button class="btn-sm danger" onclick="cancelPending('${trade._id}')">✕ Cancel Order</button>`;
+        }
+
+        const cardCls = trade.status === 'PENDING' ? 'pending'
+            : trade.status === 'TP1_HIT' || trade.status === 'TP2_HIT' ? 'tp1-hit'
+            : isClosed(trade) ? (pnl >= 0 ? 'closed-win' : 'closed-loss') : '';
+
+        const timeStr = new Date(trade.openedAt || trade.createdAt).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+
+        return `
+        <div class="trade-card ${cardCls}" id="tc_${trade._id}">
+            <div class="tc-header">
+                <div class="tc-pair">
+                    ${trade.pair}
+                    <span class="badge badge-${isLong?'green':'red'}" style="font-size:0.72rem;">${trade.direction}</span>
+                    <span class="badge ${statusCls}" style="font-size:0.72rem;">${statusLabel}</span>
+                </div>
+                <div class="tc-actions">
+                    <span style="font-size:0.72rem;color:var(--text-muted);">${timeStr}</span>
+                    ${actionHtml}
+                </div>
+            </div>
+            <div class="tc-grid">
+                <div class="tc-item"><div class="tc-label">Entry</div><div class="tc-val" style="color:var(--gold);">${fmtP(trade.entry)}</div></div>
+                <div class="tc-item"><div class="tc-label">TP1</div><div class="tc-val" style="color:var(--green);">${fmtP(trade.tp1)}</div></div>
+                <div class="tc-item"><div class="tc-label">TP2</div><div class="tc-val" style="color:rgba(0,255,136,0.7);">${fmtP(trade.tp2)}</div></div>
+                <div class="tc-item"><div class="tc-label">TP3</div><div class="tc-val" style="color:rgba(0,255,136,0.5);">${fmtP(trade.tp3)}</div></div>
+                <div class="tc-item"><div class="tc-label">Stop Loss</div><div class="tc-val" style="color:var(--red);">${fmtP(trade.sl)}</div></div>
+            </div>
+            ${progHtml}
+            ${pnlRowHtml}
+            ${tp1BankedHtml}
+            ${tp2BankedHtml}
+            ${isPending(trade) ? `<div class="pending-notice">⏳ Limit order — Waiting for price to reach <strong>$${fmtP(trade.triggerPrice||trade.entry)}</strong>${price?` · Current: <strong>$${fmtP(price)}</strong>`:''}</div>` : ''}
+        </div>`;
+    }
+
+    /* ── History Table ── */
+    function renderHistory(closed) {
+        if (!closed.length) {
+            return `<div class="empty-state-panel">
+                <div class="empty-icon">🕐</div>
+                <h3>No Trade History</h3>
+                <p>Closed trades appear here once you open and close paper trades.</p>
+            </div>`;
+        }
+        const rows = closed.map(t => {
+            const pnl = t.pnl || 0;
+            const pnlColor = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+            const statusIcon = ['TP1_HIT','TP2_HIT','TP3_HIT'].includes(t.status) ? '✅' : t.status === 'SL_HIT' ? '❌' : '●';
+            const closedDate = t.closedAt ? new Date(t.closedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
+            return `<tr>
+                <td><strong>${t.pair}</strong></td>
+                <td><span class="badge badge-${t.direction==='LONG'?'green':'red'}" style="font-size:0.7rem;">${t.direction}</span></td>
+                <td class="mono">${fmtP(t.entry)}</td>
+                <td class="mono">${fmtP(t.closePrice)}</td>
+                <td style="font-family:'JetBrains Mono',monospace;font-weight:700;color:${pnlColor};">${fmtUSD(pnl)}</td>
+                <td><span class="badge badge-outline" style="font-size:0.68rem;">${statusIcon} ${t.status}</span></td>
+                <td style="font-size:0.78rem;color:var(--text-muted);">${closedDate}</td>
+            </tr>`;
+        }).join('');
+        return `<div style="overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border-soft);">
+            <table class="hist-table">
+                <thead><tr><th>Pair</th><th>Dir</th><th>Entry</th><th>Close</th><th>P&L</th><th>Status</th><th>Date</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>`;
+    }
+
+    /* ── Main Render ── */
+    function renderAll() {
+        const open    = _trades.filter(isOpen);
+        const pending = _trades.filter(isPending);
+        const closed  = _trades.filter(isClosed);
+        const wins    = closed.filter(t => (t.pnl||0) > 0);
+        const totalPnl = closed.reduce((s,t) => s+(t.pnl||0), 0);
+        const livePnl  = open.reduce((s,t) => {
+            const p = calcLivePnl(t);
+            return s + (p ? p.total : 0);
+        }, 0);
+
+        // Stats
+        const set = (id,v) => { const e=document.getElementById(id); if(e) e.textContent=v; };
+        const setStyle = (id,s,v) => { const e=document.getElementById(id); if(e) e.style[s]=v; };
+        set('totalTrades', _trades.length);
+        set('openTrades', open.length + pending.length);
+        set('winRate', closed.length ? Math.round(wins.length/closed.length*100)+'%' : '—');
+        document.getElementById('totalPL').textContent = fmtUSD(totalPnl);
+        document.getElementById('totalPL').style.color = totalPnl>=0?'var(--green)':'var(--red)';
+        document.getElementById('totalPLTop').textContent = fmtUSD(totalPnl);
+        document.getElementById('totalPLTop').style.color = totalPnl>=0?'var(--green)':'var(--red)';
+        document.getElementById('unrealizedPL').textContent = fmtUSD(livePnl);
+        document.getElementById('unrealizedPL').style.color = livePnl>=0?'var(--green)':'var(--red)';
+        document.getElementById('virtualBalance').textContent = '$' + (_balance||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+        // Pending badge
+        const pc = document.getElementById('pendingCount');
+        if (pc) { pc.textContent = pending.length; pc.style.display = pending.length ? '' : 'none'; }
+
+        // Open tab
+        const oc = document.getElementById('openTradesContainer');
+        if (oc) oc.innerHTML = open.length
+            ? open.map(renderTradeCard).join('')
+            : `<div class="empty-state-panel"><div class="empty-icon">📋</div><h3>No Open Trades</h3><p>Run a deep analysis to find setups and open paper trades from the Analysis page.</p><a href="analysis.html" class="new-trade-btn" style="display:inline-block;margin-top:20px;text-decoration:none;">🧠 Go to Analysis</a></div>`;
+
+        // Pending tab
+        const pc2 = document.getElementById('pendingTradesContainer');
+        if (pc2) pc2.innerHTML = pending.length
+            ? pending.map(renderTradeCard).join('')
+            : `<div class="empty-state-panel"><div class="empty-icon">⏳</div><h3>No Pending Orders</h3><p>Limit orders placed from the Analysis page will appear here.</p></div>`;
+
+        // History tab
+        const hc = document.getElementById('historyContainer');
+        if (hc) hc.innerHTML = renderHistory(closed);
+    }
+
+    /* ── Actions ── */
+    async function manualClose(id, closePrice) {
+        if (!confirm('Close this trade at market price?')) return;
+        const price = _livePrices[Object.keys(_livePrices)[0]] || closePrice;
+        const trade = _trades.find(t => t._id === id);
+        const actualPrice = trade ? (_livePrices[trade.pair] || closePrice) : closePrice;
+        try {
+            const tok = await getToken();
+            const r = await fetch(`/api/paper/trade/${id}/close`, {
+                method: 'PATCH',
+                headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+tok },
+                body: JSON.stringify({ closePrice: actualPrice })
             });
+            const j = await r.json();
+            if (j.success) { showToast('✅ Trade closed! P&L: ' + fmtUSD(j.pnl)); await loadPaperData(); }
+            else alert('❌ ' + (j.error || 'Failed'));
+        } catch(e) { alert('❌ ' + e.message); }
+    }
+
+    async function cancelPending(id) {
+        if (!confirm('Cancel this pending order?')) return;
+        try {
+            const tok = await getToken();
+            const r = await fetch(`/api/paper/trade/${id}/cancel`, {
+                method: 'PATCH',
+                headers: { 'Authorization':'Bearer '+tok }
+            });
+            const j = await r.json();
+            if (j.success) { showToast('✅ Order cancelled. Balance refunded.'); await loadPaperData(); }
+            else alert('❌ ' + (j.error || 'Failed'));
+        } catch(e) { alert('❌ ' + e.message); }
+    }
+
+    /* ── Balance Modal ── */
+    async function showBalanceModal() {
+        const title = document.getElementById('balModalTitle');
+        const sub   = document.getElementById('balModalSub');
+        const btn   = document.getElementById('balModalBtn');
+        if (_hasSetBal) {
+            title.textContent = '💰 Request Balance Reset';
+            sub.textContent = 'ඔබගේ balance දැනටමත් set කර ඇත. Admin reset request කිරීමට amount ඇතුළු කරන්න.';
+            btn.textContent = 'Submit Request';
+            btn.onclick = async () => {
+                const amount = parseFloat(document.getElementById('balModalInput').value);
+                if (!amount || amount < 100 || amount > 1000000) { showModalMsg('Amount must be 100–1,000,000', true); return; }
+                const reason = prompt('Why do you need a balance reset? (optional)') || '';
+                try {
+                    const tok = await getToken();
+                    const r = await fetch('/api/paper/balance/request', {
+                        method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+                        body: JSON.stringify({ requestType:'RESET', requestedAmount:amount, reason })
+                    });
+                    const j = await r.json();
+                    if (j.success) { showModalMsg('✅ Request submitted! Admin will review shortly.'); setTimeout(()=>document.getElementById('balModal').classList.remove('open'),2500); }
+                    else showModalMsg('❌ ' + (j.error||'Failed'), true);
+                } catch(e) { showModalMsg('❌ ' + e.message, true); }
+            };
+        } else {
+            title.textContent = '💰 Set Your Paper Balance';
+            sub.innerHTML = 'ඔබේ paper trading balance set කරන්න. <strong>මෙය එකවරක් පමණයි</strong> directly set කරන්න පුළුවන්. ඊට පසු admin approval අවශ්‍යයි.';
+            btn.textContent = 'Set Balance';
+            btn.onclick = async () => {
+                const amount = parseFloat(document.getElementById('balModalInput').value);
+                if (!amount || amount < 100 || amount > 1000000) { showModalMsg('Amount must be 100–1,000,000', true); return; }
+                try {
+                    const tok = await getToken();
+                    const r = await fetch('/api/paper/balance/set', {
+                        method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+                        body: JSON.stringify({ amount })
+                    });
+                    const j = await r.json();
+                    if (j.success) { _balance = amount; _hasSetBal = true; renderAll(); document.getElementById('balModal').classList.remove('open'); showToast('✅ Balance set to $' + amount.toLocaleString()); }
+                    else showModalMsg('❌ ' + (j.error||'Failed'), true);
+                } catch(e) { showModalMsg('❌ ' + e.message, true); }
+            };
         }
-        if (navBackdrop) {
-            navBackdrop.addEventListener('click', closeNavMenu);
-        }
-        document.querySelectorAll('.auth-nav-link').forEach(link => {
-            link.addEventListener('click', closeNavMenu);
+        document.getElementById('balModal').classList.add('open');
+    }
+
+    function showModalMsg(msg, isErr) {
+        const el = document.getElementById('balModalMsg');
+        if (!el) return;
+        el.textContent = msg;
+        el.style.color = isErr ? 'var(--red)' : 'var(--green)';
+        el.style.display = '';
+    }
+
+    /* ── Toast ── */
+    function showToast(msg) {
+        let box = document.getElementById('ptToastBox');
+        if (!box) { box = document.createElement('div'); box.id='ptToastBox'; box.style.cssText='position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:8px;'; document.body.appendChild(box); }
+        const t = document.createElement('div');
+        t.style.cssText = 'background:var(--bg2);border:1px solid var(--border-soft);border-radius:12px;padding:12px 20px;font-size:0.88rem;max-width:300px;animation:slideInRight 0.3s ease;';
+        t.textContent = msg;
+        box.appendChild(t);
+        setTimeout(() => t.remove(), 4000);
+    }
+
+    /* ── Load & Poll ── */
+    async function loadPaperData() {
+        if (!_user) return;
+        try {
+            const tok = await getToken();
+            const [tr, bl] = await Promise.all([
+                fetch('/api/paper/trades', { headers:{Authorization:'Bearer '+tok} }).then(r=>r.json()),
+                fetch('/api/paper/balance', { headers:{Authorization:'Bearer '+tok} }).then(r=>r.json()),
+            ]);
+            if (tr.success) _trades = tr.trades || [];
+            if (bl.success) { _balance = bl.balance ?? 1000; _hasSetBal = bl.hasSetInitialBalance ?? false; }
+
+            // Fetch live prices for open/pending trades
+            const pairs = [...new Set([..._trades.filter(t=>isOpen(t)||isPending(t)).map(t=>t.pair)])];
+            if (pairs.length) await fetchLivePrices(pairs);
+
+            renderAll();
+        } catch(e) { console.warn('loadPaperData error:', e); }
+    }
+
+    async function initPaperTrade(user) {
+        _user = user;
+        await loadPaperData();
+        // Poll every 15s for new data
+        _tradeInterval = setInterval(loadPaperData, 15000);
+        // Poll live prices every 10s
+        _priceInterval = setInterval(async () => {
+            const pairs = [...new Set([..._trades.filter(t=>isOpen(t)||isPending(t)).map(t=>t.pair)])];
+            if (pairs.length) { await fetchLivePrices(pairs); renderAll(); }
+        }, 10000);
+
+        // Balance request button
+        document.getElementById('reqBalBtn').onclick = showBalanceModal;
+    }
+
+    /* ── Tabs ── */
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
         });
-    
-        /* ── User dropdown ── */
-        const _chip  = document.getElementById('userChipBtn');
-        const _ddrop = document.getElementById('userDropdown');
-        if (_chip && _ddrop) {
-            _chip.addEventListener('click', e => { e.stopPropagation(); _ddrop.classList.toggle('open'); });
-            document.addEventListener('click', () => _ddrop.classList.remove('open'));
-        }
-        const _slo2 = document.getElementById('sidebarLogout');
-        if (_slo2) _slo2.addEventListener('click', () => { if(typeof window.handleSignOut==='function') window.handleSignOut(); else window.location.href='index.html'; });
-        const _dlogout = document.getElementById('dropdownLogout');
-        if (_dlogout) _dlogout.addEventListener('click', async () => {
-            if (typeof window.handleSignOut === 'function') await window.handleSignOut();
-            else window.location.href = 'index.html';
-        });
-</script>
+    });
+
+    /* ── Nav ── */
+    const _ham  = document.getElementById('authHamburger');
+    const _menu = document.getElementById('authNavMenu');
+    const _back = document.getElementById('navBackdrop');
+    function closeNav() { if(_menu) _menu.classList.remove('open'); if(_back) _back.classList.remove('open'); }
+    if (_ham) _ham.addEventListener('click', () => { const o=_menu.classList.toggle('open'); if(_back) _back.classList.toggle('open',o); });
+    if (_back) _back.addEventListener('click', closeNav);
+    document.querySelectorAll('.auth-nav-link').forEach(l => l.addEventListener('click', closeNav));
+    const _sl = document.getElementById('sidebarLogout'); if(_sl) _sl.addEventListener('click',()=>{ closeNav(); if(typeof window.handleSignOut==='function') window.handleSignOut(); else window.location.href='index.html'; });
+    const _chip = document.getElementById('userChipBtn'), _drop = document.getElementById('userDropdown');
+    if (_chip && _drop) { _chip.addEventListener('click', e=>{e.stopPropagation();_drop.classList.toggle('open');}); document.addEventListener('click',()=>_drop.classList.remove('open')); }
+    const _dl = document.getElementById('dropdownLogout'); if(_dl) _dl.addEventListener('click', async()=>{ if(typeof window.handleSignOut==='function') await window.handleSignOut(); else window.location.href='index.html'; });
+
+    /* ── CSS animation ── */
+    const styleEl = document.createElement('style');
+    styleEl.textContent = '@keyframes slideInRight{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}';
+    document.head.appendChild(styleEl);
+    </script>
 
 </body>
 </html>

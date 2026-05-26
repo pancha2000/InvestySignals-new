@@ -650,6 +650,42 @@
             </div>
         </div>
 
+        <!-- ── BALANCE REQUESTS ── -->
+        <div class="content-section" id="section-balance-requests">
+            <div class="admin-banner">
+                <div class="admin-banner-left">
+                    <div class="admin-pill">Balance Requests</div>
+                    <h2>Paper Trade Balance Requests</h2>
+                    <p>User balance reset/top-up requests waiting for admin approval.</p>
+                </div>
+                <button class="btn btn-surface btn-sm" onclick="loadBalanceRequests()">🔄 Refresh</button>
+            </div>
+            <div class="data-panel">
+                <div class="panel-header">
+                    <div class="panel-title">💰 Balance Requests</div>
+                    <span class="badge badge-gold" id="balReqPendingBadge" style="display:none;">0 Pending</span>
+                </div>
+                <div class="table-wrap panel-body">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Type</th>
+                                <th>Current</th>
+                                <th>Requested</th>
+                                <th>Reason</th>
+                                <th>Date</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="balReqTableBody">
+                            <tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text-muted);">Loading requests...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         <!-- ── SETTINGS ── -->
         <div class="content-section" id="section-settings">
             <div class="admin-banner">
@@ -796,6 +832,18 @@ window.adminSignOut = async function() {
 </script>
 
 <script>
+    // Toast notification
+    function showToast(msg, type) {
+        let box = document.getElementById('adminToastBox');
+        if (!box) { box = document.createElement('div'); box.id='adminToastBox'; box.style.cssText='position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:8px;'; document.body.appendChild(box); }
+        const t = document.createElement('div');
+        const color  = type==='error' ? 'rgba(255,61,90,0.15)' : 'rgba(0,255,136,0.1)';
+        const border = type==='error' ? 'rgba(255,61,90,0.3)'  : 'rgba(0,255,136,0.3)';
+        t.style.cssText = `background:${color};border:1px solid ${border};border-radius:12px;padding:12px 20px;font-size:0.88rem;max-width:320px;color:var(--text);`;
+        t.textContent = msg; box.appendChild(t);
+        setTimeout(() => t.remove(), 4000);
+    }
+
     // Section switching
     function showSection(id, el) {
         document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));

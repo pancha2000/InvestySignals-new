@@ -994,6 +994,10 @@ function renderFullAnalysis(data, container) {
 
     `<div class="trade-setup-box">
         <div style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--gold);font-family:'JetBrains Mono',monospace;margin-bottom:10px;">💰 Trade Setup</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:rgba(245,200,66,0.06);border:1px solid rgba(245,200,66,0.2);border-radius:var(--radius-sm);margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+            <div><span style="font-size:0.68rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Current Live Price</span><br><span style="font-family:'JetBrains Mono',monospace;font-size:1.2rem;font-weight:700;color:var(--gold);">$${p ? p.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:6}) : '—'}</span></div>
+            <div style="text-align:right;"><span style="font-size:0.68rem;color:var(--text-muted);text-transform:uppercase;">Score</span><br><span style="font-family:'JetBrains Mono',monospace;font-size:1.2rem;font-weight:700;color:${gradeClr(a.grade)}">${a.grade} · ${data.confluenceScore||'—'}/10</span></div>
+        </div>
         <div class="setup-grid">
             <div class="setup-item"><div class="setup-lbl">Direction</div><div class="setup-val" style="color:${biasClr(a.level5?.direction)}">${a.level5?.direction||'—'}</div></div>
             <div class="setup-item"><div class="setup-lbl">Entry Zone</div><div class="setup-val" style="font-size:0.74rem;">${a.level5?.entryZone||'—'}</div></div>
