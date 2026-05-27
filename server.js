@@ -190,7 +190,22 @@ async function verifyToken(req, res, next) {
   if (!token) return res.status(401).json({ success: false, error: 'Unauthorized' });
   try {
     req.user = await admin.auth().verifyIdToken(token);
-    const dbUser = await User.findOne({ uid: req.user.uid });
+    // Auto-create user in MongoDB if missing (new Firebase users)
+    let dbUser = await User.findOne({ uid: req.user.uid });
+    if (!dbUser) {
+      try {
+        dbUser = await User.create({
+          uid:          req.user.uid,
+          email:        (req.user.email || '').toLowerCase(),
+          displayName:  req.user.name || '',
+          role:         ADMIN_EMAILS.includes((req.user.email||'').toLowerCase()) ? 'admin' : 'user',
+          plan:         'free',
+          paperBalance: 1000,
+        });
+      } catch(_) {
+        dbUser = await User.findOne({ uid: req.user.uid });
+      }
+    }
     if (dbUser?.suspended) return res.status(403).json({ success: false, error: 'Account suspended', reason: dbUser.suspendReason });
     req.dbUser = dbUser;
     next();
@@ -335,7 +350,7 @@ app.get('/api/registration-status', (req, res) => res.json({ success:true, open:
 // ── Balance ───────────────────────────────────────────────────
 app.get('/api/paper/balance', verifyToken, async (req, res) => {
   try {
-    const u = await User.findOne({ uid: req.user.uid });
+    const u = req.dbUser || await User.findOne({ uid: req.user.uid });
     res.json({ success: true, balance: u ? u.paperBalance : 1000, hasSetInitialBalance: u ? !!u.hasSetInitialBalance : false });
   } catch(err) { res.status(500).json({ success: false, error: err.message }); }
 });
@@ -416,9 +431,9 @@ app.post('/api/paper/trade', verifyToken, async (req, res) => {
 
     const lev = Math.min(Math.max(parseInt(leverage) || 10, 1), 125);
 
-    const u = await User.findOne({ uid: req.user.uid });
+    const u = req.dbUser || await User.findOne({ uid: req.user.uid });
     if (!u || u.paperBalance < tradeSize)
-      return res.json({ success: false, error: 'Insufficient paper balance.' });
+      return res.json({ success: false, error: `Insufficient paper balance. Available: $${u ? u.paperBalance.toFixed(2) : '0.00'}` });
 
     // Check max open trades (5)
     const openCount = await PaperTrade.countDocuments({ userUid: req.user.uid, status: { $in: ['OPEN','PENDING'] } });
@@ -1665,26 +1680,33 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     // [FIX BUG 2] Minimum confidence threshold — netScore ±3 නැතිනම් NEUTRAL
     // ±1 or ±2 weak scores නිසා BUY→SELL flip වෙනවා නිරෝධය කරනවා
     const BIAS_THRESHOLD = 3;
-    const isBullish = adjustedNetScore >= BIAS_THRESHOLD ? true :
-                      adjustedNetScore <= -BIAS_THRESHOLD ? false :
-                      // NEUTRAL zone: previous bias hold කරනවා — නැතිනම් bullish default
-                      (analysisState.get(pair)?.bias === 'LONG' ? true :
-                       analysisState.get(pair)?.bias === 'SHORT' ? false : true);
     const isNeutral = Math.abs(adjustedNetScore) < BIAS_THRESHOLD;
 
-    // [F2] Direction-aware entry zone
-    const {entryLow,entryHigh}=calcEntryZone(isBullish,currentPrice,atr1h,atr15m);
+    // isBullishForCalc: SL/TP/entry calculations always use RAW net score direction
+    // (never use previous-state bias — that would give wrong SL for opposite direction)
+    const isBullishForCalc = netScore >= 0;
 
-    // [v5] Structure SL — Liquidity + Fib + Breaker aware
-    const sl=calcStructureSLv5(isBullish,currentPrice,atr4h,h4OB,h4.highs,h4.lows,allSR,allLiq,h4Fib,allBreakers);
+    // isBullish: what we SHOW the user and use for flip detection
+    // In neutral zone, we hold previous bias to stop rapid BUY→SELL flipping
+    const isBullish = adjustedNetScore >= BIAS_THRESHOLD ? true :
+                      adjustedNetScore <= -BIAS_THRESHOLD ? false :
+                      (analysisState.get(pair)?.bias === 'LONG' ? true :
+                       analysisState.get(pair)?.bias === 'SHORT' ? false :
+                       isBullishForCalc);
+
+    // [F2] Direction-aware entry zone — use raw calc direction
+    const {entryLow,entryHigh}=calcEntryZone(isBullishForCalc,currentPrice,atr1h,atr15m);
+
+    // [v5] Structure SL — always use raw direction for correct SL side
+    const sl=calcStructureSLv5(isBullishForCalc,currentPrice,atr4h,h4OB,h4.highs,h4.lows,allSR,allLiq,h4Fib,allBreakers);
     const riskAmt=Math.abs(currentPrice-sl);
 
-    // [v5] TP — Liquidity + Fib + Breaker target aware, day-trader optimized
-    const {tp1,tp2,tp3}=calcTPv5(isBullish,currentPrice,sl,allSR,allLiq,h4Fib,allBreakers);
+    // [v5] TP — always use raw direction
+    const {tp1,tp2,tp3}=calcTPv5(isBullishForCalc,currentPrice,sl,allSR,allLiq,h4Fib,allBreakers);
 
     // [14] Signal freshness
     const signalTs=Date.now();
-    const entryValid=isBullish
+    const entryValid=isBullishForCalc
       ?(currentPrice>=entryLow&&currentPrice<=entryHigh)||(currentPrice>entryHigh&&currentPrice<entryHigh*1.005)
       :(currentPrice>=entryLow&&currentPrice<=entryHigh)||(currentPrice<entryLow&&currentPrice>entryLow*0.995);
 
@@ -1750,15 +1772,15 @@ Volume:${m15Vol.spike} (${m15Vol.ratio}x) | CVD:${m15CVD.bias} | 15m FVG: ${JSON
 ATR 4H:${atr4h.toFixed(4)} 1H:${atr1h.toFixed(4)} 15m:${atr15m.toFixed(4)}
 
 === LEVEL 5: TRADE SETUP ===
-Direction: ${isBullish?'LONG':'SHORT'} | Bull:${bullScore} Bear:${bearScore} Net:${adjustedNetScore}
-Entry Zone (${isBullish?'pullback':'push'}): $${entryLow}–$${entryHigh}
+Direction: ${isBullishForCalc?'LONG':'SHORT'} | Bull:${bullScore} Bear:${bearScore} Net:${adjustedNetScore}
+Entry Zone (${isBullishForCalc?'pullback':'push'}): $${entryLow}–$${entryHigh}
 Stop Loss: $${sl} | Risk: ${riskPct}%
 TP1:$${tp1} (RR:${rrTp1}) | TP2:$${tp2} (RR:${rrTp2}) | TP3:$${tp3} (RR:${rrTp3})
-Zone quality: ${h4PD.zone} — ${h4PD.zone==='DISCOUNT'&&isBullish?'IDEAL LONG':h4PD.zone==='PREMIUM'&&!isBullish?'IDEAL SHORT':'SUBOPTIMAL'}
+Zone quality: ${h4PD.zone} — ${h4PD.zone==='DISCOUNT'&&isBullishForCalc?'IDEAL LONG':h4PD.zone==='PREMIUM'&&!isBullishForCalc?'IDEAL SHORT':'SUBOPTIMAL'}
 Conflict:${conflictType} | Market:${marketCondition} | Score:${score}/10
 
 Respond ONLY in this JSON (no markdown):
-{"overallBias":"LONG or SHORT or NEUTRAL","confluenceScore":${score},"netScore":${adjustedNetScore},"grade":"S or A or B or C or D","conflictWarning":"${conflictType}","marketCondition":"${marketCondition}","level1":{"btcTrend":"one sentence","fundingSignal":"one sentence","oiChange":"interpret OI change — new money or closing?","macroConclusion":"BULLISH or BEARISH or NEUTRAL"},"level2":{"dailyStructure":"one sentence","h4Structure":"one sentence","keyLevels":"key SR levels to watch","orderBlock":"OB analysis","breakerBlocks":"breaker block analysis if any","fvgZones":"FVG analysis","liquidityZones":"buy/sell liquidity targets — where price may hunt","fibonacci":"fib zone analysis — is price at golden zone 618/786?","premiumDiscount":"zone quality for this trade direction","structureConclusion":"BULLISH or BEARISH or NEUTRAL"},"level3":{"h1Structure":"one sentence","rsiSignal":"RSI+StochRSI combined","divergence":"divergence type and meaning","macdSignal":"one sentence","bollingerSignal":"one sentence","vwapSignal":"VWAP position analysis","volumeCVD":"volume+CVD analysis","sessionContext":"current session risk and key session levels","adxSignal":"trend strength","momentumConclusion":"STRONG_BULL or BULL or NEUTRAL or BEAR or STRONG_BEAR"},"level4":{"m15Structure":"one sentence","entryTiming":"RSI+StochRSI+candle combined","candleAnalysis":"${m15Candle.pattern} pattern significance","macdCross":"one sentence","volumeConfirm":"volume+CVD","fvgEntry":"nearest FVG entry zone","entryConclusion":"CONFIRMED or WAIT or AVOID"},"level5":{"direction":"${isBullish?'LONG':'SHORT'}","entryZone":"$${entryLow}–$${entryHigh}","stopLoss":"$${sl}","slLogic":"why this SL is safe — structure+liq below/above","tp1":"$${tp1} (RR:${rrTp1})","tp2":"$${tp2} (RR:${rrTp2})","tp3":"$${tp3} (RR:${rrTp3})","tpLogic":"TP targets reasoning — liq/fib/SR levels used","invalidationLevel":"exact price that invalidates setup","leverage":"specific range e.g. 3-5x","positionSize":"1-2% account risk sizing guidance","tradeManagement":"SL to BE plan + trail + partial close","reEntry":"conditions for valid re-entry if stopped","riskNote":"full risk — conflict, session trap, liquidity hunt, news"},"summary":"2-3 sentence day-trader summary","warning":"specific risks this setup faces"}`;
+{"overallBias":"LONG or SHORT or NEUTRAL","confluenceScore":${score},"netScore":${adjustedNetScore},"grade":"S or A or B or C or D","conflictWarning":"${conflictType}","marketCondition":"${marketCondition}","level1":{"btcTrend":"one sentence","fundingSignal":"one sentence","oiChange":"interpret OI change — new money or closing?","macroConclusion":"BULLISH or BEARISH or NEUTRAL"},"level2":{"dailyStructure":"one sentence","h4Structure":"one sentence","keyLevels":"key SR levels to watch","orderBlock":"OB analysis","breakerBlocks":"breaker block analysis if any","fvgZones":"FVG analysis","liquidityZones":"buy/sell liquidity targets — where price may hunt","fibonacci":"fib zone analysis — is price at golden zone 618/786?","premiumDiscount":"zone quality for this trade direction","structureConclusion":"BULLISH or BEARISH or NEUTRAL"},"level3":{"h1Structure":"one sentence","rsiSignal":"RSI+StochRSI combined","divergence":"divergence type and meaning","macdSignal":"one sentence","bollingerSignal":"one sentence","vwapSignal":"VWAP position analysis","volumeCVD":"volume+CVD analysis","sessionContext":"current session risk and key session levels","adxSignal":"trend strength","momentumConclusion":"STRONG_BULL or BULL or NEUTRAL or BEAR or STRONG_BEAR"},"level4":{"m15Structure":"one sentence","entryTiming":"RSI+StochRSI+candle combined","candleAnalysis":"${m15Candle.pattern} pattern significance","macdCross":"one sentence","volumeConfirm":"volume+CVD","fvgEntry":"nearest FVG entry zone","entryConclusion":"CONFIRMED or WAIT or AVOID"},"level5":{"direction":"${isBullishForCalc?'LONG':'SHORT'}","entryZone":"$${entryLow}–$${entryHigh}","stopLoss":"$${sl}","slLogic":"why this SL is safe — structure+liq below/above","tp1":"$${tp1} (RR:${rrTp1})","tp2":"$${tp2} (RR:${rrTp2})","tp3":"$${tp3} (RR:${rrTp3})","tpLogic":"TP targets reasoning — liq/fib/SR levels used","invalidationLevel":"exact price that invalidates setup","leverage":"specific range e.g. 3-5x","positionSize":"1-2% account risk sizing guidance","tradeManagement":"SL to BE plan + trail + partial close","reEntry":"conditions for valid re-entry if stopped","riskNote":"full risk — conflict, session trap, liquidity hunt, news"},"summary":"2-3 sentence day-trader summary","warning":"specific risks this setup faces"}`;
 
     const groqRes=await fetch('https://api.groq.com/openai/v1/chat/completions',{
       method:'POST',
