@@ -305,12 +305,7 @@ async function getPaperTrades(req, res) {
 app.get('/api/paper-trades', getPaperTrades);
 app.get('/api/paper/trades',  getPaperTrades);
 
-app.get('/api/paper/balance', verifyToken, async (req, res) => {
-  try { const u=await User.findOne({uid:req.user.uid}); res.json({ success:true, balance:u?u.paperBalance:1000, hasSetInitialBalance: u?!!u.hasSetInitialBalance:false }); }
-  catch(err) { res.status(500).json({ success:false, error:err.message }); }
-});
-
-// NOTE: old duplicate /api/paper/trade endpoint removed — correct endpoint is below
+// NOTE: old duplicate /api/paper/trade + /api/paper/balance routes removed — correct endpoints below
 
 app.post('/api/reports', async (req, res) => {
   try {
@@ -1655,7 +1650,6 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     if (nearBuyLiq)  bearScore += 1;  // sweeping highs = likely bearish reversal
 
     const netScore=bullScore-bearScore;
-    const isBullish=netScore>0;
     // Max possible bullScore ≈ 22 (3+2+2+1+1+1+1+1+1+1+1+1+1+1+2+1+1) → normalize to 0-10
     const score=Math.max(0,Math.min(10,Math.round((netScore+22)/4.4)));
 
@@ -1667,6 +1661,16 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     const conflictDetected=(htfBull&&ltfBear)||(htfBear&&ltfBull);
     const conflictType=conflictDetected?(htfBull&&ltfBear?'HTF_BULL_LTF_BEAR':'HTF_BEAR_LTF_BULL'):'NONE';
     const adjustedNetScore=conflictDetected?Math.round(netScore*0.5):netScore;
+
+    // [FIX BUG 2] Minimum confidence threshold — netScore ±3 නැතිනම් NEUTRAL
+    // ±1 or ±2 weak scores නිසා BUY→SELL flip වෙනවා නිරෝධය කරනවා
+    const BIAS_THRESHOLD = 3;
+    const isBullish = adjustedNetScore >= BIAS_THRESHOLD ? true :
+                      adjustedNetScore <= -BIAS_THRESHOLD ? false :
+                      // NEUTRAL zone: previous bias hold කරනවා — නැතිනම් bullish default
+                      (analysisState.get(pair)?.bias === 'LONG' ? true :
+                       analysisState.get(pair)?.bias === 'SHORT' ? false : true);
+    const isNeutral = Math.abs(adjustedNetScore) < BIAS_THRESHOLD;
 
     // [F2] Direction-aware entry zone
     const {entryLow,entryHigh}=calcEntryZone(isBullish,currentPrice,atr1h,atr15m);
@@ -1769,19 +1773,49 @@ Respond ONLY in this JSON (no markdown):
     try{analysis=JSON.parse(rawText.replace(/```json|```/g,'').trim());}
     catch(e){return res.status(500).json({success:false,error:'AI parse failed',raw:rawText});}
 
-    // [13] State tracking + trend_flip broadcast
-    const currentBias=isBullish?'LONG':'SHORT';
-    const prevState=analysisState.get(pair);
-    if (prevState&&prevState.bias!==currentBias) {
-      broadcastToAll({type:'trend_flip',coin:pair,from:prevState.bias,to:currentBias,score:adjustedNetScore,ts:signalTs});
-      console.log(`🔄 Trend flip: ${pair} ${prevState.bias}→${currentBias}`);
+    // [13] State tracking + trend_flip broadcast + thesis tracking
+    const currentBias = isNeutral ? 'NEUTRAL' : (isBullish ? 'LONG' : 'SHORT');
+    const prevState   = analysisState.get(pair);
+
+    // Thesis status — compare D1/H4 structure with previous analysis
+    let thesisStatus  = 'NEW';
+    let thesisMessage = '';
+    if (prevState?.thesisSet && prevState.bias !== 'NEUTRAL') {
+      const d1Match  = prevState.d1Struct === d1Struct;
+      const h4Match  = prevState.h4Struct === h4Struct;
+      const biasFlip = prevState.bias !== currentBias && currentBias !== 'NEUTRAL';
+      if (!biasFlip) {
+        thesisStatus  = 'CONFIRMED';
+        thesisMessage = `${prevState.bias} thesis intact.`;
+      } else if (biasFlip && d1Match && !h4Match) {
+        thesisStatus  = 'RETRACEMENT';
+        thesisMessage = `D1 structure intact (${d1Struct}). H4 shifted — normal pullback, not a reversal.`;
+      } else if (biasFlip && d1Match && h4Match) {
+        thesisStatus  = 'WEAKENING';
+        thesisMessage = `D1 intact but H4 now conflicts. Wait for confirmation before new entry.`;
+      } else if (biasFlip && !d1Match && !h4Match) {
+        thesisStatus  = 'INVALIDATED';
+        thesisMessage = `D1 + H4 both flipped. Genuine reversal — original ${prevState.bias} thesis broken.`;
+      } else {
+        thesisStatus  = 'WEAKENING';
+        thesisMessage = `Structure shifting. Reduce risk until direction confirmed.`;
+      }
     }
-    analysisState.set(pair,{bias:currentBias,score:adjustedNetScore,ts:signalTs});
+
+    if (prevState && prevState.bias !== 'NEUTRAL' && currentBias !== 'NEUTRAL' && prevState.bias !== currentBias) {
+      broadcastToAll({type:'trend_flip',coin:pair,from:prevState.bias,to:currentBias,score:adjustedNetScore,ts:signalTs,thesisStatus});
+      console.log(`🔄 Trend flip: ${pair} ${prevState.bias}→${currentBias} [${thesisStatus}]`);
+    }
+    analysisState.set(pair, {
+      bias: currentBias, score: adjustedNetScore, ts: signalTs,
+      d1Struct, h4Struct, thesisSet: true
+    });
 
     res.json({
       success:true, coin:pair, price:currentPrice,
       // [F6] Full scoring breakdown
       confluenceScore:score, bullScore, bearScore, netScore:adjustedNetScore,
+      isNeutral, thesisStatus, thesisMessage,
       marketCondition, adx1h:parseFloat(adx1h.toFixed(1)), adx4h:parseFloat(adx4h.toFixed(1)), isChoppy,
       conflictDetected, conflictType,
       signalTs, entryValid,
@@ -1812,6 +1846,172 @@ Respond ONLY in this JSON (no markdown):
   } catch(err) {
     console.error('/api/deep-analysis error:',err.message);
     res.status(500).json({ success:false, error:err.message });
+  }
+});
+
+// ── Trade Monitor ─────────────────────────────────────────────
+// Context-aware re-analysis for an open trade: HOLD / DCA / CLOSE / MOVE_SL
+app.post('/api/trade-monitor', verifyToken, async (req, res) => {
+  try {
+    const { tradeId, pair, direction, entry, sl, tp1, tp2, tp3, size } = req.body;
+    if (!pair || !direction || !entry)
+      return res.status(400).json({ success: false, error: 'pair, direction, entry required.' });
+
+    // Get live price from Binance
+    const priceRes = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${pair.toUpperCase()}`);
+    const priceData = await priceRes.json();
+    const currentPrice = parseFloat(priceData.price);
+    if (!currentPrice) return res.status(502).json({ success: false, error: 'Could not fetch live price.' });
+
+    // Fetch klines for structure check (H4 and D1)
+    async function getKlines(symbol, interval, limit) {
+      const r = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
+      const d = await r.json();
+      return d.map(k => ({ open:parseFloat(k[1]),high:parseFloat(k[2]),low:parseFloat(k[3]),close:parseFloat(k[4]),volume:parseFloat(k[5]) }));
+    }
+
+    const [h4k, d1k] = await Promise.all([
+      getKlines(pair.toUpperCase(), '4h', 50),
+      getKlines(pair.toUpperCase(), '1d', 20),
+    ]);
+
+    // Simple BOS/CHoCH detect
+    function detectStruct(candles) {
+      const last = candles.slice(-20);
+      const highs = last.map(c => c.high);
+      const lows  = last.map(c => c.low);
+      const hh = highs[highs.length-1] > Math.max(...highs.slice(0,-1));
+      const hl = lows[lows.length-1]   > Math.min(...lows.slice(0,-1));
+      const lh = highs[highs.length-1] < Math.max(...highs.slice(0,-1));
+      const ll = lows[lows.length-1]   < Math.min(...lows.slice(0,-1));
+      if (hh && hl) return 'BOS_BULLISH';
+      if (lh && ll) return 'BOS_BEARISH';
+      if (hh && ll) return 'CHOCH_BULLISH';
+      if (lh && hl) return 'CHOCH_BEARISH';
+      return 'RANGING';
+    }
+
+    const h4Struct = detectStruct(h4k);
+    const d1Struct = detectStruct(d1k);
+
+    const isLong = direction === 'LONG';
+
+    // H4 structure intact check
+    const h4Intact = isLong
+      ? h4Struct.includes('BULLISH')
+      : h4Struct.includes('BEARISH');
+    const d1Intact = isLong
+      ? d1Struct.includes('BULLISH')
+      : d1Struct.includes('BEARISH');
+
+    // Fibonacci pullback depth from entry
+    const entryNum = parseFloat(entry);
+    const slNum    = parseFloat(sl) || null;
+    const tp1Num   = parseFloat(tp1) || null;
+    const swingHigh = isLong
+      ? Math.max(...d1k.slice(-20).map(c => c.high))
+      : entryNum;
+    const swingLow  = isLong
+      ? entryNum
+      : Math.min(...d1k.slice(-20).map(c => c.low));
+    const range = swingHigh - swingLow;
+
+    const fib382 = isLong ? swingHigh - range * 0.382 : swingLow + range * 0.382;
+    const fib500 = isLong ? swingHigh - range * 0.500 : swingLow + range * 0.500;
+    const fib618 = isLong ? swingHigh - range * 0.618 : swingLow + range * 0.618;
+    const fib786 = isLong ? swingHigh - range * 0.786 : swingLow + range * 0.786;
+
+    // Pullback depth assessment
+    const pullbackPct = isLong
+      ? ((entryNum - currentPrice) / entryNum * 100)
+      : ((currentPrice - entryNum) / entryNum * 100);
+
+    let pullbackZone = 'SHALLOW';
+    if (isLong) {
+      if (currentPrice <= fib786) pullbackZone = 'CRITICAL';
+      else if (currentPrice <= fib618) pullbackZone = 'DEEP';
+      else if (currentPrice <= fib500) pullbackZone = 'NORMAL';
+      else if (currentPrice <= fib382) pullbackZone = 'SHALLOW';
+    } else {
+      if (currentPrice >= fib786) pullbackZone = 'CRITICAL';
+      else if (currentPrice >= fib618) pullbackZone = 'DEEP';
+      else if (currentPrice >= fib500) pullbackZone = 'NORMAL';
+      else if (currentPrice >= fib382) pullbackZone = 'SHALLOW';
+    }
+
+    // TP1 hit?
+    const tp1Hit = tp1Num && (isLong ? currentPrice >= tp1Num * 0.998 : currentPrice <= tp1Num * 1.002);
+
+    // SL proximity (within 1%)
+    const slClose = slNum && Math.abs(currentPrice - slNum) / entryNum < 0.01;
+
+    // Decide ACTION
+    let action = 'HOLD';
+    let reason  = '';
+    let dcaLevel = null;
+    let newSL    = null;
+    let slMoveTarget = null;
+
+    if (!h4Intact && !d1Intact) {
+      action = 'CLOSE';
+      reason = `Both D1 (${d1Struct}) and H4 (${h4Struct}) structures flipped against your ${direction}. Trade invalidated.`;
+    } else if (slClose) {
+      action = 'CLOSE';
+      reason = `Price is very close to SL ($${slNum}). Risk/reward no longer valid.`;
+    } else if (pullbackZone === 'CRITICAL') {
+      action = 'CLOSE';
+      reason = `Price breached 78.6% Fibonacci level ($${fib786.toFixed(4)}). H4 reversal likely — exit to protect capital.`;
+    } else if (tp1Hit) {
+      action = 'MOVE_SL';
+      slMoveTarget = entryNum;
+      reason = `TP1 ($${tp1Num}) reached! Move SL to break-even ($${entryNum}) to protect profits.`;
+    } else if (h4Intact && pullbackZone === 'DEEP') {
+      // DCA conditions: H4 intact + deep pullback
+      dcaLevel = parseFloat(fib618.toFixed(4));
+      newSL    = slNum ? parseFloat((slNum * (isLong ? 0.998 : 1.002)).toFixed(4)) : null;
+      action   = 'DCA';
+      reason   = `H4 structure intact (${h4Struct}). Price at 61.8% Fibonacci zone — valid DCA level. D1: ${d1Struct}.`;
+    } else if (h4Intact && !d1Intact) {
+      action = 'HOLD';
+      reason = `H4 intact (${h4Struct}) but D1 weakening (${d1Struct}). Hold current position, no DCA. Watch 61.8% level.`;
+    } else {
+      action = 'HOLD';
+      reason = `H4 (${h4Struct}) and D1 (${d1Struct}) structures support your ${direction}. Pullback zone: ${pullbackZone}. Continue holding.`;
+    }
+
+    // Early warning signals
+    const warnings = [];
+    if (pullbackZone === 'DEEP')    warnings.push(`⚠️ Price at deep pullback (61.8% fib: $${fib618.toFixed(4)})`);
+    if (pullbackZone === 'CRITICAL') warnings.push(`🔴 Price below 78.6% fib — reversal zone`);
+    if (!h4Intact && d1Intact)       warnings.push(`⚠️ H4 structure shifted against trade — thesis weakening`);
+
+    res.json({
+      success: true,
+      pair: pair.toUpperCase(),
+      direction,
+      currentPrice,
+      action,   // HOLD | DCA | CLOSE | MOVE_SL
+      reason,
+      warnings,
+      structureIntact: { h4: h4Intact, d1: d1Intact },
+      h4Struct, d1Struct,
+      pullbackZone,
+      pullbackPct: parseFloat(pullbackPct.toFixed(2)),
+      fibonacci: {
+        fib382: parseFloat(fib382.toFixed(4)),
+        fib500: parseFloat(fib500.toFixed(4)),
+        fib618: parseFloat(fib618.toFixed(4)),
+        fib786: parseFloat(fib786.toFixed(4)),
+      },
+      dcaLevel,
+      newSL,
+      slMoveTarget,
+      invalidationLevel: parseFloat((isLong ? fib786 : fib786).toFixed(4)),
+      tp1Hit,
+    });
+  } catch(err) {
+    console.error('/api/trade-monitor error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

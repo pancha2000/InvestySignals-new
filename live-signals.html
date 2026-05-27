@@ -98,6 +98,45 @@
         .btn-sm.danger { border-color: rgba(255,61,90,0.3); color: var(--red); }
         .btn-sm.danger:hover { background: rgba(255,61,90,0.08); }
         .btn-sm.success { border-color: rgba(0,255,136,0.3); color: var(--green); }
+        .btn-sm.monitor { border-color: rgba(99,179,237,0.35); color: #63b3ed; }
+        .btn-sm.monitor:hover { background: rgba(99,179,237,0.08); }
+
+        /* Trade Monitor Modal */
+        .mon-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:1100; align-items:center; justify-content:center; padding:16px; }
+        .mon-modal.open { display:flex; }
+        .mon-box { background:var(--bg2); border:1px solid var(--border-soft); border-radius:var(--radius); padding:28px; max-width:500px; width:100%; max-height:90vh; overflow-y:auto; }
+        .mon-title { font-size:1.1rem; font-weight:700; margin-bottom:4px; display:flex; align-items:center; gap:8px; }
+        .mon-pair  { font-size:0.82rem; color:var(--text-muted); margin-bottom:20px; font-family:'JetBrains Mono',monospace; }
+
+        .mon-action-banner { border-radius:var(--radius-sm); padding:14px 18px; margin-bottom:16px; font-weight:700; font-size:1rem; display:flex; align-items:center; gap:10px; }
+        .mon-action-banner.HOLD  { background:rgba(245,200,66,0.10); border:1px solid rgba(245,200,66,0.3); color:var(--gold); }
+        .mon-action-banner.DCA   { background:rgba(99,179,237,0.10); border:1px solid rgba(99,179,237,0.3); color:#63b3ed; }
+        .mon-action-banner.CLOSE { background:rgba(255,61,90,0.10);  border:1px solid rgba(255,61,90,0.3);  color:var(--red); }
+        .mon-action-banner.MOVE_SL { background:rgba(0,255,136,0.10); border:1px solid rgba(0,255,136,0.3); color:var(--green); }
+
+        .mon-reason { font-size:0.85rem; color:var(--text-muted); line-height:1.6; margin-bottom:16px; }
+        .mon-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px; }
+        .mon-stat { background:rgba(255,255,255,0.03); border:1px solid var(--border-dim); border-radius:var(--radius-sm); padding:10px 14px; }
+        .mon-stat-lbl { font-size:0.68rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:4px; }
+        .mon-stat-val { font-family:'JetBrains Mono',monospace; font-size:0.92rem; font-weight:700; }
+
+        .mon-fib-row { background:rgba(255,255,255,0.02); border-radius:var(--radius-sm); padding:12px 14px; margin-bottom:14px; }
+        .mon-fib-row-title { font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:10px; }
+        .mon-fib-levels { display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px; }
+        .mon-fib-item { text-align:center; }
+        .mon-fib-label { font-size:0.65rem; color:var(--text-muted); }
+        .mon-fib-price { font-size:0.82rem; font-family:'JetBrains Mono',monospace; font-weight:600; }
+
+        .mon-warning { font-size:0.8rem; padding:8px 12px; background:rgba(255,61,90,0.06); border:1px solid rgba(255,61,90,0.2); border-radius:var(--radius-sm); margin-bottom:8px; color:var(--red); }
+        .mon-loading { text-align:center; padding:40px; color:var(--text-muted); font-size:0.9rem; }
+        .mon-spinner { display:inline-block; width:24px; height:24px; border:3px solid var(--border-soft); border-top-color:var(--gold); border-radius:50%; animation:spin 0.8s linear infinite; margin-bottom:12px; }
+        @keyframes spin { to { transform:rotate(360deg); } }
+
+        .zone-badge { display:inline-block; padding:2px 10px; border-radius:100px; font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; }
+        .zone-SHALLOW  { background:rgba(0,255,136,0.12); color:var(--green); }
+        .zone-NORMAL   { background:rgba(245,200,66,0.12); color:var(--gold); }
+        .zone-DEEP     { background:rgba(99,179,237,0.12); color:#63b3ed; }
+        .zone-CRITICAL { background:rgba(255,61,90,0.12);  color:var(--red); }
 
         @media (max-width: 992px) { .stats-strip { grid-template-columns: repeat(2, 1fr); } .b-val { font-size: 1.75rem; } .tc-grid { grid-template-columns: repeat(3, 1fr); } }
         @media (max-width: 600px) { .tc-grid { grid-template-columns: repeat(2, 1fr); } .balance-bar { padding: 20px; } .balance-group { gap: 24px; } .b-val { font-size: 1.5rem; } .dash-container { padding: 88px 16px 40px; } }
@@ -151,6 +190,24 @@
             <div style="display:flex;gap:10px;">
                 <button class="new-trade-btn" id="balModalBtn" style="font-size:0.9rem;padding:10px 24px;">Set Balance</button>
                 <button class="btn-sm" onclick="document.getElementById('balModal').classList.remove('open')">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Trade Monitor Modal -->
+    <div class="mon-modal" id="monModal">
+        <div class="mon-box">
+            <div class="mon-title">📡 Trade Monitor</div>
+            <div class="mon-pair" id="monPairLabel">—</div>
+            <div id="monContent">
+                <div class="mon-loading">
+                    <div class="mon-spinner"></div><br>
+                    Live data analysis කරනවා…
+                </div>
+            </div>
+            <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap;">
+                <button class="btn-sm danger" id="monCloseTradeBtn" style="display:none;" onclick="monExecuteClose()">✕ Close Trade Now</button>
+                <button class="btn-sm" style="margin-left:auto;" onclick="document.getElementById('monModal').classList.remove('open')">Dismiss</button>
             </div>
         </div>
     </div>
@@ -439,7 +496,7 @@
         // Actions
         let actionHtml = '';
         if (isOpen(trade)) {
-            actionHtml = `<button class="btn-sm danger" onclick="manualClose('${trade._id}', ${price||trade.entry})">✕ Close @ Market</button>`;
+            actionHtml = `<button class="btn-sm monitor" onclick="openMonitor('${trade._id}')">📡 Monitor</button> <button class="btn-sm danger" onclick="manualClose('${trade._id}', ${price||trade.entry})">✕ Close</button>`;
         } else if (isPending(trade)) {
             actionHtml = `<button class="btn-sm danger" onclick="cancelPending('${trade._id}')">✕ Cancel Order</button>`;
         }
@@ -712,6 +769,141 @@
     const _chip = document.getElementById('userChipBtn'), _drop = document.getElementById('userDropdown');
     if (_chip && _drop) { _chip.addEventListener('click', e=>{e.stopPropagation();_drop.classList.toggle('open');}); document.addEventListener('click',()=>_drop.classList.remove('open')); }
     const _dl = document.getElementById('dropdownLogout'); if(_dl) _dl.addEventListener('click', async()=>{ if(typeof window.handleSignOut==='function') await window.handleSignOut(); else window.location.href='index.html'; });
+
+    /* ── Trade Monitor ── */
+    let _monTradeId = null;
+
+    async function openMonitor(tradeId) {
+        const trade = _trades.find(t => t._id === tradeId);
+        if (!trade) return;
+        _monTradeId = tradeId;
+
+        const modal = document.getElementById('monModal');
+        const label = document.getElementById('monPairLabel');
+        const content = document.getElementById('monContent');
+        const closeBtn = document.getElementById('monCloseTradeBtn');
+
+        label.textContent = `${trade.pair} · ${trade.direction} · Entry $${trade.entry}`;
+        content.innerHTML = `<div class="mon-loading"><div class="mon-spinner"></div><br>Live market data analyze කරනවා…</div>`;
+        closeBtn.style.display = 'none';
+        modal.classList.add('open');
+
+        try {
+            const tok = await getToken();
+            const r = await fetch('/api/trade-monitor', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+                body: JSON.stringify({
+                    tradeId: trade._id,
+                    pair:      trade.pair,
+                    direction: trade.direction,
+                    entry:     trade.entry,
+                    sl:        trade.sl,
+                    tp1:       trade.tp1,
+                    tp2:       trade.tp2,
+                    tp3:       trade.tp3,
+                    size:      trade.size,
+                })
+            });
+            const j = await r.json();
+            if (!j.success) { content.innerHTML = `<div style="color:var(--red);font-size:0.88rem;">❌ ${j.error || 'Analysis failed'}</div>`; return; }
+
+            const actionIcons = { HOLD:'⏳', DCA:'➕', CLOSE:'🔴', MOVE_SL:'🛡️' };
+            const actionLabels = { HOLD:'Hold Position', DCA:'DCA Opportunity', CLOSE:'Exit Trade', MOVE_SL:'Move SL to BE' };
+
+            const pnlNow = (() => {
+                const p = _livePrices[trade.pair];
+                if (!p) return null;
+                const isLong = trade.direction === 'LONG';
+                const diff = isLong ? p - trade.entry : trade.entry - p;
+                const pct  = (diff / trade.entry) * (trade.leverage || 1) * 100;
+                return (pct / 100) * trade.size;
+            })();
+
+            const h4Color  = j.structureIntact.h4  ? 'var(--green)' : 'var(--red)';
+            const d1Color  = j.structureIntact.d1  ? 'var(--green)' : 'var(--red)';
+            const pnlColor = pnlNow === null ? 'var(--text-muted)' : pnlNow >= 0 ? 'var(--green)' : 'var(--red)';
+
+            const warningsHtml = (j.warnings || []).map(w =>
+                `<div class="mon-warning">${w}</div>`
+            ).join('');
+
+            const fibHtml = j.fibonacci ? `
+            <div class="mon-fib-row">
+                <div class="mon-fib-row-title">Fibonacci Pullback Levels</div>
+                <div class="mon-fib-levels">
+                    <div class="mon-fib-item"><div class="mon-fib-label">38.2%</div><div class="mon-fib-price" style="color:var(--green);">$${j.fibonacci.fib382}</div></div>
+                    <div class="mon-fib-item"><div class="mon-fib-label">50.0%</div><div class="mon-fib-price" style="color:var(--gold);">$${j.fibonacci.fib500}</div></div>
+                    <div class="mon-fib-item"><div class="mon-fib-label">61.8%</div><div class="mon-fib-price" style="color:#63b3ed;">$${j.fibonacci.fib618}</div></div>
+                    <div class="mon-fib-item"><div class="mon-fib-label">78.6%</div><div class="mon-fib-price" style="color:var(--red);">$${j.fibonacci.fib786}</div></div>
+                </div>
+            </div>` : '';
+
+            const dcaHtml = (j.action === 'DCA' && j.dcaLevel) ? `
+            <div style="background:rgba(99,179,237,0.07);border:1px solid rgba(99,179,237,0.25);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:12px;font-size:0.84rem;">
+                💡 <strong>DCA Level:</strong> <span style="font-family:'JetBrains Mono',monospace;color:#63b3ed;">$${j.dcaLevel}</span>
+                ${j.newSL ? ` · <strong>Adjusted SL:</strong> <span style="font-family:'JetBrains Mono',monospace;color:var(--red);">$${j.newSL}</span>` : ''}
+            </div>` : '';
+
+            const moveSLHtml = (j.action === 'MOVE_SL' && j.slMoveTarget) ? `
+            <div style="background:rgba(0,255,136,0.07);border:1px solid rgba(0,255,136,0.25);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:12px;font-size:0.84rem;">
+                🛡️ <strong>Move SL to Break-Even:</strong> <span style="font-family:'JetBrains Mono',monospace;color:var(--green);">$${j.slMoveTarget}</span>
+            </div>` : '';
+
+            content.innerHTML = `
+            <div class="mon-action-banner ${j.action}">
+                ${actionIcons[j.action] || '📊'} ${actionLabels[j.action] || j.action}
+            </div>
+            <div class="mon-reason">${j.reason}</div>
+            ${dcaHtml}
+            ${moveSLHtml}
+            ${warningsHtml}
+            <div class="mon-grid">
+                <div class="mon-stat">
+                    <div class="mon-stat-lbl">Live Price</div>
+                    <div class="mon-stat-val">$${j.currentPrice}</div>
+                </div>
+                <div class="mon-stat">
+                    <div class="mon-stat-lbl">Unrealized P&amp;L</div>
+                    <div class="mon-stat-val" style="color:${pnlColor};">${pnlNow !== null ? (pnlNow >= 0 ? '+' : '') + '$' + Math.abs(pnlNow).toFixed(2) : '—'}</div>
+                </div>
+                <div class="mon-stat">
+                    <div class="mon-stat-lbl">H4 Structure</div>
+                    <div class="mon-stat-val" style="color:${h4Color};font-size:0.78rem;">${j.h4Struct}</div>
+                </div>
+                <div class="mon-stat">
+                    <div class="mon-stat-lbl">D1 Structure</div>
+                    <div class="mon-stat-val" style="color:${d1Color};font-size:0.78rem;">${j.d1Struct}</div>
+                </div>
+                <div class="mon-stat">
+                    <div class="mon-stat-lbl">Pullback Zone</div>
+                    <div class="mon-stat-val"><span class="zone-badge zone-${j.pullbackZone}">${j.pullbackZone}</span></div>
+                </div>
+                <div class="mon-stat">
+                    <div class="mon-stat-lbl">Pullback %</div>
+                    <div class="mon-stat-val">${j.pullbackPct}%</div>
+                </div>
+            </div>
+            ${fibHtml}
+            <div style="font-size:0.75rem;color:var(--text-muted);text-align:right;">
+                Invalidation level: <span style="font-family:'JetBrains Mono',monospace;">$${j.invalidationLevel}</span>
+            </div>`;
+
+            // Show close button if recommended
+            if (j.action === 'CLOSE') {
+                closeBtn.style.display = '';
+            }
+        } catch(e) {
+            content.innerHTML = `<div style="color:var(--red);font-size:0.88rem;">❌ Error: ${e.message}</div>`;
+        }
+    }
+
+    async function monExecuteClose() {
+        if (!_monTradeId) return;
+        document.getElementById('monModal').classList.remove('open');
+        const trade = _trades.find(t => t._id === _monTradeId);
+        if (trade) await manualClose(_monTradeId, _livePrices[trade.pair] || trade.entry);
+    }
 
     /* ── CSS animation ── */
     const styleEl = document.createElement('style');
