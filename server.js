@@ -306,21 +306,7 @@ app.get('/api/announcement', async (req, res) => {
   } catch(err) { res.json({ success:true, data:null, announcement:null }); }
 });
 
-async function getPaperTrades(req, res) {
-  try {
-    const token=(req.headers.authorization||'').slice(7);
-    if (!token) return res.status(401).json({ success:false });
-    const decoded=await admin.auth().verifyIdToken(token);
-    const dbUser=await User.findOne({uid:decoded.uid});
-    if (dbUser?.suspended) return res.status(403).json({ success:false, error:'Account suspended' });
-    const trades=await PaperTrade.find({userUid:decoded.uid}).sort({openedAt:-1}).limit(100);
-    res.json({ success:true, trades, data:trades });
-  } catch(err) { res.status(500).json({ success:false, error:err.message }); }
-}
-app.get('/api/paper-trades', getPaperTrades);
-app.get('/api/paper/trades',  getPaperTrades);
-
-// NOTE: old duplicate /api/paper/trade + /api/paper/balance routes removed — correct endpoints below
+// NOTE: /api/paper/trades and /api/paper-trades are registered below with verifyToken
 
 app.post('/api/reports', async (req, res) => {
   try {
@@ -468,18 +454,14 @@ app.post('/api/paper/trade', verifyToken, async (req, res) => {
 });
 
 // ── Get User Trades ───────────────────────────────────────────
-app.get('/api/paper/trades', verifyToken, async (req, res) => {
+async function getPaperTrades(req, res) {
   try {
-    const trades = await PaperTrade.find({ userUid: req.user.uid }).sort({ createdAt: -1 }).limit(50);
+    const trades = await PaperTrade.find({ userUid: req.user.uid }).sort({ openedAt: -1 }).limit(100);
     res.json({ success: true, trades, data: trades });
   } catch(err) { res.status(500).json({ success: false, error: err.message }); }
-});
-app.get('/api/paper-trades', verifyToken, async (req, res) => {
-  try {
-    const trades = await PaperTrade.find({ userUid: req.user.uid }).sort({ createdAt: -1 }).limit(50);
-    res.json({ success: true, trades, data: trades });
-  } catch(err) { res.status(500).json({ success: false, error: err.message }); }
-});
+}
+app.get('/api/paper/trades',  verifyToken, getPaperTrades);
+app.get('/api/paper-trades',  verifyToken, getPaperTrades);
 
 // ── Manual Close ──────────────────────────────────────────────
 app.patch('/api/paper/trade/:id/close', verifyToken, async (req, res) => {
