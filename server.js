@@ -346,7 +346,27 @@ app.get('/api/registration-status', (req, res) => res.json({ success:true, open:
 app.get('/api/paper/balance', verifyToken, async (req, res) => {
   try {
     const u = req.dbUser || await User.findOne({ uid: req.user.uid });
-    res.json({ success: true, balance: u ? u.paperBalance : 1000, hasSetInitialBalance: u ? !!u.hasSetInitialBalance : false });
+    // Ensure user always has a valid balance (auto-init $1,000 if missing or zero)
+    if (u && (u.paperBalance === undefined || u.paperBalance === null)) {
+      await User.updateOne({ uid: req.user.uid }, { paperBalance: 1000 });
+      u.paperBalance = 1000;
+    }
+    res.json({
+      success: true,
+      balance: u ? (u.paperBalance ?? 1000) : 1000,
+      hasSetInitialBalance: u ? !!u.hasSetInitialBalance : false
+    });
+  } catch(err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// Also support old PUT /api/paper/balance for backward compat
+app.put('/api/paper/balance', verifyToken, async (req, res) => {
+  try {
+    const { balance } = req.body;
+    const b = parseFloat(balance);
+    if (!isFinite(b) || b < 0) return res.status(400).json({ success:false, error:'Invalid balance' });
+    await User.updateOne({ uid: req.user.uid }, { paperBalance: b, hasSetInitialBalance: true }, { upsert: true });
+    res.json({ success: true, balance: b });
   } catch(err) { res.status(500).json({ success: false, error: err.message }); }
 });
 
@@ -465,12 +485,98 @@ app.post('/api/paper/trade', verifyToken, async (req, res) => {
 // ── Get User Trades ───────────────────────────────────────────
 async function getPaperTrades(req, res) {
   try {
-    const trades = await PaperTrade.find({ userUid: req.user.uid }).sort({ openedAt: -1 }).limit(100);
-    res.json({ success: true, trades, data: trades });
+    // Support both old schema (uid) and new schema (userUid) for backward compat
+    const trades = await PaperTrade.find({
+      $or: [{ userUid: req.user.uid }, { uid: req.user.uid }]
+    }).sort({ openedAt: -1, createdAt: -1 }).limit(100).lean();
+
+    // Normalize old-schema fields to new-schema field names for frontend
+    const normalized = trades.map(t => ({
+      ...t,
+      userUid:   t.userUid || t.uid,
+      entry:     t.entry     || t.entryPrice,
+      size:      t.size      || t.amount,
+      leverage:  t.leverage  || 5,
+      status:    t.status    || 'OPEN',
+      tp1:       t.tp1,
+      tp2:       t.tp2,
+      tp3:       t.tp3,
+      sl:        t.sl,
+      openedAt:  t.openedAt  || t.openTime || t.createdAt,
+    }));
+
+    res.json({ success: true, trades: normalized, data: normalized });
   } catch(err) { res.status(500).json({ success: false, error: err.message }); }
 }
 app.get('/api/paper/trades',  verifyToken, getPaperTrades);
 app.get('/api/paper-trades',  verifyToken, getPaperTrades);
+
+// Also support old-style POST /api/paper/trades (plural) for backward compat
+app.post('/api/paper/trades', verifyToken, async (req, res) => {
+  // Redirect to the canonical POST handler logic
+  req.url = '/api/paper/trade';
+  // Normalize old field names
+  if (req.body.entryPrice && !req.body.entry) req.body.entry = req.body.entryPrice;
+  if (req.body.amount && !req.body.size)      req.body.size  = req.body.amount;
+  if (!req.body.orderType) req.body.orderType = req.body.entryType || 'MARKET';
+  // Fall through to same logic
+  try {
+    const { pair, direction, orderType, entry, triggerPrice, tp1, tp2, tp3, sl, leverage, size } = req.body;
+    if (!pair || !direction || !['LONG','SHORT'].includes(direction))
+      return res.status(400).json({ success: false, error: 'Invalid pair or direction.' });
+    const tradeSize  = parseFloat(size) || 100;
+    const entryPrice = parseFloat(entry);
+    if (!entryPrice || entryPrice <= 0)
+      return res.status(400).json({ success: false, error: 'Invalid entry price.' });
+    const lev = Math.min(Math.max(parseInt(leverage) || 10, 1), 125);
+    const u = req.dbUser || await User.findOne({ uid: req.user.uid });
+    const tradeStatus = (orderType === 'LIMIT') ? 'PENDING' : 'OPEN';
+    const trade = await PaperTrade.create({
+      userUid: req.user.uid, pair: pair.toUpperCase(), direction,
+      orderType: ['MARKET','LIMIT'].includes(orderType) ? orderType : 'MARKET',
+      entry: entryPrice, triggerPrice: parseFloat(triggerPrice) || entryPrice,
+      tp1: parseFloat(tp1)||null, tp2: parseFloat(tp2)||null, tp3: parseFloat(tp3)||null,
+      sl: parseFloat(sl)||null, leverage: lev, size: tradeSize, remainingSize: tradeSize,
+      status: tradeStatus, filledAt: tradeStatus === 'OPEN' ? new Date() : null,
+    });
+    if (u) await User.updateOne({ uid: req.user.uid }, { $inc: { paperBalance: -tradeSize } });
+    broadcastToAll({ type: 'paper_trade_opened', trade, uid: req.user.uid });
+    res.json({ success: true, trade });
+  } catch(err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── Old-style PATCH/DELETE /api/paper/trades/:id (backward compat) ──────────
+app.patch('/api/paper/trades/:id', verifyToken, async (req, res) => {
+  try {
+    const trade = await PaperTrade.findOneAndUpdate(
+      { $or: [{ _id: req.params.id }, { id: parseInt(req.params.id) }], $or: [{ userUid: req.user.uid }, { uid: req.user.uid }] },
+      { $set: req.body }, { new: true }
+    );
+    if (!trade) return res.status(404).json({ success:false, error:'Trade not found' });
+    res.json({ success: true, trade });
+  } catch(err) { res.status(500).json({ success: false, error: err.message }); }
+});
+app.delete('/api/paper/trades/:id', verifyToken, async (req, res) => {
+  try {
+    await PaperTrade.findOneAndDelete({
+      $or: [{ _id: req.params.id }, { id: parseInt(req.params.id) }],
+      $or: [{ userUid: req.user.uid }, { uid: req.user.uid }]
+    });
+    res.json({ success: true });
+  } catch(err) { res.status(500).json({ success: false, error: err.message }); }
+});
+app.delete('/api/paper/trades', verifyToken, async (req, res) => {
+  try {
+    const { scope } = req.body || {};
+    if (scope === 'all') {
+      await PaperTrade.deleteMany({ $or:[{userUid:req.user.uid},{uid:req.user.uid}] });
+    } else {
+      const closedStatuses = ['TP1_HIT','TP2_HIT','TP3_HIT','SL_HIT','CLOSED','CANCELLED','TP2','BE_CLOSE','TRAIL_WIN','SL'];
+      await PaperTrade.deleteMany({ $or:[{userUid:req.user.uid},{uid:req.user.uid}], status:{$in:closedStatuses} });
+    }
+    res.json({ success: true });
+  } catch(err) { res.status(500).json({ success: false, error: err.message }); }
+});
 
 // ── Manual Close ──────────────────────────────────────────────
 app.patch('/api/paper/trade/:id/close', verifyToken, async (req, res) => {
