@@ -165,7 +165,16 @@ const adminLimiter = rateLimit({ windowMs: 15*60*1000, max: 1000, standardHeader
 app.use('/api/admin/', adminLimiter);
 app.use('/api/', apiLimiter);
 
-const BLOCKED_STATIC = ['.env','serviceAccount.json','package.json','.gitignore','deploy.sh'];
+const BLOCKED_STATIC = ['.env','serviceAccount.json','package.json','.gitignore','deploy.sh','server.js','node_modules'];
+
+// Block sensitive files before static serving
+app.use((req, res, next) => {
+  const file = path.basename(req.path);
+  if (BLOCKED_STATIC.includes(file)) return res.status(403).json({ success: false, error: 'Forbidden' });
+  next();
+});
+// Serve HTML/CSS/JS files from project root
+app.use(express.static(path.join(__dirname)));
 
 // ── Auth ──────────────────────────────────────────────────────
 async function ensureAdminPromotion(uid, emailFromToken) {
@@ -176,7 +185,7 @@ async function ensureAdminPromotion(uid, emailFromToken) {
     if (!user) {
       let displayName = '';
       try { const fb = await admin.auth().getUser(uid); displayName = fb.displayName || ''; } catch(_) {}
-      user = await User.create({ uid, email, displayName, role: isAdminEmail ? 'admin' : 'user', plan: 'free' });
+      user = await User.create({ uid, email, displayName, role: isAdminEmail ? 'admin' : 'user', plan: 'free', paperBalance: 1000 });
     } else if (isAdminEmail && user.role !== 'admin') {
       await User.updateOne({ uid }, { role: 'admin', email });
       user.role = 'admin';
@@ -2021,8 +2030,12 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
 
 // ── Catch-all ─────────────────────────────────────────────────
 app.get('*',(req,res)=>{
-  const safe=path.basename(req.path.replace('/','') || 'index.html');
-  res.sendFile(path.join(__dirname,safe),err=>{if(err)res.sendFile(path.join(__dirname,'index.html'));});
+  const safe = path.basename(req.path.replace('/','') || 'index.html');
+  // Block sensitive server files from being served
+  if (BLOCKED_STATIC.includes(safe)) return res.status(403).json({ success:false, error:'Forbidden' });
+  res.sendFile(path.join(__dirname, safe), err => {
+    if (err) res.sendFile(path.join(__dirname, 'index.html'));
+  });
 });
 
 // ============================================================
@@ -2075,8 +2088,6 @@ wss.on('connection',async(ws,req)=>{
   ws.on('error',()=>{});
 });
 
-app.use((req,res,next)=>{if(BLOCKED_STATIC.includes(path.basename(req.path)))return res.status(403).json({success:false,error:'Forbidden'});next();});
-app.use(express.static(path.join(__dirname)));
 
 const PORT=process.env.PORT||3000;
 server.listen(PORT,()=>{
