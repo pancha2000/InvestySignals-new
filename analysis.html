@@ -536,6 +536,10 @@ window.runSmartScan = async function() {
         spTxt.textContent = 'Fetching top volatile coins from Binance...';
         fill.style.width = '60%';
         const res = await fetch('/api/scan');
+        const contentType = res.headers.get('content-type') || '';
+        if (!res.ok || !contentType.includes('application/json')) {
+            throw new Error('Server error (' + res.status + ') — please try again shortly');
+        }
         const j   = await res.json();
         if (!j.success || !j.coins?.length) throw new Error(j.error || 'No coins returned');
 
@@ -680,6 +684,10 @@ window.runFullAnalysis = async function() {
             headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + tok },
             body: JSON.stringify({ coin: activeCoin }),
         });
+        const contentType2 = res.headers.get('content-type') || '';
+        if (!res.ok || !contentType2.includes('application/json')) {
+            throw new Error('Server error (' + res.status + ') — please try again shortly');
+        }
         const j = await res.json();
         if (!j.success) throw new Error(j.error || 'Analysis failed');
 

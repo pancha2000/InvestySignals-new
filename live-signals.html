@@ -1116,6 +1116,11 @@ async function openMonitor(tradeId) {
         size:      trade.amount || trade.size,
       })
     });
+    const monCT = resp.headers.get('content-type') || '';
+    if (!resp.ok || !monCT.includes('application/json')) {
+      document.getElementById('monBody').innerHTML = `<div style="color:var(--red);font-size:.88rem">❌ Server error (${resp.status}) — please try again shortly</div>`;
+      return;
+    }
     const j = await resp.json();
     if (!j.success) { document.getElementById('monBody').innerHTML = `<div style="color:var(--red);font-size:.88rem">❌ ${j.error || 'Analysis failed'}</div>`; return; }
 

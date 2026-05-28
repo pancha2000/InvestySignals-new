@@ -849,6 +849,102 @@ wss.on('connection',async(ws,req)=>{
 });
 
 
+// ── Auto TP/SL Check Engine ───────────────────────────────────
+// Checks all OPEN paper trades and auto-closes if TP or SL is hit
+async function runTPSLCheck() {
+  try {
+    const openTrades = await PT.find({ status: { $in: ['OPEN', 'PENDING'] } });
+    if (!openTrades.length) return;
+
+    for (const trade of openTrades) {
+      try {
+        const symbol = trade.pair || trade.symbol;
+        if (!symbol) continue;
+
+        // Get live price
+        const price = await getLivePrice(symbol);
+        if (!price) continue;
+
+        const isLong = trade.direction === 'LONG';
+        const entry  = trade.entryPrice || trade.entry;
+        const sl     = trade.currentSl || trade.sl;
+        const tp1    = trade.tp1;
+        const tp2    = trade.tp2;
+        const tp3    = trade.tp3;
+
+        let newStatus = null;
+        let closePrice = price;
+
+        // Check SL
+        if (sl) {
+          if (isLong && price <= sl)  { newStatus = 'SL_HIT'; }
+          if (!isLong && price >= sl) { newStatus = 'SL_HIT'; }
+        }
+
+        // Check TP3
+        if (!newStatus && tp3) {
+          if (isLong && price >= tp3)  { newStatus = 'TP3_HIT'; }
+          if (!isLong && price <= tp3) { newStatus = 'TP3_HIT'; }
+        }
+        // Check TP2
+        if (!newStatus && tp2) {
+          if (isLong && price >= tp2)  { newStatus = 'TP2_HIT'; }
+          if (!isLong && price <= tp2) { newStatus = 'TP2_HIT'; }
+        }
+        // Check TP1 (partial close — mark but keep open)
+        if (!newStatus && tp1 && !trade.tp1HitPrice) {
+          if ((isLong && price >= tp1) || (!isLong && price <= tp1)) {
+            await PT.findByIdAndUpdate(trade._id, {
+              tp1HitPrice: price,
+              tp1HitTime: new Date().toISOString(),
+              tp1Pnl: entry ? (isLong ? (price - entry) : (entry - price)) * (trade.size || trade.amount || 1) : 0,
+            });
+            broadcastToAll({ type: 'tp1_hit', tradeId: trade._id, symbol, price });
+            continue;
+          }
+        }
+
+        if (newStatus) {
+          // Calculate PnL
+          let pnl = 0;
+          const size = trade.remainingSize || trade.size || trade.amount || 0;
+          if (entry && size) {
+            pnl = isLong ? (closePrice - entry) * size : (entry - closePrice) * size;
+          }
+          const roe = (entry && size && trade.notional) ? (pnl / trade.notional) * 100 : 0;
+
+          await PT.findByIdAndUpdate(trade._id, {
+            status: newStatus,
+            closePrice,
+            closedAt: new Date(),
+            closeTime: new Date().toISOString(),
+            pnl: parseFloat(pnl.toFixed(4)),
+            roe: parseFloat(roe.toFixed(2)),
+          });
+
+          // Update paper balance
+          if (pnl !== 0) {
+            try {
+              await PB.findOneAndUpdate(
+                { uid: trade.uid },
+                { $inc: { balance: pnl } },
+                { upsert: true }
+              );
+            } catch(_) {}
+          }
+
+          broadcastToAll({ type: 'trade_closed', tradeId: trade._id, symbol, status: newStatus, closePrice, pnl });
+          console.log(`⚡ Auto-closed ${symbol} ${trade.direction} → ${newStatus} @ ${closePrice}`);
+        }
+      } catch(tradeErr) {
+        console.error('runTPSLCheck trade error:', tradeErr.message);
+      }
+    }
+  } catch(err) {
+    console.error('runTPSLCheck error:', err.message);
+  }
+}
+
 const PORT=process.env.PORT||3000;
 server.listen(PORT,()=>{
   console.log(`\n🚀 InvestySignals v5 running on port ${PORT}`);
@@ -859,3 +955,5 @@ server.listen(PORT,()=>{
 });
 process.on('SIGTERM',()=>server.close(()=>process.exit(0)));
 process.on('SIGINT', ()=>server.close(()=>process.exit(0)));
+process.on('unhandledRejection',(reason)=>{ console.error('⚠️ Unhandled Rejection:', reason); });
+process.on('uncaughtException',(err)=>{ console.error('⚠️ Uncaught Exception:', err.message); });
