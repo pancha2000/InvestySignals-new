@@ -365,6 +365,7 @@
         <a href="analysis.html" class="auth-nav-link active">🧠 Analysis</a>
         <a href="live-signals.html" class="auth-nav-link">📝 Paper Trades</a>
         <a href="profile.html" class="auth-nav-link">👤 Profile</a>
+        <a href="admin.html" id="adminNavLink" class="auth-nav-link" style="display:none;color:#f0b429;">⚡ Admin Panel</a>
         <div class="nav-divider"></div>
         <a class="auth-nav-link" style="color:var(--red,#ff4d4f);cursor:pointer;" id="navLogout">🔓 Log Out</a>
     </nav>
@@ -476,12 +477,22 @@ const auth = getAuth(initializeApp({
   storageBucket:"investysignals-890ba.firebasestorage.app", messagingSenderId:"1045281522975",
   appId:"1:1045281522975:web:47c4b8d32c5f235a7bdc2a"
 }));
-onAuthStateChanged(auth, u => {
+onAuthStateChanged(auth, async u => {
   if (!u) { window.location.href = 'login.html'; return; }
   window._authUser = u;
   const name = u.displayName || u.email?.split('@')[0] || 'Trader';
   const av = document.getElementById('userAvatar'); if(av) av.textContent = name.charAt(0).toUpperCase();
   const un = document.getElementById('userName');   if(un) un.textContent = name;
+  // Check role for admin panel
+  try {
+    const tok = await u.getIdToken();
+    const sr = await fetch('/api/user/status', { headers:{ 'Authorization':'Bearer '+tok } });
+    const sj = await sr.json();
+    if(sj.success && sj.status.role === 'admin') {
+      const al = document.getElementById('adminNavLink');
+      if(al) al.style.display = 'flex';
+    }
+  } catch(_) {}
 });
 window.handleSignOut = async () => { try { await signOut(auth); } catch(e){} window.location.href = 'index.html'; };
 const navLogout = document.getElementById('navLogout');

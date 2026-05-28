@@ -624,6 +624,357 @@ app.get('/api/paper/balance/my-requests', ptAuth, async (req, res) => {
 
 // ── Trade Monitor ─────────────────────────────────────────────
 // Context-aware re-analysis for an open trade: HOLD / DCA / CLOSE / MOVE_SL
+// ═══════════════════════════════════════════════════════════════
+//  DEEP ANALYSIS — Full multi-timeframe AI analysis
+// ═══════════════════════════════════════════════════════════════
+app.post('/api/deep-analysis', verifyToken, async (req, res) => {
+  try {
+    const coin = ((req.body.coin || 'BTC').toUpperCase().replace(/USDT$/,'').replace(/[^A-Z0-9]/g,'')).trim();
+    if (!coin) return res.status(400).json({ success:false, error:'coin required' });
+    const symbol = coin + 'USDT';
+
+    // Helper: fetch klines
+    async function klines(sym, interval, limit=200) {
+      const r = await fetchKlinesCached(sym, interval, limit);
+      return sanitizeCandles(r).map(k=>({
+        open:parseFloat(k[1]),high:parseFloat(k[2]),low:parseFloat(k[3]),
+        close:parseFloat(k[4]),volume:parseFloat(k[5])
+      }));
+    }
+
+    // Helper: EMA
+    function ema(arr, n) {
+      const k=2/(n+1); let v=arr.slice(0,n).reduce((a,b)=>a+b,0)/n;
+      const out=[]; for(let i=n;i<arr.length;i++){v=arr[i]*k+v*(1-k);out.push(v);} return out;
+    }
+    // Helper: RSI
+    function rsi(closes, period=14) {
+      let g=0,l=0;
+      for(let i=1;i<=period;i++){const d=closes[i]-closes[i-1];d>=0?g+=d:l-=d;}
+      let ag=g/period,al=l/period;
+      for(let i=period+1;i<closes.length;i++){const d=closes[i]-closes[i-1];ag=(ag*13+(d>0?d:0))/14;al=(al*13+(d<0?-d:0))/14;}
+      return parseFloat((100-100/(1+(al===0?100:ag/al))).toFixed(2));
+    }
+    // Helper: MACD
+    function macd(closes) {
+      const e12=ema(closes,12),e26=ema(closes,26);
+      const ml=e12.slice(e12.length-e26.length).map((v,i)=>v-e26[i]);
+      const s9=ema(ml,9);
+      const h=ml[ml.length-1]-s9[s9.length-1];
+      const ph=ml[ml.length-2]-s9[s9.length-2];
+      return {macd:parseFloat(ml[ml.length-1].toFixed(6)),signal:parseFloat(s9[s9.length-1].toFixed(6)),histogram:parseFloat(h.toFixed(6)),prevHistogram:parseFloat(ph.toFixed(6))};
+    }
+    // Helper: BB
+    function bb(closes,n=20) {
+      const s=closes.slice(-n),m=s.reduce((a,b)=>a+b,0)/n;
+      const std=Math.sqrt(s.reduce((a,c)=>a+Math.pow(c-m,2),0)/n);
+      return {upper:parseFloat((m+2*std).toFixed(4)),middle:parseFloat(m.toFixed(4)),lower:parseFloat((m-2*std).toFixed(4))};
+    }
+    // Helper: ATR
+    function atr(candles,n=14) {
+      const trs=candles.slice(1).map((c,i)=>Math.max(c.high-c.low,Math.abs(c.high-candles[i].close),Math.abs(c.low-candles[i].close)));
+      return parseFloat((trs.slice(-n).reduce((a,b)=>a+b,0)/n).toFixed(6));
+    }
+    // Helper: structure BOS/CHoCH
+    function structure(candles) {
+      if(candles.length<10) return 'NEUTRAL';
+      const recent=candles.slice(-10);
+      const highs=recent.map(c=>c.high),lows=recent.map(c=>c.low);
+      const phH=Math.max(...highs.slice(0,5)),plL=Math.min(...lows.slice(0,5));
+      const cH=Math.max(...highs.slice(5)),cL=Math.min(...lows.slice(5));
+      if(cH>phH) return 'BOS_BULLISH';
+      if(cL<plL) return 'BOS_BEARISH';
+      return 'NEUTRAL';
+    }
+    // Helper: FVGs
+    function fvgs(candles) {
+      const res=[];
+      for(let i=2;i<candles.length;i++){
+        const prev=candles[i-2],curr=candles[i];
+        if(curr.low>prev.high) res.push({type:'BULL',low:prev.high,high:curr.low,idx:i});
+        else if(curr.high<prev.low) res.push({type:'BEAR',low:curr.high,high:prev.low,idx:i});
+      }
+      return res.slice(-5);
+    }
+    // Helper: S/R levels
+    function srLevels(candles,n=5) {
+      const pivots=[];
+      for(let i=n;i<candles.length-n;i++){
+        const w=candles.slice(i-n,i+n+1);
+        if(candles[i].high===Math.max(...w.map(c=>c.high))) pivots.push(candles[i].high);
+        if(candles[i].low ===Math.min(...w.map(c=>c.low)))  pivots.push(candles[i].low);
+      }
+      return [...new Set(pivots.map(p=>parseFloat(p.toFixed(4))))].sort((a,b)=>a-b).slice(-6);
+    }
+    // Helper: OB
+    function orderBlock(candles) {
+      for(let i=candles.length-3;i>=0;i--){
+        const c=candles[i],n=candles[i+1];
+        if(n.close>c.high&&n.close-n.open>0) return {type:'BULL_OB',low:c.low,high:c.high};
+        if(n.close<c.low &&n.open-n.close>0) return {type:'BEAR_OB',low:c.low,high:c.high};
+      }
+      return null;
+    }
+    // Helper: Volume ratio
+    function volRatio(candles,n=20) {
+      const vols=candles.map(c=>c.volume);
+      const avg=vols.slice(-n-1,-1).reduce((a,b)=>a+b,0)/n;
+      const last=vols[vols.length-1];
+      const ratio=parseFloat((last/avg).toFixed(2));
+      return {ratio,spike:ratio>2};
+    }
+    // Helper: candle pattern
+    function candlePattern(c) {
+      const body=Math.abs(c.close-c.open),range=c.high-c.low;
+      if(range===0) return 'DOJI';
+      if(body/range<0.1) return 'DOJI';
+      const upper=c.high-Math.max(c.open,c.close),lower=Math.min(c.open,c.close)-c.low;
+      if(c.close>c.open){
+        if(lower>body*2) return 'PIN_BAR_BULL';
+        return 'BULL_CANDLE';
+      } else {
+        if(upper>body*2) return 'PIN_BAR_BEAR';
+        return 'BEAR_CANDLE';
+      }
+    }
+    // Helper: RSI divergence
+    function rsiDiv(candles,rsiArr) {
+      if(candles.length<5||rsiArr.length<5) return 'NONE';
+      const pC=candles.slice(-5).map(c=>c.close);
+      const pR=rsiArr.slice(-5);
+      const cHigh=Math.max(...pC),pHigh=Math.max(...pC.slice(0,3));
+      const cLow=Math.min(...pC),pLow=Math.min(...pC.slice(0,3));
+      const rHigh=Math.max(...pR),rLow=Math.min(...pR);
+      if(cHigh>pHigh&&rHigh<Math.max(...pR.slice(0,3))) return 'BEARISH_DIV';
+      if(cLow<pLow&&rLow>Math.min(...pR.slice(0,3))) return 'BULLISH_DIV';
+      return 'NONE';
+    }
+
+    // Fetch all timeframes in parallel
+    const [m15c,h1c,h4c,d1c,btcH4] = await Promise.all([
+      klines(symbol,'15m',200),
+      klines(symbol,'1h',200),
+      klines(symbol,'4h',200),
+      klines(symbol,'1d',100),
+      klines('BTCUSDT','4h',50),
+    ]);
+
+    // Live price
+    const price = await getLivePrice(symbol) || h1c[h1c.length-1].close;
+
+    // Compute all indicators
+    const m15closes=m15c.map(c=>c.close),h1closes=h1c.map(c=>c.close),h4closes=h4c.map(c=>c.close),d1closes=d1c.map(c=>c.close);
+    const btcCloses=btcH4.map(c=>c.close);
+
+    const m15RSI=rsi(m15closes),h1RSI=rsi(h1closes),h4RSI=rsi(h4closes);
+    const h1MACDv=macd(h1closes),m15MACDv=macd(m15closes);
+    const h1BB=bb(h1closes),h4BB=bb(h4closes);
+    const h1Ema20=ema(h1closes,20),h1Ema50=ema(h1closes,50),h1Ema200=ema(h1closes,200);
+    const h4Ema20=ema(h4closes,20),h4Ema50=ema(h4closes,50),h4Ema200=ema(h4closes,200);
+    const d1Ema200=ema(d1closes,200);
+    const btcEma20=ema(btcCloses,20);
+
+    const m15Struct=structure(m15c),h1Struct=structure(h1c),h4Struct=structure(h4c),d1Struct=structure(d1c);
+    const h4FVGs=fvgs(h4c),h1FVGs=fvgs(h1c),m15FVGs=fvgs(m15c);
+    const h4SR=srLevels(h4c),d1SR=srLevels(d1c);
+    const h4OB=orderBlock(h4c),d1OB=orderBlock(d1c);
+    const h1Vol=volRatio(h1c),m15Vol=volRatio(m15c);
+    const atr4h=atr(h4c),atr1h=atr(h1c);
+    const m15Candle=m15c[m15c.length-1];
+    const m15CP={pattern:candlePattern(m15Candle)};
+    const prevDayHigh=d1c[d1c.length-2]?.high,prevDayLow=d1c[d1c.length-2]?.low;
+
+    // Multi-RSI for divergence
+    const h4rsiArr=[],h1rsiArr=[],m15rsiArr=[];
+    for(let i=20;i<h4closes.length;i++) h4rsiArr.push(rsi(h4closes.slice(0,i+1)));
+    for(let i=20;i<h1closes.length;i++) h1rsiArr.push(rsi(h1closes.slice(0,i+1)));
+    for(let i=20;i<m15closes.length;i++) m15rsiArr.push(rsi(m15closes.slice(0,i+1)));
+    const h4Div=rsiDiv(h4c.slice(-10),h4rsiArr.slice(-10));
+    const h1Div=rsiDiv(h1c.slice(-10),h1rsiArr.slice(-10));
+    const m15Div=rsiDiv(m15c.slice(-10),m15rsiArr.slice(-10));
+
+    // BTC trend
+    const btcPrice=btcH4[btcH4.length-1].close;
+    const btcEma20Last=btcEma20[btcEma20.length-1];
+    const btcTrend=btcPrice>btcEma20Last?'STRONG_BULL':'STRONG_BEAR';
+
+    // Funding rate (Binance futures)
+    let fundingRate=null,fundingBias='NEUTRAL';
+    try {
+      const fr=await fetch(`https://fapi.binance.com/fapi/v1/fundingRate?symbol=${symbol}&limit=1`);
+      const fd=await fr.json();
+      if(Array.isArray(fd)&&fd.length) {
+        fundingRate=parseFloat(fd[0].fundingRate)*100;
+        fundingBias=fundingRate>0.01?'LONGS_PAYING':fundingRate<-0.01?'SHORTS_PAYING':'NEUTRAL';
+      }
+    } catch(_){}
+
+    // Build raw data object
+    const rawData = {
+      price, btcTrend, fundingRate, fundingBias,
+      m15RSI, h1RSI, h4RSI,
+      h4Div, h1Div, m15Div,
+      h1MACD:h1MACDv, m15MACD:m15MACDv,
+      h4Struct, h1Struct, m15Struct, d1Struct,
+      h1Ema20:h1Ema20[h1Ema20.length-1], h1Ema50:h1Ema50[h1Ema50.length-1], h1Ema200:h1Ema200[h1Ema200.length-1],
+      h4Ema20:h4Ema20[h4Ema20.length-1], h4Ema50:h4Ema50[h4Ema50.length-1], h4Ema200:h4Ema200[h4Ema200.length-1],
+      d1Ema200:d1Ema200[d1Ema200.length-1],
+      h1BB, h4BB,
+      h4SR, d1SR,
+      h4FVGs, h1FVGs, m15FVGs,
+      h4OB, d1OB,
+      h1Vol, m15Vol,
+      atr4h, atr1h,
+      m15Candle:m15CP,
+      prevDayHigh, prevDayLow,
+      // Entry/SL/TP placeholders (filled by AI)
+      entryHigh: null, entryLow: null, sl: null, tp1: null, tp2: null, tp3: null,
+    };
+
+    // ── Groq AI Analysis ─────────────────────────────────────
+    const GROQ_API_KEY = process.env.GROQ_API_KEY;
+    if (!GROQ_API_KEY) return res.status(500).json({ success:false, error:'GROQ_API_KEY not configured' });
+
+    const prompt = `You are an expert crypto futures trader. Analyze ${coin}/USDT and respond ONLY with valid JSON.
+
+Data:
+- Price: $${price}
+- BTC Trend (4H EMA20): ${btcTrend}
+- Funding: ${fundingRate!=null?fundingRate.toFixed(4)+'%':'-'} (${fundingBias})
+- RSI: 15m=${m15RSI} | 1H=${h1RSI} | 4H=${h4RSI}
+- RSI Div: 4H=${h4Div} | 1H=${h1Div} | 15m=${m15Div}
+- MACD 1H: hist=${h1MACDv.histogram} (prev=${h1MACDv.prevHistogram})
+- MACD 15m: hist=${m15MACDv.histogram}
+- Structure: D1=${d1Struct} | 4H=${h4Struct} | 1H=${h1Struct} | 15m=${m15Struct}
+- EMA 1H: 20=$${h1Ema20[h1Ema20.length-1]?.toFixed(4)} 50=$${h1Ema50[h1Ema50.length-1]?.toFixed(4)} 200=$${h1Ema200[h1Ema200.length-1]?.toFixed(4)}
+- EMA 4H: 20=$${h4Ema20[h4Ema20.length-1]?.toFixed(4)} 50=$${h4Ema50[h4Ema50.length-1]?.toFixed(4)}
+- BB 1H: upper=$${h1BB.upper} lower=$${h1BB.lower} mid=$${h1BB.middle}
+- S/R 4H: ${h4SR.join(',')}
+- S/R 1D: ${d1SR.join(',')}
+- FVG 4H: ${h4FVGs.map(f=>f.type+' '+f.low+'-'+f.high).join(' | ')||'none'}
+- FVG 1H: ${h1FVGs.map(f=>f.type+' '+f.low+'-'+f.high).join(' | ')||'none'}
+- OB 4H: ${h4OB?h4OB.type+' '+h4OB.low+'-'+h4OB.high:'none'}
+- Vol spike 1H: ${h1Vol.spike?'YES':'NO'} (${h1Vol.ratio}x)
+- Candle 15m: ${m15CP.pattern}
+- ATR 4H: ${atr4h} | ATR 1H: ${atr1h}
+- Prev Day H/L: ${prevDayHigh?.toFixed(4)}/${prevDayLow?.toFixed(4)}
+
+Respond with ONLY this JSON (no markdown, no explanation):
+{
+  "grade": "S|A|B|C",
+  "confluenceScore": 0-10,
+  "overallBias": "LONG|SHORT|NEUTRAL",
+  "summary": "2-3 sentence analysis",
+  "warning": "risk warning or null",
+  "level1": {
+    "macroConclusion": "BULLISH|BEARISH|NEUTRAL",
+    "btcTrend": "text",
+    "fundingSignal": "text",
+    "oiSignal": "text"
+  },
+  "level2": {
+    "structureConclusion": "BULLISH|BEARISH|NEUTRAL",
+    "dailyStructure": "text",
+    "dailyEMA": "text",
+    "h4Structure": "text",
+    "h4EMA": "text",
+    "h4Divergence": "text",
+    "keyLevels": "text",
+    "orderBlock": "text",
+    "fvgZones": "text"
+  },
+  "level3": {
+    "momentumConclusion": "BULLISH|BEARISH|NEUTRAL",
+    "h1Structure": "text",
+    "h1EMA": "text",
+    "h1RSI": "text",
+    "h1Divergence": "text",
+    "macdSignal": "text",
+    "bollingerSignal": "text",
+    "volumeSignal": "text"
+  },
+  "level4": {
+    "entryConclusion": "CONFIRMED|AVOID|WAIT",
+    "m15Structure": "text",
+    "m15RSI": "text",
+    "m15Divergence": "text",
+    "macdCross": "text",
+    "candlePattern": "text",
+    "volumeConfirm": "text",
+    "fvgEntry": "text",
+    "sessionNote": "text"
+  },
+  "level5": {
+    "direction": "LONG|SHORT|NEUTRAL",
+    "entryZone": "$X.XX – $X.XX",
+    "stopLoss": "$X.XX",
+    "invalidationLevel": "$X.XX",
+    "tp1": "$X.XX",
+    "tp2": "$X.XX",
+    "tp3": "$X.XX",
+    "leverage": "5x–10x",
+    "positionSize": "1–2% of capital",
+    "tradeManagement": "text",
+    "reEntry": "text",
+    "riskNote": "text or null",
+    "entryHigh": number,
+    "entryLow": number,
+    "sl": number,
+    "tp1val": number,
+    "tp2val": number,
+    "tp3val": number
+  }
+}`;
+
+    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+GROQ_API_KEY },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        max_tokens: 1500,
+        temperature: 0.2,
+        messages: [{ role:'user', content:prompt }]
+      })
+    });
+
+    if (!groqRes.ok) {
+      const errText = await groqRes.text();
+      throw new Error(`Groq API error: ${groqRes.status} — ${errText.slice(0,200)}`);
+    }
+
+    const groqData = await groqRes.json();
+    let aiText = groqData.choices?.[0]?.message?.content || '';
+    // Strip markdown fences if present
+    aiText = aiText.replace(/```json|```/g,'').trim();
+    let analysis;
+    try { analysis = JSON.parse(aiText); }
+    catch(e) { throw new Error('AI response parse failed: ' + aiText.slice(0,100)); }
+
+    // Fill rawData entry/sl/tp from AI level5
+    if (analysis.level5) {
+      rawData.entryHigh = analysis.level5.entryHigh || null;
+      rawData.entryLow  = analysis.level5.entryLow  || null;
+      rawData.sl        = analysis.level5.sl         || null;
+      rawData.tp1       = analysis.level5.tp1val     || null;
+      rawData.tp2       = analysis.level5.tp2val     || null;
+      rawData.tp3       = analysis.level5.tp3val     || null;
+    }
+
+    res.json({
+      success: true,
+      coin,
+      price,
+      confluenceScore: analysis.confluenceScore || 0,
+      analysis,
+      rawData,
+    });
+
+  } catch(err) {
+    console.error('/api/deep-analysis error:', err.message);
+    res.status(500).json({ success:false, error:err.message });
+  }
+});
+
 app.post('/api/trade-monitor', verifyToken, async (req, res) => {
   try {
     const { tradeId, pair, direction, entry, sl, tp1, tp2, tp3, size } = req.body;

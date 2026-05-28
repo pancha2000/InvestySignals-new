@@ -299,19 +299,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-b);line-heigh
       </div>
     </div>
     <nav class="ds-nav">
-      <div class="ds-section">Main</div>
       <a href="dashboard.html"><span class="ni">📊</span> Dashboard</a>
       <a href="live-signals.html" class="active"><span class="ni">📝</span> Paper Trades <span class="ds-badge green">LIVE</span></a>
-      <a href="analysis.html"><span class="ni">🔬</span> Analysis</a>
-      <a href="backtest.html"><span class="ni">📈</span> Signal Tracker <span class="ds-badge cyan">BACKTEST</span></a>
-      <div class="ds-section">Market</div>
-      <a href="dashboard.html#gainers"><span class="ni">📈</span> Top Gainers</a>
-      <a href="dashboard.html#news"><span class="ni">📰</span> Market News</a>
-      <div class="ds-section">Account</div>
-      <a href="profile.html"><span class="ni">👤</span> Profile & Settings</a>
-      <div class="ds-section">Support</div>
-      <a href="index.html"><span class="ni">🏠</span> Home</a>
-      <a href="report.html"><span class="ni">🚩</span> Report Issue</a>
+      <a href="analysis.html"><span class="ni">🧠</span> Analysis</a>
+      <a href="profile.html"><span class="ni">👤</span> Profile</a>
+      <a href="admin.html" id="adminSidebarLink" style="display:none;color:#f0b429;"><span class="ni">⚡</span> Admin Panel</a>
     </nav>
     <div class="ds-footer">
       <button class="btn-signout" onclick="handleSignOut()">🚪 Sign Out</button>
@@ -424,6 +416,10 @@ onAuthStateChanged(auth, async (user) => {
         if(_sj.status.maintenance){const _mm=_sj.status.maintenanceMsg||'We are making improvements. Please check back shortly.';document.body.innerHTML='<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#070b14;flex-direction:column;gap:16px;font-family:Outfit,sans-serif;text-align:center;padding:24px"><div style="font-size:3rem">🔧</div><div style="font-family:Rajdhani,sans-serif;font-size:1.8rem;font-weight:700;color:#e2e8f0">Under Maintenance</div><div style="color:#64748b;font-size:.95rem;max-width:400px;margin-top:8px">'+_mm+'</div></div>';return;}
         if(_sj.status.suspended){document.body.innerHTML='<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#070b14;flex-direction:column;gap:20px;font-family:Outfit,sans-serif;text-align:center;padding:24px"><div style="font-size:3rem">🚫</div><div style="font-family:Rajdhani,sans-serif;font-size:1.8rem;font-weight:700;color:#ff3d5a">Account Suspended</div><div style="color:#64748b;font-size:.9rem;max-width:400px;margin-top:8px">'+(_sj.status.suspendReason||'Your account has been suspended.')+'</div></div>';return;}
         const _fl = _sj.status.flags || {};
+        if(_sj.status.role === 'admin') {
+          const _al = document.getElementById('adminSidebarLink');
+          if(_al) _al.style.display = 'flex';
+        }
         if(_fl.feature_live_signals === false){document.body.innerHTML='<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#070b14;flex-direction:column;gap:16px;font-family:Outfit,sans-serif;text-align:center;padding:24px"><div style="font-size:3rem">🚫</div><div style="font-family:Rajdhani,sans-serif;font-size:1.8rem;font-weight:700;color:#ff3d5a">Feature Unavailable</div><div style="color:#64748b;font-size:.95rem;max-width:400px;margin-top:8px">The Live Signals feature has been disabled by the administrator.</div></div>';return;}
         if(_fl.gate_signals_login && !_uid){document.body.innerHTML='<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#070b14;flex-direction:column;gap:16px;font-family:Outfit,sans-serif;text-align:center;padding:24px"><div style="font-size:3rem">🔒</div><div style="font-family:Rajdhani,sans-serif;font-size:1.8rem;font-weight:700;color:#e2e8f0">Login Required</div><div style="color:#64748b;font-size:.95rem;max-width:400px;margin-top:8px">Please log in to access this feature.</div><a href=\'login.html\' style=\'margin-top:12px;padding:10px 24px;background:#00d4ff;color:#070b14;border-radius:8px;text-decoration:none;font-weight:700\'>Login</a></div>';return;}
       }
