@@ -93,7 +93,7 @@ async function saveSettingToDB(key, value) {
 
 // ── [1][2] Klines Cache + Retry ──────────────────────────────
 const klinesCache   = new Map();
-const KLINES_TTL    = 5 * 60 * 1000;
+const KLINES_TTL    = 15 * 60 * 1000; // 15min — reduces signal flip on re-analysis
 
 async function fetchKlinesCached(symbol, interval, limit = 200, retries = 3) {
   const key    = `${symbol}_${interval}_${limit}`;
@@ -146,6 +146,11 @@ function sanitizeCandles(klines) {
 const analysisState    = new Map();
 const lastAnalysisTime = new Map();
 const ANALYSIS_COOLDOWN = 0; // No cooldown — removed per user request
+
+// ── Thesis Tracking (per user per coin) ──────────────────────
+// Key: uid+':'+coin — stores previous analysis for flip detection
+const thesisState = new Map();
+const CONFLUENCE_THRESHOLD = 6; // score/10 — below this = NEUTRAL (prevents ±1 flip)
 
 // ── Express ───────────────────────────────────────────────────
 const app = express();
@@ -831,11 +836,95 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
       entryHigh: null, entryLow: null, sl: null, tp1: null, tp2: null, tp3: null,
     };
 
+    // ── M15 + H1 Early Warning System ────────────────────────────
+    // Detects early reversal signals BEFORE H4 confirms
+    const earlyWarnings = [];
+
+    // 1. M15 RSI > 70 while H4 still bullish (overextension warning)
+    if (m15RSI > 70 && h4RSI < 70 && h4Struct === 'BOS_BULLISH') {
+      earlyWarnings.push('M15 RSI overbought (' + m15RSI + ') while H4 still bullish — possible short-term top');
+    }
+    if (m15RSI < 30 && h4RSI > 30 && h4Struct === 'BOS_BEARISH') {
+      earlyWarnings.push('M15 RSI oversold (' + m15RSI + ') while H4 still bearish — possible short-term bounce');
+    }
+
+    // 2. M15 bearish divergence while H1 structure bullish (early flip signal)
+    if (m15Div === 'BEARISH_DIV' && h1Struct === 'BOS_BULLISH') {
+      earlyWarnings.push('M15 bearish divergence forming against H1 bullish structure — watch for H1 CHoCH');
+    }
+    if (m15Div === 'BULLISH_DIV' && h1Struct === 'BOS_BEARISH') {
+      earlyWarnings.push('M15 bullish divergence forming against H1 bearish structure — possible H1 reversal incoming');
+    }
+
+    // 3. M15 MACD cross against H4 trend
+    if (m15MACDv.histogram < 0 && m15MACDv.prevHistogram > 0 && h4Struct === 'BOS_BULLISH') {
+      earlyWarnings.push('M15 MACD just crossed bearish — early warning, H4 still bullish');
+    }
+    if (m15MACDv.histogram > 0 && m15MACDv.prevHistogram < 0 && h4Struct === 'BOS_BEARISH') {
+      earlyWarnings.push('M15 MACD just crossed bullish — early reversal signal, H4 still bearish');
+    }
+
+    // 4. Volume spike against trend
+    if (m15Vol.spike && m15Struct === 'BOS_BEARISH' && h4Struct === 'BOS_BULLISH') {
+      earlyWarnings.push('Volume spike (' + m15Vol.ratio + 'x) on M15 bearish move — possible distribution');
+    }
+
+    // ── Thesis Tracking — compare with previous analysis ────────
+    const uid = req.uid || req.user?.uid || 'anon';
+    const thesisKey = uid + ':' + coin;
+    const prevThesis = thesisState.get(thesisKey);
+
+    let thesisStatus = 'NEW';
+    let thesisContext = '';
+
+    if (prevThesis && prevThesis.ts && (Date.now() - prevThesis.ts < 6 * 60 * 60 * 1000)) {
+      const prevBias   = prevThesis.bias;
+      const prevD1     = prevThesis.d1Struct;
+      const prevH4     = prevThesis.h4Struct;
+      const d1Match    = prevD1 === d1Struct;
+      const h4Match    = prevH4 === h4Struct;
+      const biasFlip   = prevBias !== 'NEUTRAL' && prevBias !== undefined;
+
+      if (!biasFlip || prevBias === undefined) {
+        thesisStatus = 'CONFIRMED';
+      } else if (d1Match && h4Match) {
+        thesisStatus = 'CONFIRMED';           // both TFs same — no real flip
+      } else if (d1Match && !h4Match) {
+        thesisStatus = 'RETRACEMENT';         // H4 changed, D1 still intact
+      } else if (!d1Match && h4Match) {
+        thesisStatus = 'WEAKENING';           // D1 changed, uncertain
+      } else {
+        thesisStatus = 'INVALIDATED';         // both flipped — real reversal
+      }
+
+      thesisContext = `
+THESIS CONTEXT (CRITICAL — read before giving direction):
+Previous analysis bias: ${prevBias}
+Previous D1 structure:  ${prevD1}
+Previous H4 structure:  ${prevH4}
+Current D1 structure:   ${d1Struct}
+Current H4 structure:   ${h4Struct}
+Thesis status:          ${thesisStatus}
+
+Rules you MUST follow:
+- If CONFIRMED or RETRACEMENT: overallBias must MATCH previous bias (${prevBias}) unless score >= 8 against it
+- If RETRACEMENT: explain M15/H1 is normal pullback, original thesis valid, mention 38.2/50/61.8% fib levels
+- If WEAKENING: set overallBias to NEUTRAL, warn user
+- If INVALIDATED: clearly state reversal confirmed with structure evidence, then give new direction
+- If confluenceScore < ${CONFLUENCE_THRESHOLD}: set overallBias to NEUTRAL regardless`;
+    } else {
+      thesisContext = `THESIS CONTEXT: First analysis for this coin. Set thesis fresh.
+Rule: If confluenceScore < ${CONFLUENCE_THRESHOLD}, set overallBias to NEUTRAL.`;
+    }
+
     // ── Groq AI Analysis ─────────────────────────────────────
     const GROQ_API_KEY = process.env.GROQ_API_KEY;
     if (!GROQ_API_KEY) return res.status(500).json({ success:false, error:'GROQ_API_KEY not configured' });
 
+    const earlyWarnText = earlyWarnings.length ? '\nEARLY WARNINGS (M15/H1 signals):\n' + earlyWarnings.map((w,i) => (i+1)+'. '+w).join('\n') : '';
     const prompt = `You are an expert crypto futures trader. Analyze ${coin}/USDT and respond ONLY with valid JSON.
+
+${thesisContext}${earlyWarnText}
 
 Data:
 - Price: $${price}
@@ -960,11 +1049,50 @@ Respond with ONLY this JSON (no markdown, no explanation):
       rawData.tp3       = analysis.level5.tp3val     || null;
     }
 
+    // ── Enforce confluence threshold — score < 6 → NEUTRAL ────
+    const finalScore = analysis.confluenceScore || 0;
+    if (finalScore < CONFLUENCE_THRESHOLD && analysis.overallBias !== 'NEUTRAL') {
+      analysis.overallBias = 'NEUTRAL';
+      analysis.summary = (analysis.summary || '') + ' (Score below threshold — direction set to NEUTRAL for safety.)';
+      if (analysis.level5) analysis.level5.direction = 'NEUTRAL';
+    }
+
+    // ── Save thesis for next analysis comparison ───────────────
+    thesisState.set(thesisKey, {
+      bias:     analysis.overallBias,
+      score:    finalScore,
+      d1Struct, h4Struct,
+      ts:       Date.now(),
+    });
+
+    // ── Fibonacci pullback depth (for RETRACEMENT warnings) ───
+    let fibLevels = null;
+    if (prevThesis && thesisStatus === 'RETRACEMENT') {
+      const swing = prevThesis.swingHigh || price * 1.05;
+      const swingLow = prevThesis.swingLow || price * 0.92;
+      const range = swing - swingLow;
+      fibLevels = {
+        p382: parseFloat((swing - range * 0.382).toFixed(4)),
+        p500: parseFloat((swing - range * 0.500).toFixed(4)),
+        p618: parseFloat((swing - range * 0.618).toFixed(4)),
+        p786: parseFloat((swing - range * 0.786).toFixed(4)),
+      };
+    }
+    // Save swing levels for next time
+    thesisState.set(thesisKey, {
+      ...thesisState.get(thesisKey),
+      swingHigh: Math.max(...h4c.slice(-20).map(c=>c.high)),
+      swingLow:  Math.min(...h4c.slice(-20).map(c=>c.low)),
+    });
+
     res.json({
       success: true,
       coin,
       price,
-      confluenceScore: analysis.confluenceScore || 0,
+      confluenceScore: finalScore,
+      thesisStatus,                    // CONFIRMED/RETRACEMENT/WEAKENING/INVALIDATED/NEW
+      fibLevels,                        // pullback fib levels (if RETRACEMENT)
+      earlyWarnings,                    // M15+H1 early warning signals
       analysis,
       rawData,
     });
