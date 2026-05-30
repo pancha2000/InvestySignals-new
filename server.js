@@ -77,6 +77,10 @@ const SETTINGS_DEFAULTS = {
   allowRegistrations: true,
   highImpactMode: false,
   highImpactMsg: 'High impact news period — signals temporarily paused.',
+  groq_api_key: '',      // overrides .env GROQ_API_KEY if set
+  groq_model: 'llama-3.3-70b-versatile',
+  groq_max_tokens: 1500,
+  groq_temperature: 0.2,
 };
 let globalSettings = { ...SETTINGS_DEFAULTS };
 
@@ -918,8 +922,14 @@ Rule: If confluenceScore < ${CONFLUENCE_THRESHOLD}, set overallBias to NEUTRAL.`
     }
 
     // ── Groq AI Analysis ─────────────────────────────────────
-    const GROQ_API_KEY = process.env.GROQ_API_KEY;
-    if (!GROQ_API_KEY) return res.status(500).json({ success:false, error:'GROQ_API_KEY not configured' });
+    // DB ලේ key set කරලා ඇත්නම් ඒක use කරනවා, නැත්නම් .env ලේ key
+    const GROQ_API_KEY = (globalSettings.groq_api_key && globalSettings.groq_api_key.trim())
+      ? globalSettings.groq_api_key.trim()
+      : process.env.GROQ_API_KEY;
+    if (!GROQ_API_KEY) return res.status(500).json({ success:false, error:'GROQ_API_KEY not configured. Set it in Admin Panel → AI Settings.' });
+    const GROQ_MODEL       = (globalSettings.groq_model       || 'llama-3.3-70b-versatile').trim();
+    const GROQ_MAX_TOKENS  = parseInt(globalSettings.groq_max_tokens)  || 1500;
+    const GROQ_TEMPERATURE = parseFloat(globalSettings.groq_temperature) || 0.2;
 
     const earlyWarnText = earlyWarnings.length ? '\nEARLY WARNINGS (M15/H1 signals):\n' + earlyWarnings.map((w,i) => (i+1)+'. '+w).join('\n') : '';
     const prompt = `You are an expert crypto futures trader. Analyze ${coin}/USDT and respond ONLY with valid JSON.
@@ -1019,9 +1029,9 @@ Respond with ONLY this JSON (no markdown, no explanation):
       method: 'POST',
       headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+GROQ_API_KEY },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        max_tokens: 1500,
-        temperature: 0.2,
+        model: GROQ_MODEL,
+        max_tokens: GROQ_MAX_TOKENS,
+        temperature: GROQ_TEMPERATURE,
         messages: [{ role:'user', content:prompt }]
       })
     });
@@ -1327,6 +1337,123 @@ wss.on('connection',async(ws,req)=>{
   ws.on('error',()=>{});
 });
 
+
+// ══════════════════════════════════════════════════════════════
+//  ADMIN — AI Settings API
+// ══════════════════════════════════════════════════════════════
+
+/* GET /api/admin/ai-settings — get current AI config */
+app.get('/api/admin/ai-settings', verifyAdmin, (req, res) => {
+  res.json({
+    success: true,
+    settings: {
+      groq_api_key:    globalSettings.groq_api_key    || '',
+      groq_model:      globalSettings.groq_model      || 'llama-3.3-70b-versatile',
+      groq_max_tokens: globalSettings.groq_max_tokens || 1500,
+      groq_temperature:globalSettings.groq_temperature|| 0.2,
+      // Show masked key for security
+      groq_api_key_masked: globalSettings.groq_api_key
+        ? 'gsk_' + '*'.repeat(20) + globalSettings.groq_api_key.slice(-6)
+        : '(using .env key)',
+    }
+  });
+});
+
+/* POST /api/admin/ai-settings — update AI config */
+app.post('/api/admin/ai-settings', verifyAdmin, async (req, res) => {
+  try {
+    const { groq_api_key, groq_model, groq_max_tokens, groq_temperature } = req.body;
+
+    // Validate model name (only allow known Groq models)
+    const ALLOWED_MODELS = [
+      'llama-3.3-70b-versatile',
+      'llama-3.1-70b-versatile',
+      'llama-3.1-8b-instant',
+      'llama3-70b-8192',
+      'llama3-8b-8192',
+      'mixtral-8x7b-32768',
+      'gemma2-9b-it',
+    ];
+
+    if (groq_model && !ALLOWED_MODELS.includes(groq_model)) {
+      return res.status(400).json({ success: false, error: 'Invalid model name. Choose from allowed models.' });
+    }
+
+    const maxTok = parseInt(groq_max_tokens);
+    if (maxTok && (maxTok < 100 || maxTok > 8000)) {
+      return res.status(400).json({ success: false, error: 'max_tokens must be between 100 and 8000.' });
+    }
+
+    const temp = parseFloat(groq_temperature);
+    if (!isNaN(temp) && (temp < 0 || temp > 2)) {
+      return res.status(400).json({ success: false, error: 'temperature must be between 0 and 2.' });
+    }
+
+    // Save each setting
+    const updates = {};
+    if (groq_api_key !== undefined) {
+      const key = groq_api_key.trim();
+      updates.groq_api_key = key;
+      globalSettings.groq_api_key = key;
+      await saveSettingToDB('groq_api_key', key);
+    }
+    if (groq_model) {
+      updates.groq_model = groq_model.trim();
+      globalSettings.groq_model = groq_model.trim();
+      await saveSettingToDB('groq_model', groq_model.trim());
+    }
+    if (groq_max_tokens) {
+      updates.groq_max_tokens = maxTok;
+      globalSettings.groq_max_tokens = maxTok;
+      await saveSettingToDB('groq_max_tokens', maxTok);
+    }
+    if (!isNaN(temp) && groq_temperature !== undefined) {
+      updates.groq_temperature = temp;
+      globalSettings.groq_temperature = temp;
+      await saveSettingToDB('groq_temperature', temp);
+    }
+
+    console.log(`[Admin] AI settings updated by ${req.dbUser?.email}:`, Object.keys(updates).join(', '));
+    res.json({ success: true, message: 'AI settings updated successfully.', updated: Object.keys(updates) });
+  } catch(e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/* POST /api/admin/ai-settings/test — test API key */
+app.post('/api/admin/ai-settings/test', verifyAdmin, async (req, res) => {
+  try {
+    const keyToTest = (req.body.groq_api_key || '').trim()
+      || (globalSettings.groq_api_key || '').trim()
+      || process.env.GROQ_API_KEY;
+
+    if (!keyToTest) return res.status(400).json({ success: false, error: 'No API key to test.' });
+
+    const modelToTest = (req.body.groq_model || globalSettings.groq_model || 'llama-3.3-70b-versatile').trim();
+
+    const testRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+keyToTest },
+      body: JSON.stringify({
+        model: modelToTest,
+        max_tokens: 10,
+        temperature: 0.1,
+        messages: [{ role:'user', content:'Reply with OK only.' }]
+      })
+    });
+
+    if (!testRes.ok) {
+      const errText = await testRes.text();
+      return res.json({ success: false, error: `API returned ${testRes.status}: ${errText.slice(0,150)}` });
+    }
+
+    const data = await testRes.json();
+    const reply = data.choices?.[0]?.message?.content || '';
+    res.json({ success: true, message: `✅ API key works! Model "${modelToTest}" responded: "${reply.slice(0,50)}"` });
+  } catch(e) {
+    res.json({ success: false, error: 'Connection failed: ' + e.message });
+  }
+});
 
 // ── Auto TP/SL Check Engine ───────────────────────────────────
 // Checks all OPEN paper trades and auto-closes if TP or SL is hit

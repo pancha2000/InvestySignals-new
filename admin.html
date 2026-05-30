@@ -740,6 +740,95 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- ═══════════════════════════════════════════════════ -->
+                <!-- AI SETTINGS PANEL                                   -->
+                <!-- ═══════════════════════════════════════════════════ -->
+                <div class="data-panel" style="margin-top:20px;">
+                    <div class="panel-header">
+                        <div class="panel-title">🤖 AI Analysis Settings</div>
+                        <div style="font-size:0.75rem;color:var(--text-muted);">Groq AI API configuration for deep analysis</div>
+                    </div>
+                    <div style="padding:20px;display:flex;flex-direction:column;gap:16px;">
+
+                        <!-- API Key -->
+                        <div>
+                            <label style="font-size:0.8rem;font-weight:600;color:var(--text-sub);display:block;margin-bottom:6px;">
+                                🔑 Groq API Key
+                            </label>
+                            <div style="display:flex;gap:8px;">
+                                <input type="password" id="aiApiKeyInput" class="input-control"
+                                    placeholder="gsk_••••••••••••••••••••••••••"
+                                    style="flex:1;font-family:'JetBrains Mono',monospace;font-size:0.82rem;">
+                                <button onclick="toggleApiKeyVisibility()" class="btn" id="aiKeyToggleBtn"
+                                    style="padding:0 12px;background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--radius-sm);cursor:pointer;font-size:0.75rem;color:var(--text-sub);">
+                                    👁 Show
+                                </button>
+                            </div>
+                            <div id="aiKeyCurrentDisplay" style="margin-top:6px;font-size:0.72rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace;"></div>
+                            <div style="margin-top:4px;font-size:0.7rem;color:var(--text-muted);">
+                                Get your key at <a href="https://console.groq.com" target="_blank" style="color:var(--gold);">console.groq.com</a>
+                                · Leave empty to use server .env key
+                            </div>
+                        </div>
+
+                        <!-- Model Select -->
+                        <div>
+                            <label style="font-size:0.8rem;font-weight:600;color:var(--text-sub);display:block;margin-bottom:6px;">
+                                🧠 AI Model
+                            </label>
+                            <select id="aiModelSelect" class="input-control" style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;">
+                                <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile ⭐ (Recommended)</option>
+                                <option value="llama-3.1-70b-versatile">llama-3.1-70b-versatile</option>
+                                <option value="llama-3.1-8b-instant">llama-3.1-8b-instant (Fast)</option>
+                                <option value="llama3-70b-8192">llama3-70b-8192</option>
+                                <option value="llama3-8b-8192">llama3-8b-8192 (Fast)</option>
+                                <option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option>
+                                <option value="gemma2-9b-it">gemma2-9b-it</option>
+                            </select>
+                            <div style="margin-top:4px;font-size:0.7rem;color:var(--text-muted);">
+                                Larger models = better analysis quality · Smaller models = faster response
+                            </div>
+                        </div>
+
+                        <!-- Max Tokens + Temperature -->
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                            <div>
+                                <label style="font-size:0.8rem;font-weight:600;color:var(--text-sub);display:block;margin-bottom:6px;">
+                                    📊 Max Tokens
+                                </label>
+                                <input type="number" id="aiMaxTokensInput" class="input-control"
+                                    value="1500" min="100" max="8000" step="100"
+                                    style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;">
+                                <div style="margin-top:4px;font-size:0.7rem;color:var(--text-muted);">100 – 8000 (1500 recommended)</div>
+                            </div>
+                            <div>
+                                <label style="font-size:0.8rem;font-weight:600;color:var(--text-sub);display:block;margin-bottom:6px;">
+                                    🌡️ Temperature
+                                </label>
+                                <input type="number" id="aiTempInput" class="input-control"
+                                    value="0.2" min="0" max="2" step="0.1"
+                                    style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;">
+                                <div style="margin-top:4px;font-size:0.7rem;color:var(--text-muted);">0.0 = precise · 1.0 = creative</div>
+                            </div>
+                        </div>
+
+                        <!-- Result message -->
+                        <div id="aiSettingsMsg" style="display:none;padding:10px 14px;border-radius:var(--radius-sm);font-size:0.82rem;font-weight:600;"></div>
+
+                        <!-- Buttons -->
+                        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                            <button onclick="saveAiSettings()" class="btn btn-gold" style="flex:1;min-width:120px;">
+                                💾 Save Settings
+                            </button>
+                            <button onclick="testAiKey()" class="btn" id="aiTestBtn"
+                                style="flex:1;min-width:120px;background:var(--surface);border:1px solid var(--border-soft);color:var(--text);">
+                                🧪 Test API Key
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
 
@@ -1129,6 +1218,29 @@ window.adminSignOut = async function() {
                 if (rt) rt.checked = !!setR.settings.allowRegistrations;
             }
         } catch(_) {}
+
+        // Load AI settings
+        try {
+            const idToken3 = await getToken();
+            const aiR = await fetch('/api/admin/ai-settings', {
+                headers: { 'Authorization': 'Bearer ' + idToken3 }
+            }).then(r => r.json()).catch(() => ({ success: false }));
+            if (aiR.success && aiR.settings) {
+                const s = aiR.settings;
+                // Show masked key
+                const keyDisplay = document.getElementById('aiKeyCurrentDisplay');
+                if (keyDisplay) keyDisplay.textContent = 'Current: ' + (s.groq_api_key_masked || '(using .env key)');
+                // Set model
+                const modelSel = document.getElementById('aiModelSelect');
+                if (modelSel && s.groq_model) modelSel.value = s.groq_model;
+                // Set tokens
+                const tokInput = document.getElementById('aiMaxTokensInput');
+                if (tokInput && s.groq_max_tokens) tokInput.value = s.groq_max_tokens;
+                // Set temperature
+                const tempInput = document.getElementById('aiTempInput');
+                if (tempInput && s.groq_temperature !== undefined) tempInput.value = s.groq_temperature;
+            }
+        } catch(_) {}
     }  // end loadAdminStats
 
     async function refreshStats() {
@@ -1395,6 +1507,88 @@ window.adminSignOut = async function() {
 
     // ── Settings Toggles (Maintenance, Engine, Registrations) ──
     // FIX: maintToggle had no event listener — wires all three toggles to API
+    // ── AI Settings Functions ──────────────────────────────────
+    let _aiKeyVisible = false;
+    function toggleApiKeyVisibility() {
+        _aiKeyVisible = !_aiKeyVisible;
+        const inp = document.getElementById('aiApiKeyInput');
+        const btn = document.getElementById('aiKeyToggleBtn');
+        if (!inp || !btn) return;
+        inp.type = _aiKeyVisible ? 'text' : 'password';
+        btn.textContent = _aiKeyVisible ? '🙈 Hide' : '👁 Show';
+    }
+
+    function showAiMsg(msg, isError) {
+        const el = document.getElementById('aiSettingsMsg');
+        if (!el) return;
+        el.style.display = 'block';
+        el.style.background = isError ? 'rgba(255,59,92,0.12)' : 'rgba(16,185,129,0.12)';
+        el.style.border = '1px solid ' + (isError ? 'rgba(255,59,92,0.3)' : 'rgba(16,185,129,0.3)');
+        el.style.color = isError ? 'var(--red,#ff4d4f)' : 'var(--green,#10b981)';
+        el.textContent = msg;
+        setTimeout(() => { el.style.display = 'none'; }, 5000);
+    }
+
+    async function saveAiSettings() {
+        const key      = document.getElementById('aiApiKeyInput')?.value.trim();
+        const model    = document.getElementById('aiModelSelect')?.value;
+        const maxTok   = parseInt(document.getElementById('aiMaxTokensInput')?.value);
+        const temp     = parseFloat(document.getElementById('aiTempInput')?.value);
+
+        const body = { groq_model: model, groq_max_tokens: maxTok, groq_temperature: temp };
+        if (key) body.groq_api_key = key; // only send if user typed something
+
+        try {
+            const idToken = await getToken();
+            const res = await fetch('/api/admin/ai-settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+                body: JSON.stringify(body)
+            });
+            const j = await res.json();
+            if (j.success) {
+                showAiMsg('✅ AI settings saved! Updated: ' + (j.updated || []).join(', '), false);
+                // Reload to show new masked key
+                await loadAdminStats();
+                // Clear API key input after save
+                const keyInp = document.getElementById('aiApiKeyInput');
+                if (keyInp) keyInp.value = '';
+            } else {
+                showAiMsg('❌ ' + (j.error || 'Save failed'), true);
+            }
+        } catch(e) {
+            showAiMsg('❌ Network error: ' + e.message, true);
+        }
+    }
+
+    async function testAiKey() {
+        const btn  = document.getElementById('aiTestBtn');
+        const key  = document.getElementById('aiApiKeyInput')?.value.trim();
+        const model= document.getElementById('aiModelSelect')?.value;
+        if (btn) { btn.textContent = '⏳ Testing...'; btn.disabled = true; }
+        try {
+            const idToken = await getToken();
+            const body = { groq_model: model };
+            if (key) body.groq_api_key = key;
+            const res = await fetch('/api/admin/ai-settings/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+                body: JSON.stringify(body)
+            });
+            const j = await res.json();
+            if (j.success) {
+                showAiMsg(j.message || '✅ API key works!', false);
+            } else {
+                showAiMsg('❌ ' + (j.error || 'Test failed'), true);
+            }
+        } catch(e) {
+            showAiMsg('❌ ' + e.message, true);
+        } finally {
+            if (btn) { btn.textContent = '🧪 Test API Key'; btn.disabled = false; }
+        }
+    }
+    // ─────────────────────────────────────────────────────────
+
     async function saveToggleSetting(key, value) {
         try {
             const idToken = await getToken();
