@@ -12,7 +12,7 @@
 
         .scanner-wrap {
             background: var(--bg2); border: 1px solid var(--border-soft);
-            border-radius: var(--radius); overflow: hidden;
+            border-radius: var(--radius);
         }
         .scanner-header { padding: 18px 20px 16px; }
         .scanner-title-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:4px; }
@@ -501,6 +501,24 @@ if (navLogout) navLogout.addEventListener('click', window.handleSignOut);
 
 <!-- ══ MAIN SCRIPTS ══ -->
 <script>
+/* ── Global error safety net ── */
+window.onerror = function(msg, src, line, col, err) {
+    console.error('Global error:', msg, 'at', src, line);
+    // Re-enable any stuck buttons
+    ['smartScanBtn','deepScanBtn','runAnalysisBtn','ptSubmitBtn'].forEach(function(id) {
+        const el = document.getElementById(id);
+        if (el) el.disabled = false;
+    });
+    return false;
+};
+window.onunhandledrejection = function(e) {
+    console.error('Unhandled promise rejection:', e.reason);
+    ['smartScanBtn','deepScanBtn','runAnalysisBtn'].forEach(function(id) {
+        const el = document.getElementById(id);
+        if (el) el.disabled = false;
+    });
+};
+
 /* ── Nav ── */
 const _ham = document.getElementById('authHamburger');
 const _menu = document.getElementById('authNavMenu');
@@ -696,7 +714,13 @@ window.runFullAnalysis = async function() {
             body: JSON.stringify({ coin: activeCoin }),
         });
         const contentType2 = res.headers.get('content-type') || '';
-        if (!res.ok || !contentType2.includes('application/json')) {
+        if (!contentType2.includes('application/json')) {
+            if (res.status === 502 || res.status === 503 || res.status === 504) {
+                throw new Error('Server is restarting — please wait 30 seconds and try again');
+            }
+            if (res.status === 404) {
+                throw new Error('Analysis endpoint not found — please redeploy the latest server.js');
+            }
             throw new Error('Server error (' + res.status + ') — please try again shortly');
         }
         const j = await res.json();
@@ -738,63 +762,77 @@ function renderFullAnalysis(data, container) {
     const circ  = 2 * Math.PI * 26;
 
     // ── Thesis Status Banner ──
-    const ts = data.thesisStatus || 'NEW';
+    const ts   = data.thesisStatus || 'NEW';
     const fibL = data.fibLevels;
-    const thesisColor = {
-        CONFIRMED:   'var(--green)',
-        RETRACEMENT: 'var(--gold)',
-        WEAKENING:   '#ff9800',
-        INVALIDATED: 'var(--red)',
-        NEW:         'var(--blue,#3a9bd5)',
-    }[ts] || 'var(--text-muted)';
-    const thesisIcon = {
-        CONFIRMED:   '✅',
-        RETRACEMENT: '↩️',
-        WEAKENING:   '⚠️',
-        INVALIDATED: '❌',
-        NEW:         '🆕',
-    }[ts] || '📊';
-    const thesisLabel = {
-        CONFIRMED:   'Thesis Confirmed — previous direction still valid',
-        RETRACEMENT:'Normal Pullback — original thesis intact, check fib levels',
-        WEAKENING:   'Thesis Weakening — structure shifting, be cautious',
-        INVALIDATED: 'Thesis Invalidated — reversal confirmed, direction changed',
-        NEW:         'New Analysis',
-    }[ts] || ts;
 
-    const thesisBannerHtml = `
-    <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:${thesisColor}18;border:1px solid ${thesisColor}44;margin-bottom:10px;">
-        <span style="font-size:1rem;">${thesisIcon}</span>
-        <div>
-            <div style="font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);font-family:'JetBrains Mono',monospace;">Thesis Status</div>
-            <div style="font-size:0.8rem;font-weight:700;color:${thesisColor};">${thesisLabel}</div>
-        </div>
-        ${score < 6 ? `<span style="margin-left:auto;font-size:0.65rem;padding:2px 8px;border-radius:4px;background:rgba(255,165,0,0.15);color:var(--gold);font-weight:700;font-family:'JetBrains Mono',monospace;">Score ${score}/10 → NEUTRAL</span>` : ''}
-    </div>
-    ${ts === 'RETRACEMENT' && fibL ? `
-    <div style="padding:8px 12px;border-radius:8px;background:rgba(240,180,41,0.07);border:1px solid rgba(240,180,41,0.2);margin-bottom:10px;">
-        <div style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--gold);font-family:'JetBrains Mono',monospace;margin-bottom:6px;">📐 Fibonacci Pullback Levels</div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;">
-            <span style="font-family:'JetBrains Mono',monospace;font-size:0.7rem;padding:3px 8px;border-radius:4px;background:var(--surface);border:1px solid var(--border-soft);">38.2% $${fibL.p382}</span>
-            <span style="font-family:'JetBrains Mono',monospace;font-size:0.7rem;padding:3px 8px;border-radius:4px;background:var(--surface);border:1px solid var(--border-soft);">50.0% $${fibL.p500}</span>
-            <span style="font-family:'JetBrains Mono',monospace;font-size:0.7rem;padding:3px 8px;border-radius:4px;background:rgba(240,180,41,0.12);border:1px solid rgba(240,180,41,0.35);color:var(--gold);font-weight:700;">61.8% $${fibL.p618} ← Key</span>
-            <span style="font-family:'JetBrains Mono',monospace;font-size:0.7rem;padding:3px 8px;border-radius:4px;background:var(--surface);border:1px solid var(--border-soft);">78.6% $${fibL.p786}</span>
-        </div>
-        <div style="font-size:0.65rem;color:var(--text-muted);margin-top:5px;">61.8% level is the ideal re-entry zone. Below 78.6% = thesis invalidation.</div>
-    </div>` : ''}
-    ${ts === 'INVALIDATED' ? `
-    <div style="padding:8px 12px;border-radius:8px;background:rgba(255,59,92,0.08);border:1px solid rgba(255,59,92,0.25);margin-bottom:10px;">
-        <div style="font-size:0.72rem;color:var(--red);font-weight:600;">❌ Previous trade thesis no longer valid. Both D1 and H4 structure have flipped. Do NOT add to previous position. Wait for new confirmation before entering.</div>
-    </div>` : ''}
-    ${ts === 'WEAKENING' ? `
-    <div style="padding:8px 12px;border-radius:8px;background:rgba(255,152,0,0.08);border:1px solid rgba(255,152,0,0.25);margin-bottom:10px;">
-        <div style="font-size:0.72rem;color:#ff9800;font-weight:600;">⚠️ Structure is shifting. Consider tightening stop-loss to break-even. No new entries until structure re-confirms.</div>
-    </div>` : ''}
-    ${data.earlyWarnings && data.earlyWarnings.length ? `
-    <div style="padding:8px 12px;border-radius:8px;background:rgba(255,152,0,0.06);border:1px solid rgba(255,152,0,0.2);margin-bottom:10px;">
-        <div style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#ff9800;font-family:'JetBrains Mono',monospace;margin-bottom:5px;">⚡ M15/H1 Early Warnings</div>
-        ${data.earlyWarnings.map(w => `<div style="font-size:0.7rem;color:var(--text-sub);padding:2px 0;border-bottom:1px solid rgba(255,152,0,0.1);">• ${w}</div>`).join('')}
-    </div>` : ''}\`;
+    const thesisColor = (
+        ts === 'CONFIRMED'   ? 'var(--green)' :
+        ts === 'RETRACEMENT' ? 'var(--gold)'  :
+        ts === 'WEAKENING'   ? '#ff9800'      :
+        ts === 'INVALIDATED' ? 'var(--red)'   :
+        'var(--blue,#3a9bd5)'
+    );
+    const thesisIcon = (
+        ts === 'CONFIRMED'   ? '✅' :
+        ts === 'RETRACEMENT' ? '↩️' :
+        ts === 'WEAKENING'   ? '⚠️' :
+        ts === 'INVALIDATED' ? '❌' : '🆕'
+    );
+    const thesisLabel = (
+        ts === 'CONFIRMED'   ? 'Thesis Confirmed — previous direction still valid'           :
+        ts === 'RETRACEMENT' ? 'Normal Pullback — original thesis intact, check fib levels'  :
+        ts === 'WEAKENING'   ? 'Thesis Weakening — structure shifting, be cautious'          :
+        ts === 'INVALIDATED' ? 'Thesis Invalidated — reversal confirmed, direction changed'  :
+        'New Analysis'
+    );
+
+    let thesisBannerHtml = '';
+
+    // Main thesis badge
+    thesisBannerHtml += '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:' + thesisColor + '18;border:1px solid ' + thesisColor + '44;margin-bottom:10px;">'
+                      + '<span style="font-size:1rem;">' + thesisIcon + '</span>'
+                      + '<div>'
+                      + '<div style="font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);font-family:\'JetBrains Mono\',monospace;">Thesis Status</div>'
+                      + '<div style="font-size:0.8rem;font-weight:700;color:' + thesisColor + ';">' + thesisLabel + '</div>'
+                      + '</div>'
+                      + (score < 6 ? '<span style="margin-left:auto;font-size:0.65rem;padding:2px 8px;border-radius:4px;background:rgba(255,165,0,0.15);color:var(--gold);font-weight:700;font-family:\'JetBrains Mono\',monospace;">Score ' + score + '/10 → NEUTRAL</span>' : '')
+                      + '</div>';
+
+    // Fibonacci levels (only for RETRACEMENT)
+    if (ts === 'RETRACEMENT' && fibL) {
+        thesisBannerHtml += '<div style="padding:8px 12px;border-radius:8px;background:rgba(240,180,41,0.07);border:1px solid rgba(240,180,41,0.2);margin-bottom:10px;">'
+                          + '<div style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--gold);font-family:\'JetBrains Mono\',monospace;margin-bottom:6px;">📐 Fibonacci Pullback Levels</div>'
+                          + '<div style="display:flex;flex-wrap:wrap;gap:6px;">'
+                          + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:0.7rem;padding:3px 8px;border-radius:4px;background:var(--surface);border:1px solid var(--border-soft);">38.2% $' + fibL.p382 + '</span>'
+                          + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:0.7rem;padding:3px 8px;border-radius:4px;background:var(--surface);border:1px solid var(--border-soft);">50.0% $' + fibL.p500 + '</span>'
+                          + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:0.7rem;padding:3px 8px;border-radius:4px;background:rgba(240,180,41,0.12);border:1px solid rgba(240,180,41,0.35);color:var(--gold);font-weight:700;">61.8% $' + fibL.p618 + ' ← Key</span>'
+                          + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:0.7rem;padding:3px 8px;border-radius:4px;background:var(--surface);border:1px solid var(--border-soft);">78.6% $' + fibL.p786 + '</span>'
+                          + '</div>'
+                          + '<div style="font-size:0.65rem;color:var(--text-muted);margin-top:5px;">61.8% level is the ideal re-entry zone. Below 78.6% = thesis invalidation.</div>'
+                          + '</div>';
+    }
+
+    // INVALIDATED warning
+    if (ts === 'INVALIDATED') {
+        thesisBannerHtml += '<div style="padding:8px 12px;border-radius:8px;background:rgba(255,59,92,0.08);border:1px solid rgba(255,59,92,0.25);margin-bottom:10px;">'
+                          + '<div style="font-size:0.72rem;color:var(--red);font-weight:600;">❌ Previous trade thesis no longer valid. Both D1 and H4 structure have flipped. Do NOT add to previous position. Wait for new confirmation before entering.</div>'
+                          + '</div>';
+    }
+
+    // WEAKENING warning
+    if (ts === 'WEAKENING') {
+        thesisBannerHtml += '<div style="padding:8px 12px;border-radius:8px;background:rgba(255,152,0,0.08);border:1px solid rgba(255,152,0,0.25);margin-bottom:10px;">'
+                          + '<div style="font-size:0.72rem;color:#ff9800;font-weight:600;">⚠️ Structure is shifting. Consider tightening stop-loss to break-even. No new entries until structure re-confirms.</div>'
+                          + '</div>';
+    }
+
+    // Early warnings (M15/H1)
+    if (data.earlyWarnings && data.earlyWarnings.length) {
+        thesisBannerHtml += '<div style="padding:8px 12px;border-radius:8px;background:rgba(255,152,0,0.06);border:1px solid rgba(255,152,0,0.2);margin-bottom:10px;">'
+                          + '<div style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#ff9800;font-family:\'JetBrains Mono\',monospace;margin-bottom:5px;">⚡ M15/H1 Early Warnings</div>'
+                          + data.earlyWarnings.map(function(w){ return '<div style="font-size:0.7rem;color:var(--text-sub);padding:2px 0;border-bottom:1px solid rgba(255,152,0,0.1);">• ' + w + '</div>'; }).join('')
+                          + '</div>';
+    }
 
     // ── Score ring + overall bias ──
     const scoreHtml = `
