@@ -1348,7 +1348,8 @@ async function ptLoadTrades() {
         const r = await fetch('/api/paper/trades', { headers: { Authorization: 'Bearer '+tok } });
         const d = await r.json();
         if (!d.success) return;
-        ptOpenTrades = (d.trades || []).filter(t => ['OPEN','PENDING'].includes(t.status));
+        const ACTIVE = ['OPEN','PENDING','PENDING_LONG','PENDING_SHORT','TP1_HIT'];
+        ptOpenTrades = (d.trades || []).filter(t => ACTIVE.includes(t.status));
         renderPTTrades();
     } catch(e) {}
 }
@@ -1360,18 +1361,26 @@ function renderPTTrades() {
     if (ptOpenTrades.length === 0) { wrap.style.display = 'none'; return; }
     wrap.style.display = '';
     list.innerHTML = ptOpenTrades.map(t => {
-        const pnlColor = t.pnl >= 0 ? 'var(--green)' : 'var(--red)';
-        const statusLabel = t.status === 'PENDING' ? '⏳ PENDING' : '🟢 OPEN';
+        const pnl = t.pnl || 0;
+        const pnlColor = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+        const isPending = ['PENDING','PENDING_LONG','PENDING_SHORT'].includes(t.status);
+        const statusLabel = isPending ? '⏳ PENDING' : t.status === 'TP1_HIT' ? '🎯 TP1 HIT' : '🟢 OPEN';
+        const dir = t.direction || 'LONG';
+        const fmtL = v => v ? '$'+parseFloat(v).toFixed(4) : '—';
         return `<div class="pt-trade-row">
-            <div class="pt-trade-dir ${t.direction.toLowerCase()}">${t.direction}</div>
+            <div class="pt-trade-dir ${dir.toLowerCase()}">${dir}</div>
             <div class="pt-trade-info">
-                ${t.pair} · ${t.leverage}x · $${t.size}<br>
-                Entry: ${t.entry} · ${statusLabel}
+                <strong>${t.pair}</strong> · ${t.leverage}x · $${t.size||t.amount}<br>
+                <span style="color:#6ee7b7">Entry: ${fmtL(t.entry||t.entryPrice)}</span>
+                · <span style="color:#4ade80">TP1: ${fmtL(t.tp1)}</span>
+                ${t.tp2?`· <span style="color:#22c55e">TP2: ${fmtL(t.tp2)}</span>`:''}
+                · <span style="color:#f87171">SL: ${fmtL(t.sl)}</span><br>
+                <span style="font-size:.65rem;color:var(--muted)">${statusLabel}</span>
             </div>
             <div class="pt-trade-pnl" style="color:${pnlColor};font-size:0.7rem;">
-                ${t.pnl >= 0 ? '+' : ''}$${(t.pnl||0).toFixed(2)}
+                ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}
             </div>
-            <button class="pt-close-btn" onclick="ptCloseTrade('${t._id}', ${t.entry})">✕</button>
+            <button class="pt-close-btn" onclick="ptCloseTrade('${t._id}', ${t.entry||t.entryPrice||0})">✕</button>
         </div>`;
     }).join('');
 }
@@ -1401,6 +1410,7 @@ async function ptSubmit() {
     const tp3      = parseFloat(document.getElementById('ptTP3')?.value || 0) || null;
     const coin     = ptCurrentData?.coin || '';
 
+    if (!coin)              { ptShowMsg('Run a market scan first to select a coin.', true); return; }
     if (!size || size < 1) { ptShowMsg('Enter a valid size.', true); return; }
     if (!entry)             { ptShowMsg('Enter a valid entry price.', true); return; }
     if (size > ptBalance)   { ptShowMsg(`Insufficient balance ($${ptBalance.toFixed(2)}).`, true); return; }

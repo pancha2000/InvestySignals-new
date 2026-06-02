@@ -457,7 +457,10 @@ app.get('/api/paper/trades', ptAuth, async (req, res) => {
 // Also expose as /api/paper-trades (some pages use this URL)
 app.get('/api/paper-trades', ptAuth, async (req, res) => {
   try {
-    const trades = await PT.find(uidQuery(req.uid)).sort({ id:-1, openedAt:-1, createdAt:-1 }).lean();
+    const [trades, pb] = await Promise.all([
+      PT.find(uidQuery(req.uid)).sort({ id:-1, openedAt:-1, createdAt:-1 }).lean(),
+      PB.findOne({ uid: req.uid }),
+    ]);
     const normalized = trades.map(t => ({
       ...t,
       entryPrice: t.entryPrice || t.entry || 0,
@@ -467,7 +470,9 @@ app.get('/api/paper-trades', ptAuth, async (req, res) => {
       symbol:     t.symbol     || t.pair || '',
       pair:       t.pair       || t.symbol || '',
     }));
-    res.json({ success:true, trades:normalized });
+    const balance = pb?.balance ?? 1000;
+    // Return both field names for compatibility
+    res.json({ success:true, trades:normalized, data:normalized, balance });
   } catch(e) { res.status(500).json({ success:false, error:e.message }); }
 });
 
