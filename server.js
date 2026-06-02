@@ -540,14 +540,34 @@ app.patch('/api/paper/trade/:id/close', ptAuth, async (req, res) => {
         { id: parseInt(req.params.id) || 0 }
       ]}
     ]};
-    const patch = { ...req.body, closedAt: new Date(), closeTime: new Date().toISOString() };
+    // Auto-calculate pnl if not provided but closePrice is given
+    const tradeBeforeClose = await PT.findOne(filter).lean();
+    if (!tradeBeforeClose) return res.status(404).json({ success:false, error:'Trade not found' });
+
+    const closePrice  = parseFloat(req.body.closePrice) || 0;
+    const entryPrice  = tradeBeforeClose.entryPrice || tradeBeforeClose.entry || 0;
+    const tradeSize   = tradeBeforeClose.size || tradeBeforeClose.amount || 0;
+    const leverage    = tradeBeforeClose.leverage || 1;
+    const isLong      = tradeBeforeClose.direction === 'LONG';
+
+    let pnl = parseFloat(req.body.pnl || req.body.totalPnl || 0);
+    if (!pnl && closePrice && entryPrice && tradeSize) {
+      pnl = isLong
+        ? (closePrice - entryPrice) / entryPrice * tradeSize * leverage
+        : (entryPrice - closePrice) / entryPrice * tradeSize * leverage;
+      pnl = parseFloat(pnl.toFixed(4));
+    }
+    const roe = (entryPrice && tradeSize) ? parseFloat((pnl / tradeSize * 100).toFixed(2)) : 0;
+
+    const patch = { ...req.body, pnl, roe, status: req.body.status || 'CLOSED',
+      closedAt: new Date(), closeTime: new Date().toISOString() };
     const trade = await PT.findOneAndUpdate(filter, { $set: patch }, { new: true });
     if (!trade) return res.status(404).json({ success:false, error:'Trade not found' });
-    // Refund closed P&L to balance
-    const pnl = parseFloat(req.body.pnl || req.body.totalPnl || 0);
+
+    // Refund margin + pnl to balance
     const size = trade.size || trade.amount || 0;
-    if (size > 0) await PB.updateOne({ uid: req.uid }, { $inc: { balance: size + pnl } });
-    res.json({ success:true, trade });
+    if (size > 0) await PB.updateOne({ uid: req.uid }, { $inc: { balance: size + pnl } }, { upsert: true });
+    res.json({ success:true, trade, pnl, roe });
   } catch(e) { res.status(500).json({ success:false, error:e.message }); }
 });
 
@@ -1277,7 +1297,401 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
   }
 });
 
-// ── Catch-all ─────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+//  ADMIN — Users API
+// ═══════════════════════════════════════════════════════════════
+
+/* GET /api/admin/users — list all users */
+app.get('/api/admin/users', verifyAdmin, async (req, res) => {
+  try {
+    const users = await User.find({}).sort({ createdAt: -1 }).lean();
+    res.json({ success: true, users });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+/* PATCH /api/admin/users/:uid — update user (suspend, plan, etc.) */
+app.patch('/api/admin/users/:uid', verifyAdmin, async (req, res) => {
+  try {
+    const allowed = ['suspended','suspendReason','plan','role','maintenance','maintenanceMsg'];
+    const update  = {};
+    allowed.forEach(k => { if (req.body[k] !== undefined) update[k] = req.body[k]; });
+    const user = await User.findOneAndUpdate({ uid: req.params.uid }, update, { new: true });
+    if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+    res.json({ success: true, user });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+/* DELETE /api/admin/users/:uid — delete user from DB and Firebase */
+app.delete('/api/admin/users/:uid', verifyAdmin, async (req, res) => {
+  try {
+    await User.findOneAndDelete({ uid: req.params.uid });
+    try { await admin.auth().deleteUser(req.params.uid); } catch(_) {}
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  ADMIN — Stats API
+// ═══════════════════════════════════════════════════════════════
+
+/* GET /api/admin/stats */
+app.get('/api/admin/stats', verifyAdmin, async (req, res) => {
+  try {
+    const [totalUsers, activeSignals, openReports, pendingBalReqs] = await Promise.all([
+      User.countDocuments({}),
+      Signal.countDocuments({ active: true }),
+      Report.countDocuments({ status: 'open' }),
+      mongoose.models.BalanceRequest
+        ? mongoose.models.BalanceRequest.countDocuments({ status: 'pending' })
+        : 0,
+    ]);
+    res.json({ success: true, stats: { totalUsers, activeSignals, openReports, pendingBalReqs } });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  ADMIN — Settings API
+// ═══════════════════════════════════════════════════════════════
+
+/* GET /api/admin/settings */
+app.get('/api/admin/settings', verifyAdmin, (req, res) => {
+  res.json({
+    success: true,
+    settings: {
+      maintenance:        globalSettings.maintenance        || false,
+      maintenanceMsg:     globalSettings.maintenanceMsg     || '',
+      allowRegistrations: globalSettings.allowRegistrations !== false,
+      highImpactMode:     globalSettings.highImpactMode     || false,
+      highImpactMsg:      globalSettings.highImpactMsg      || '',
+      autoEngine:         globalSettings.autoEngine         || false,
+    }
+  });
+});
+
+/* PATCH /api/admin/settings — save one or more settings */
+app.patch('/api/admin/settings', verifyAdmin, async (req, res) => {
+  try {
+    const allowed = ['maintenance','maintenanceMsg','allowRegistrations','highImpactMode','highImpactMsg','autoEngine'];
+    for (const k of allowed) {
+      if (req.body[k] !== undefined) {
+        globalSettings[k] = req.body[k];
+        await saveSettingToDB(k, req.body[k]);
+      }
+    }
+    res.json({ success: true, settings: globalSettings });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+/* POST /api/admin/settings (alias) */
+app.post('/api/admin/settings', verifyAdmin, async (req, res) => {
+  try {
+    const allowed = ['maintenance','maintenanceMsg','allowRegistrations','highImpactMode','highImpactMsg','autoEngine'];
+    for (const k of allowed) {
+      if (req.body[k] !== undefined) {
+        globalSettings[k] = req.body[k];
+        await saveSettingToDB(k, req.body[k]);
+      }
+    }
+    res.json({ success: true, settings: globalSettings });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  ADMIN — Reports API
+// ═══════════════════════════════════════════════════════════════
+
+/* GET /api/admin/reports */
+app.get('/api/admin/reports', verifyAdmin, async (req, res) => {
+  try {
+    const filter = req.query.status ? { status: req.query.status } : {};
+    const reports = await Report.find(filter).sort({ createdAt: -1 }).lean();
+    const openReports = await Report.countDocuments({ status: 'open' });
+    res.json({ success: true, data: reports, openReports });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+/* PATCH /api/admin/reports/:id — update report status/notes */
+app.patch('/api/admin/reports/:id', verifyAdmin, async (req, res) => {
+  try {
+    const update = {};
+    ['status','adminNote','adminReply','readByAdmin'].forEach(k => {
+      if (req.body[k] !== undefined) update[k] = req.body[k];
+    });
+    if (req.body.status && ['resolved','dismissed'].includes(req.body.status)) {
+      update.resolvedBy = req.dbUser?.email || 'admin';
+      update.resolvedAt = new Date();
+    }
+    const report = await Report.findByIdAndUpdate(req.params.id, update, { new: true });
+    if (!report) return res.status(404).json({ success: false, error: 'Report not found' });
+    res.json({ success: true, report });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+/* DELETE /api/admin/reports/:id */
+app.delete('/api/admin/reports/:id', verifyAdmin, async (req, res) => {
+  try {
+    await Report.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  ADMIN — Announcements API
+// ═══════════════════════════════════════════════════════════════
+
+/* GET /api/admin/announcements — list all */
+app.get('/api/admin/announcements', verifyAdmin, async (req, res) => {
+  try {
+    const anns = await Announcement.find({}).sort({ createdAt: -1 }).lean();
+    res.json({ success: true, data: anns });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+/* POST /api/admin/announcements — create */
+app.post('/api/admin/announcements', verifyAdmin, async (req, res) => {
+  try {
+    const { title, message, type, active, showFrom, showUntil } = req.body;
+    if (!title || !message) return res.status(400).json({ success: false, error: 'Title and message required' });
+    const ann = await Announcement.create({
+      title, message,
+      type:    type || 'info',
+      active:  active !== false,
+      showFrom: showFrom ? new Date(showFrom) : new Date(),
+      showUntil: showUntil ? new Date(showUntil) : null,
+      createdBy: req.dbUser?.email || 'admin',
+    });
+    // Broadcast to live users
+    try { broadcastToAll({ type: 'announcement', data: ann }); } catch(_) {}
+    res.json({ success: true, data: ann });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+/* PUT /api/admin/announcements/:id — update (toggle active, etc.) */
+app.put('/api/admin/announcements/:id', verifyAdmin, async (req, res) => {
+  try {
+    const update = {};
+    ['title','message','type','active','showFrom','showUntil'].forEach(k => {
+      if (req.body[k] !== undefined) update[k] = req.body[k];
+    });
+    const ann = await Announcement.findByIdAndUpdate(req.params.id, update, { new: true });
+    if (!ann) return res.status(404).json({ success: false, error: 'Announcement not found' });
+    res.json({ success: true, data: ann });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+/* DELETE /api/admin/announcements/:id */
+app.delete('/api/admin/announcements/:id', verifyAdmin, async (req, res) => {
+  try {
+    await Announcement.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  ADMIN — Broadcast (WebSocket only, no DB save)
+// ═══════════════════════════════════════════════════════════════
+
+/* POST /api/admin/broadcast */
+app.post('/api/admin/broadcast', verifyAdmin, (req, res) => {
+  try {
+    const { subject, message, saveToDb } = req.body;
+    if (!message) return res.status(400).json({ success: false, error: 'Message required' });
+    broadcastToAll({ type: 'announcement', data: { title: subject || 'Notice', message, type: 'info', active: true } });
+    res.json({ success: true, message: 'Broadcast sent.' });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  ADMIN — Balance Requests API
+// ═══════════════════════════════════════════════════════════════
+
+const BR = mongoose.models.BalanceRequest || require('./models/BalanceRequest');
+
+/* GET /api/admin/balance-requests */
+app.get('/api/admin/balance-requests', verifyAdmin, async (req, res) => {
+  try {
+    const data    = await BR.find({}).sort({ createdAt: -1 }).lean();
+    const pending = data.filter(r => r.status === 'pending').length;
+    res.json({ success: true, data, pending });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+/* PATCH /api/admin/balance-requests/:id — approve or reject */
+app.patch('/api/admin/balance-requests/:id', verifyAdmin, async (req, res) => {
+  try {
+    const { action, adminNote } = req.body;
+    if (!['approve','reject'].includes(action))
+      return res.status(400).json({ success: false, error: 'action must be approve or reject' });
+
+    const br = await BR.findById(req.params.id);
+    if (!br) return res.status(404).json({ success: false, error: 'Request not found' });
+
+    br.status      = action === 'approve' ? 'approved' : 'rejected';
+    br.adminNote   = adminNote || '';
+    br.processedBy = req.dbUser?.email || 'admin';
+    br.processedAt = new Date();
+    await br.save();
+
+    if (action === 'approve') {
+      await PB.findOneAndUpdate(
+        { uid: br.userUid },
+        { balance: br.requestedAmount },
+        { upsert: true }
+      );
+    }
+    res.json({ success: true, data: br });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  SIGNALS — Admin CRUD
+// ═══════════════════════════════════════════════════════════════
+
+/* POST /api/signals — admin creates a signal */
+app.post('/api/signals', verifyAdmin, async (req, res) => {
+  try {
+    const b = req.body;
+    if (!b.pair || !b.direction || !b.entry || !b.tp1 || !b.sl)
+      return res.status(400).json({ success: false, error: 'pair, direction, entry, tp1, sl required' });
+
+    // Parse leverage: accept "10x" or 10
+    const lev = parseInt(String(b.leverage||10).replace(/[^0-9]/g,'')) || 10;
+
+    const signal = await Signal.create({
+      pair:      b.pair.toUpperCase().trim(),
+      direction: b.direction,
+      entry:     parseFloat(b.entry),
+      tp1:       parseFloat(b.tp1),
+      tp2:       b.tp2 ? parseFloat(b.tp2) : undefined,
+      sl:        parseFloat(b.sl),
+      leverage:  lev,
+      timeframe: b.timeframe || '1h',
+      notes:     b.notes     || '',
+      score:     b.score     ? parseInt(b.score) : 0,
+      plan:      b.plan      || 'free',
+      active:    true,
+      status:    'ACTIVE',
+    });
+
+    broadcastToAll({ type: 'new_signal', signal });
+    res.json({ success: true, signal });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+/* PATCH /api/signals/:id — admin closes or updates a signal */
+app.patch('/api/signals/:id', verifyAdmin, async (req, res) => {
+  try {
+    const update = {};
+    ['status','active','notes','pnl','closedAt'].forEach(k => {
+      if (req.body[k] !== undefined) update[k] = req.body[k];
+    });
+    // If closing the signal, mark active=false
+    if (update.status && ['TP1_HIT','TP2_HIT','SL_HIT','CANCELLED'].includes(update.status)) {
+      update.active   = false;
+      update.closedAt = update.closedAt || new Date();
+    }
+    const signal = await Signal.findByIdAndUpdate(req.params.id, update, { new: true });
+    if (!signal) return res.status(404).json({ success: false, error: 'Signal not found' });
+    broadcastToAll({ type: 'signal_update', signal });
+    res.json({ success: true, signal });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// ══════════════════════════════════════════════════════════════
+//  ADMIN — AI Settings API
+// ══════════════════════════════════════════════════════════════
+
+/* GET /api/admin/ai-settings — get current AI config */
+app.get('/api/admin/ai-settings', verifyAdmin, (req, res) => {
+  res.json({
+    success: true,
+    settings: {
+      groq_api_key:     globalSettings.groq_api_key     || '',
+      groq_model:       globalSettings.groq_model       || 'llama-3.3-70b-versatile',
+      groq_max_tokens:  globalSettings.groq_max_tokens  || 1500,
+      groq_temperature: globalSettings.groq_temperature || 0.2,
+      groq_api_key_masked: globalSettings.groq_api_key
+        ? 'gsk_' + '*'.repeat(20) + globalSettings.groq_api_key.slice(-6)
+        : '(using .env key)',
+    }
+  });
+});
+
+/* POST /api/admin/ai-settings — update AI config */
+app.post('/api/admin/ai-settings', verifyAdmin, async (req, res) => {
+  try {
+    const { groq_api_key, groq_model, groq_max_tokens, groq_temperature } = req.body;
+    const ALLOWED_MODELS = ['llama-3.3-70b-versatile','llama-3.1-70b-versatile','llama-3.1-8b-instant','llama3-70b-8192','llama3-8b-8192','mixtral-8x7b-32768','gemma2-9b-it'];
+    if (groq_model && !ALLOWED_MODELS.includes(groq_model))
+      return res.status(400).json({ success: false, error: 'Invalid model name.' });
+    const maxTok = parseInt(groq_max_tokens);
+    if (maxTok && (maxTok < 100 || maxTok > 8000))
+      return res.status(400).json({ success: false, error: 'max_tokens must be 100–8000.' });
+    const temp = parseFloat(groq_temperature);
+    if (!isNaN(temp) && (temp < 0 || temp > 2))
+      return res.status(400).json({ success: false, error: 'temperature must be 0–2.' });
+    const updates = {};
+    if (groq_api_key !== undefined) { const k=groq_api_key.trim(); updates.groq_api_key=k; globalSettings.groq_api_key=k; await saveSettingToDB('groq_api_key',k); }
+    if (groq_model) { updates.groq_model=groq_model.trim(); globalSettings.groq_model=groq_model.trim(); await saveSettingToDB('groq_model',groq_model.trim()); }
+    if (groq_max_tokens) { updates.groq_max_tokens=maxTok; globalSettings.groq_max_tokens=maxTok; await saveSettingToDB('groq_max_tokens',maxTok); }
+    if (!isNaN(temp) && groq_temperature!==undefined) { updates.groq_temperature=temp; globalSettings.groq_temperature=temp; await saveSettingToDB('groq_temperature',temp); }
+    console.log(`[Admin] AI settings updated by ${req.dbUser?.email}:`, Object.keys(updates).join(', '));
+    res.json({ success: true, message: 'AI settings updated.', updated: Object.keys(updates) });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+/* POST /api/admin/ai-settings/test — test API key */
+app.post('/api/admin/ai-settings/test', verifyAdmin, async (req, res) => {
+  try {
+    const keyToTest = (req.body.groq_api_key || '').trim() || (globalSettings.groq_api_key||'').trim() || process.env.GROQ_API_KEY;
+    if (!keyToTest) return res.status(400).json({ success: false, error: 'No API key to test.' });
+    const modelToTest = (req.body.groq_model || globalSettings.groq_model || 'llama-3.3-70b-versatile').trim();
+    const testRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+keyToTest },
+      body: JSON.stringify({ model: modelToTest, max_tokens: 10, temperature: 0.1, messages: [{ role:'user', content:'Reply with OK only.' }] })
+    });
+    if (!testRes.ok) { const e=await testRes.text(); return res.json({ success:false, error:`API returned ${testRes.status}: ${e.slice(0,150)}` }); }
+    const data = await testRes.json();
+    const reply = data.choices?.[0]?.message?.content || '';
+    res.json({ success: true, message: `✅ API key works! Model "${modelToTest}" responded: "${reply.slice(0,50)}"` });
+  } catch(e) { res.json({ success: false, error: 'Connection failed: ' + e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  Paper Balance Request (user-facing)
+// ═══════════════════════════════════════════════════════════════
+
+/* POST /api/paper/balance/request — user requests balance reset/topup */
+app.post('/api/paper/balance/request', ptAuth, async (req, res) => {
+  try {
+    const { requestType, requestedAmount, reason } = req.body;
+    if (!requestedAmount || requestedAmount < 100)
+      return res.status(400).json({ success: false, error: 'Amount must be at least 100.' });
+
+    // Get user info for the request record
+    let dbUser = null;
+    try { dbUser = await User.findOne({ uid: req.uid }); } catch(_) {}
+
+    let pb = await PB.findOne({ uid: req.uid });
+    if (!pb) pb = await PB.create({ uid: req.uid, balance: 1000 });
+
+    const br = await BR.create({
+      userUid:         req.uid,
+      userEmail:       dbUser?.email  || '',
+      displayName:     dbUser?.displayName || '',
+      requestType:     requestType    || 'RESET',
+      requestedAmount: parseFloat(requestedAmount),
+      currentBalance:  pb.balance,
+      reason:          reason || '',
+      status:          'pending',
+    });
+
+    res.json({ success: true, data: br, message: 'Request submitted. Admin will review soon.' });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// ── Catch-all (MUST be last) ───────────────────────────────────
 app.get('*',(req,res)=>{
   const safe = path.basename(req.path.replace('/','') || 'index.html');
   // Block sensitive server files from being served
@@ -1337,123 +1751,6 @@ wss.on('connection',async(ws,req)=>{
   ws.on('error',()=>{});
 });
 
-
-// ══════════════════════════════════════════════════════════════
-//  ADMIN — AI Settings API
-// ══════════════════════════════════════════════════════════════
-
-/* GET /api/admin/ai-settings — get current AI config */
-app.get('/api/admin/ai-settings', verifyAdmin, (req, res) => {
-  res.json({
-    success: true,
-    settings: {
-      groq_api_key:    globalSettings.groq_api_key    || '',
-      groq_model:      globalSettings.groq_model      || 'llama-3.3-70b-versatile',
-      groq_max_tokens: globalSettings.groq_max_tokens || 1500,
-      groq_temperature:globalSettings.groq_temperature|| 0.2,
-      // Show masked key for security
-      groq_api_key_masked: globalSettings.groq_api_key
-        ? 'gsk_' + '*'.repeat(20) + globalSettings.groq_api_key.slice(-6)
-        : '(using .env key)',
-    }
-  });
-});
-
-/* POST /api/admin/ai-settings — update AI config */
-app.post('/api/admin/ai-settings', verifyAdmin, async (req, res) => {
-  try {
-    const { groq_api_key, groq_model, groq_max_tokens, groq_temperature } = req.body;
-
-    // Validate model name (only allow known Groq models)
-    const ALLOWED_MODELS = [
-      'llama-3.3-70b-versatile',
-      'llama-3.1-70b-versatile',
-      'llama-3.1-8b-instant',
-      'llama3-70b-8192',
-      'llama3-8b-8192',
-      'mixtral-8x7b-32768',
-      'gemma2-9b-it',
-    ];
-
-    if (groq_model && !ALLOWED_MODELS.includes(groq_model)) {
-      return res.status(400).json({ success: false, error: 'Invalid model name. Choose from allowed models.' });
-    }
-
-    const maxTok = parseInt(groq_max_tokens);
-    if (maxTok && (maxTok < 100 || maxTok > 8000)) {
-      return res.status(400).json({ success: false, error: 'max_tokens must be between 100 and 8000.' });
-    }
-
-    const temp = parseFloat(groq_temperature);
-    if (!isNaN(temp) && (temp < 0 || temp > 2)) {
-      return res.status(400).json({ success: false, error: 'temperature must be between 0 and 2.' });
-    }
-
-    // Save each setting
-    const updates = {};
-    if (groq_api_key !== undefined) {
-      const key = groq_api_key.trim();
-      updates.groq_api_key = key;
-      globalSettings.groq_api_key = key;
-      await saveSettingToDB('groq_api_key', key);
-    }
-    if (groq_model) {
-      updates.groq_model = groq_model.trim();
-      globalSettings.groq_model = groq_model.trim();
-      await saveSettingToDB('groq_model', groq_model.trim());
-    }
-    if (groq_max_tokens) {
-      updates.groq_max_tokens = maxTok;
-      globalSettings.groq_max_tokens = maxTok;
-      await saveSettingToDB('groq_max_tokens', maxTok);
-    }
-    if (!isNaN(temp) && groq_temperature !== undefined) {
-      updates.groq_temperature = temp;
-      globalSettings.groq_temperature = temp;
-      await saveSettingToDB('groq_temperature', temp);
-    }
-
-    console.log(`[Admin] AI settings updated by ${req.dbUser?.email}:`, Object.keys(updates).join(', '));
-    res.json({ success: true, message: 'AI settings updated successfully.', updated: Object.keys(updates) });
-  } catch(e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
-});
-
-/* POST /api/admin/ai-settings/test — test API key */
-app.post('/api/admin/ai-settings/test', verifyAdmin, async (req, res) => {
-  try {
-    const keyToTest = (req.body.groq_api_key || '').trim()
-      || (globalSettings.groq_api_key || '').trim()
-      || process.env.GROQ_API_KEY;
-
-    if (!keyToTest) return res.status(400).json({ success: false, error: 'No API key to test.' });
-
-    const modelToTest = (req.body.groq_model || globalSettings.groq_model || 'llama-3.3-70b-versatile').trim();
-
-    const testRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+keyToTest },
-      body: JSON.stringify({
-        model: modelToTest,
-        max_tokens: 10,
-        temperature: 0.1,
-        messages: [{ role:'user', content:'Reply with OK only.' }]
-      })
-    });
-
-    if (!testRes.ok) {
-      const errText = await testRes.text();
-      return res.json({ success: false, error: `API returned ${testRes.status}: ${errText.slice(0,150)}` });
-    }
-
-    const data = await testRes.json();
-    const reply = data.choices?.[0]?.message?.content || '';
-    res.json({ success: true, message: `✅ API key works! Model "${modelToTest}" responded: "${reply.slice(0,50)}"` });
-  } catch(e) {
-    res.json({ success: false, error: 'Connection failed: ' + e.message });
-  }
-});
 
 // ── Auto TP/SL Check Engine ───────────────────────────────────
 // Checks all OPEN paper trades and auto-closes if TP or SL is hit

@@ -1451,11 +1451,12 @@ async function ptCloseTrade(id, entryPrice) {
         const r = await fetch(`/api/paper/trade/${id}/close`, {
             method: 'PATCH',
             headers: { 'Content-Type':'application/json', Authorization:'Bearer '+tok },
-            body: JSON.stringify({ closePrice })
+            body: JSON.stringify({ closePrice, status: 'CLOSED' })
         });
         const d = await r.json();
         if (d.success) {
-            ptShowMsg(`Closed. PnL: ${d.pnl >= 0 ? '+' : ''}$${d.pnl.toFixed(2)}`);
+            const pnl = d.pnl ?? d.trade?.pnl ?? 0;
+            ptShowMsg(`Closed. PnL: ${pnl >= 0 ? '+' : ''}$${parseFloat(pnl).toFixed(2)}`);
             await ptLoadBalance();
             await ptLoadTrades();
         } else {

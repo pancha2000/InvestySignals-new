@@ -410,7 +410,9 @@ onAuthStateChanged(auth, async (user) => {
   try {
     const _uid = user?.uid || '';
     if(_uid){
-      const _sr=await fetch('/api/user/status?uid='+encodeURIComponent(_uid));
+      const _tok = await user.getIdToken();
+      window._idToken = _tok;
+      const _sr=await fetch('/api/user/status', { headers:{ 'Authorization':'Bearer '+_tok } });
       const _sj=await _sr.json();
       if(_sj.success){
         if(_sj.status.maintenance){const _mm=_sj.status.maintenanceMsg||'We are making improvements. Please check back shortly.';document.body.innerHTML='<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#070b14;flex-direction:column;gap:16px;font-family:Outfit,sans-serif;text-align:center;padding:24px"><div style="font-size:3rem">🔧</div><div style="font-family:Rajdhani,sans-serif;font-size:1.8rem;font-weight:700;color:#e2e8f0">Under Maintenance</div><div style="color:#64748b;font-size:.95rem;max-width:400px;margin-top:8px">'+_mm+'</div></div>';return;}
@@ -639,7 +641,7 @@ async function initPage() {
   renderAll();
   setInterval(fetchPricesNow,5000);
   connectWS();
-  if(window._uid) setInterval(async()=>{try{const r=await fetch('/api/user/status?uid='+encodeURIComponent(window._uid));const j=await r.json();if(j.success&&(j.status.maintenance||j.status.suspended))window.location.reload();}catch(_){}},15000);
+  if(window._uid) setInterval(async()=>{try{const _auth=window._auth;const _u=_auth?_auth.currentUser:null;const _t=_u?await _u.getIdToken():window._idToken;if(!_t)return;const r=await fetch('/api/user/status',{headers:{'Authorization':'Bearer '+_t}});const j=await r.json();if(j.success&&(j.status.maintenance||j.status.suspended))window.location.reload();}catch(_){}},15000);
 }
 function renderAll() { updateStats(); renderTradeList(); }
 
