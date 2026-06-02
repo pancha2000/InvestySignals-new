@@ -103,21 +103,30 @@ async function fetchKlinesCached(symbol, interval, limit = 200, retries = 3) {
   const key    = `${symbol}_${interval}_${limit}`;
   const cached = klinesCache.get(key);
   if (cached && Date.now() - cached.ts < KLINES_TTL) return cached.data;
-  for (let attempt = 0; attempt < retries; attempt++) {
-    try {
-      const url  = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
-      const r    = await fetch(url);
-      if (r.status === 429) { await new Promise(res => setTimeout(res, 1000 * Math.pow(2, attempt))); continue; }
-      if (!r.ok) throw new Error(`Binance klines error ${r.status}`);
-      const data = await r.json();
-      klinesCache.set(key, { data, ts: Date.now() });
-      return data;
-    } catch(e) {
-      if (attempt === retries - 1) throw e;
-      await new Promise(res => setTimeout(res, 500 * (attempt + 1)));
+
+  // Try futures API first, fall back to spot for coins not on futures (e.g. XLM, ALGO)
+  const urls = [
+    `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`,
+    `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`,
+  ];
+
+  for (const url of urls) {
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        const r = await fetch(url);
+        if (r.status === 429) { await new Promise(res => setTimeout(res, 1000 * Math.pow(2, attempt))); continue; }
+        if (!r.ok) break; // try next URL
+        const data = await r.json();
+        if (!Array.isArray(data) || data.length < 5) break; // invalid, try spot
+        klinesCache.set(key, { data, ts: Date.now() });
+        return data;
+      } catch(e) {
+        if (attempt === retries - 1) break; // try next URL
+        await new Promise(res => setTimeout(res, 500 * (attempt + 1)));
+      }
     }
   }
-  throw new Error(`fetchKlines failed: ${symbol} ${interval}`);
+  throw new Error(`fetchKlines failed: ${symbol} ${interval} — not found on futures or spot`);
 }
 
 // ── [F3] Live price cache ────────────────────────────────────
@@ -128,11 +137,21 @@ async function getLivePrice(symbol) {
   const cached = priceCache.get(symbol);
   if (cached && Date.now() - cached.ts < PRICE_TTL) return cached.price;
   try {
-    const r = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${symbol}`);
-    if (!r.ok) return null;
-    const d = await r.json();
-    const price = parseFloat(d.price);
-    priceCache.set(symbol, { price, ts: Date.now() });
+    // Try futures first, fall back to spot for coins not on futures
+    let price = null;
+    const fr = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${symbol}`);
+    if (fr.ok) {
+      const fd = await fr.json();
+      price = parseFloat(fd.price) || null;
+    }
+    if (!price) {
+      const sr = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`);
+      if (sr.ok) {
+        const sd = await sr.json();
+        price = parseFloat(sd.price) || null;
+      }
+    }
+    if (price) priceCache.set(symbol, { price, ts: Date.now() });
     return price;
   } catch(e) { return null; }
 }
@@ -314,6 +333,27 @@ app.get('/api/signals', verifyToken, async (req, res) => {
     const signals=await Signal.find({active:true,...pf}).sort({createdAt:-1}).limit(50);
     res.json({ success:true, signals, data:signals });
   } catch(err) { res.status(500).json({ success:false, error:err.message }); }
+});
+
+/* GET /api/registration-status — public, checks if new registrations are allowed */
+app.get('/api/registration-status', (req, res) => {
+  res.json({ success: true, open: globalSettings.allowRegistrations !== false });
+});
+
+/* POST /api/reports — public bug/signal report submission */
+app.post('/api/reports', async (req, res) => {
+  try {
+    const { category, message, context } = req.body;
+    if (!message) return res.status(400).json({ success: false, error: 'Message is required.' });
+    const report = await Report.create({
+      reporterUid:   'anonymous',
+      reporterEmail: req.body.email || '',
+      category:      category || 'other',
+      message:       message.slice(0, 2000),
+      context:       context || '',
+    });
+    res.json({ success: true, data: report });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.get('/api/announcement', async (req, res) => {
@@ -501,6 +541,13 @@ app.post('/api/paper/trade', ptAuth, async (req, res) => {
       tp1: parseFloat(b.tp1)||null, tp2: parseFloat(b.tp2)||null,
       tp3: parseFloat(b.tp3)||null, sl: parseFloat(b.sl)||null,
       amount:   size, size, leverage: lev,
+      notional: entryPrice ? parseFloat((size * lev).toFixed(4)) : 0,
+      liqPrice: entryPrice
+        ? parseFloat((b.direction === 'LONG'
+            ? entryPrice * (1 - 1/lev * 0.9)
+            : entryPrice * (1 + 1/lev * 0.9)).toFixed(4))
+        : 0,
+      remainingSize: size,
       status:   statusVal,
       openTime: new Date().toISOString(),
       openedAt: new Date(),
@@ -552,12 +599,16 @@ app.patch('/api/paper/trade/:id/close', ptAuth, async (req, res) => {
 
     let pnl = parseFloat(req.body.pnl || req.body.totalPnl || 0);
     if (!pnl && closePrice && entryPrice && tradeSize) {
+      const notional = tradeBeforeClose.notional || (tradeSize * leverage);
       pnl = isLong
-        ? (closePrice - entryPrice) / entryPrice * tradeSize * leverage
-        : (entryPrice - closePrice) / entryPrice * tradeSize * leverage;
+        ? (closePrice - entryPrice) / entryPrice * notional
+        : (entryPrice - closePrice) / entryPrice * notional;
       pnl = parseFloat(pnl.toFixed(4));
     }
-    const roe = (entryPrice && tradeSize) ? parseFloat((pnl / tradeSize * 100).toFixed(2)) : 0;
+    const notionalForRoe = tradeBeforeClose.notional || (tradeSize * leverage);
+    const roe = notionalForRoe
+      ? parseFloat((pnl / (notionalForRoe / leverage) * 100).toFixed(2))
+      : 0;
 
     const patch = { ...req.body, pnl, roe, status: req.body.status || 'CLOSED',
       closedAt: new Date(), closeTime: new Date().toISOString() };
@@ -1140,16 +1191,35 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
       return res.status(400).json({ success: false, error: 'pair, direction, entry required.' });
 
     // Get live price from Binance
-    const priceRes = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${pair.toUpperCase()}`);
-    const priceData = await priceRes.json();
-    const currentPrice = parseFloat(priceData.price);
-    if (!currentPrice) return res.status(502).json({ success: false, error: 'Could not fetch live price.' });
+    // Get live price — try futures first, fall back to spot (for coins like XLM not on futures)
+    let currentPrice = null;
+    try {
+      const fr = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${pair.toUpperCase()}`);
+      if (fr.ok) { const fd = await fr.json(); currentPrice = parseFloat(fd.price) || null; }
+    } catch(_) {}
+    if (!currentPrice) {
+      try {
+        const sr = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${pair.toUpperCase()}`);
+        if (sr.ok) { const sd = await sr.json(); currentPrice = parseFloat(sd.price) || null; }
+      } catch(_) {}
+    }
+    if (!currentPrice) return res.status(502).json({ success: false, error: `Could not fetch live price for ${pair}. Check symbol name.` });
 
-    // Fetch klines for structure check (H4 and D1)
+    // Fetch klines — try futures first, fall back to spot
     async function getKlines(symbol, interval, limit) {
-      const r = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
-      const d = await r.json();
-      return d.map(k => ({ open:parseFloat(k[1]),high:parseFloat(k[2]),low:parseFloat(k[3]),close:parseFloat(k[4]),volume:parseFloat(k[5]) }));
+      let klines = null;
+      try {
+        const fr = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
+        if (fr.ok) { const d = await fr.json(); if (Array.isArray(d) && d.length > 5) klines = d; }
+      } catch(_) {}
+      if (!klines) {
+        try {
+          const sr = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
+          if (sr.ok) { const d = await sr.json(); if (Array.isArray(d) && d.length > 5) klines = d; }
+        } catch(_) {}
+      }
+      if (!klines) return [];
+      return klines.map(k => ({ open:parseFloat(k[1]),high:parseFloat(k[2]),low:parseFloat(k[3]),close:parseFloat(k[4]),volume:parseFloat(k[5]) }));
     }
 
     const [h4k, d1k] = await Promise.all([
@@ -1754,9 +1824,12 @@ wss.on('connection',async(ws,req)=>{
 
 // ── Auto TP/SL Check Engine ───────────────────────────────────
 // Checks all OPEN paper trades and auto-closes if TP or SL is hit
+// Also fills PENDING (LIMIT) orders when price reaches trigger
 async function runTPSLCheck() {
   try {
-    const openTrades = await PT.find({ status: { $in: ['OPEN', 'PENDING'] } });
+    const openTrades = await PT.find({
+      status: { $in: ['OPEN', 'PENDING', 'PENDING_LONG', 'PENDING_SHORT'] }
+    });
     if (!openTrades.length) return;
 
     for (const trade of openTrades) {
@@ -1764,80 +1837,110 @@ async function runTPSLCheck() {
         const symbol = trade.pair || trade.symbol;
         if (!symbol) continue;
 
-        // Get live price
         const price = await getLivePrice(symbol);
         if (!price) continue;
 
-        const isLong = trade.direction === 'LONG';
-        const entry  = trade.entryPrice || trade.entry;
-        const sl     = trade.currentSl || trade.sl;
-        const tp1    = trade.tp1;
-        const tp2    = trade.tp2;
-        const tp3    = trade.tp3;
+        const isLong  = trade.direction === 'LONG';
+        const entry   = trade.entryPrice || trade.entry;
+        const trigger = trade.triggerPrice || entry;
+        const lev     = trade.leverage || 1;
+        const size    = trade.remainingSize || trade.size || trade.amount || 0;
+        // notional = size * leverage; coin_qty = notional / entry
+        // pnl = (closePrice - entry) / entry * notional  (for LONG)
+        const notional = trade.notional || (size * lev);
 
-        let newStatus = null;
+        // ── Fill PENDING LIMIT orders ────────────────────────────
+        const isPending = ['PENDING','PENDING_LONG','PENDING_SHORT'].includes(trade.status);
+        if (isPending) {
+          const shouldFill = isLong ? price <= trigger : price >= trigger;
+          if (shouldFill) {
+            await PT.findByIdAndUpdate(trade._id, {
+              status:   'OPEN',
+              entry:    trigger,
+              entryPrice: trigger,
+              fillTime: new Date().toISOString(),
+              filledAt: new Date(),
+            });
+            broadcastToAll({ type: 'order_filled', tradeId: trade._id, symbol, price: trigger });
+            console.log(`✅ Limit order filled: ${symbol} ${trade.direction} @ ${trigger}`);
+          }
+          continue; // don't check TP/SL on pending orders
+        }
+
+        // ── TP / SL checks ───────────────────────────────────────
+        const sl  = trade.currentSl || trade.sl;
+        const tp1 = trade.tp1;
+        const tp2 = trade.tp2;
+        const tp3 = trade.tp3;
+
+        let newStatus  = null;
         let closePrice = price;
 
-        // Check SL
         if (sl) {
-          if (isLong && price <= sl)  { newStatus = 'SL_HIT'; }
-          if (!isLong && price >= sl) { newStatus = 'SL_HIT'; }
+          if (isLong  && price <= sl) newStatus = 'SL_HIT';
+          if (!isLong && price >= sl) newStatus = 'SL_HIT';
         }
-
-        // Check TP3
         if (!newStatus && tp3) {
-          if (isLong && price >= tp3)  { newStatus = 'TP3_HIT'; }
-          if (!isLong && price <= tp3) { newStatus = 'TP3_HIT'; }
+          if (isLong  && price >= tp3) newStatus = 'TP3_HIT';
+          if (!isLong && price <= tp3) newStatus = 'TP3_HIT';
         }
-        // Check TP2
         if (!newStatus && tp2) {
-          if (isLong && price >= tp2)  { newStatus = 'TP2_HIT'; }
-          if (!isLong && price <= tp2) { newStatus = 'TP2_HIT'; }
+          if (isLong  && price >= tp2) newStatus = 'TP2_HIT';
+          if (!isLong && price <= tp2) newStatus = 'TP2_HIT';
         }
-        // Check TP1 (partial close — mark but keep open)
+        // TP1 partial close
         if (!newStatus && tp1 && !trade.tp1HitPrice) {
-          if ((isLong && price >= tp1) || (!isLong && price <= tp1)) {
+          const tp1Hit = isLong ? price >= tp1 : price <= tp1;
+          if (tp1Hit) {
+            const tp1Pnl = entry
+              ? (isLong ? (tp1 - entry) : (entry - tp1)) / entry * (notional * 0.5)
+              : 0;
             await PT.findByIdAndUpdate(trade._id, {
-              tp1HitPrice: price,
-              tp1HitTime: new Date().toISOString(),
-              tp1Pnl: entry ? (isLong ? (price - entry) : (entry - price)) * (trade.size || trade.amount || 1) : 0,
+              tp1HitPrice:   tp1,
+              tp1HitTime:    new Date().toISOString(),
+              tp1Pnl:        parseFloat(tp1Pnl.toFixed(4)),
+              remainingSize: size * 0.5,
             });
-            broadcastToAll({ type: 'tp1_hit', tradeId: trade._id, symbol, price });
+            // Partial refund: 50% margin + tp1 pnl returned
+            const partialRefund = size * 0.5 + tp1Pnl;
+            if (partialRefund) {
+              await PB.findOneAndUpdate({ uid: trade.uid }, { $inc: { balance: partialRefund } }, { upsert: true });
+            }
+            broadcastToAll({ type: 'tp1_hit', tradeId: trade._id, symbol, price: tp1, tp1Pnl });
             continue;
           }
         }
 
         if (newStatus) {
-          // Calculate PnL
+          // Leverage-correct PnL: pnl = Δprice/entry * notional
           let pnl = 0;
-          const size = trade.remainingSize || trade.size || trade.amount || 0;
-          if (entry && size) {
-            pnl = isLong ? (closePrice - entry) * size : (entry - closePrice) * size;
+          if (entry && notional) {
+            pnl = isLong
+              ? (closePrice - entry) / entry * notional
+              : (entry - closePrice) / entry * notional;
+            pnl = parseFloat(pnl.toFixed(4));
           }
-          const roe = (entry && size && trade.notional) ? (pnl / trade.notional) * 100 : 0;
+          const roe = notional ? parseFloat((pnl / (notional / lev) * 100).toFixed(2)) : 0;
 
           await PT.findByIdAndUpdate(trade._id, {
             status: newStatus,
             closePrice,
-            closedAt: new Date(),
-            closeTime: new Date().toISOString(),
-            pnl: parseFloat(pnl.toFixed(4)),
-            roe: parseFloat(roe.toFixed(2)),
+            closedAt:   new Date(),
+            closeTime:  new Date().toISOString(),
+            pnl,
+            roe,
           });
 
-          // Update paper balance
-          if (pnl !== 0) {
-            try {
-              await PB.findOneAndUpdate(
-                { uid: trade.uid },
-                { $inc: { balance: pnl } },
-                { upsert: true }
-              );
-            } catch(_) {}
-          }
+          // Refund margin + pnl to balance (already deducted at open)
+          const marginUsed = size; // margin = size (USDT deposited)
+          await PB.findOneAndUpdate(
+            { uid: trade.uid },
+            { $inc: { balance: marginUsed + pnl } },
+            { upsert: true }
+          );
 
           broadcastToAll({ type: 'trade_closed', tradeId: trade._id, symbol, status: newStatus, closePrice, pnl });
-          console.log(`⚡ Auto-closed ${symbol} ${trade.direction} → ${newStatus} @ ${closePrice}`);
+          console.log(`⚡ Auto-closed ${symbol} ${trade.direction} → ${newStatus} @ ${closePrice} PnL:${pnl}`);
         }
       } catch(tradeErr) {
         console.error('runTPSLCheck trade error:', tradeErr.message);

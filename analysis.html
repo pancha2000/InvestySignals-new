@@ -1437,7 +1437,7 @@ async function ptSubmit() {
 async function ptCloseTrade(id, entryPrice) {
     const tok = await getToken();
     if (!tok) return;
-    // Get live price for close
+    // Get live price for close — try futures first, fall back to spot
     const coin = ptOpenTrades.find(t=>t._id===id)?.pair || '';
     let closePrice = entryPrice;
     try {
@@ -1445,6 +1445,14 @@ async function ptCloseTrade(id, entryPrice) {
         const pd = await pr.json();
         if (pd.price) closePrice = parseFloat(pd.price);
     } catch(e) {}
+    // Spot fallback for non-futures coins (e.g. XLM, ALGO)
+    if (closePrice === entryPrice && coin) {
+        try {
+            const sr = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${coin}`);
+            const sd = await sr.json();
+            if (sd.price) closePrice = parseFloat(sd.price);
+        } catch(e) {}
+    }
 
     if (!confirm(`Close trade at $${closePrice.toFixed(4)}?`)) return;
     try {

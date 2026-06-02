@@ -467,9 +467,22 @@ window.handleSignOut = async function() { await signOut(auth); window.location.h
    ═══════════════════════════════════════════════════════════════ */
 
 /* ── Formatters ─────────────────────────────────────────────── */
-function fmtP(p){const n=parseFloat(p);if(n>=1000)return'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});if(n>=1)return'$'+n.toFixed(4);if(n>=0.01)return'$'+n.toFixed(5);return'$'+n.toFixed(6);}
+function fmtP(p){const n=parseFloat(p);if(!p||isNaN(n)||n===0)return'—';if(n>=1000)return'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});if(n>=1)return'$'+n.toFixed(4);if(n>=0.01)return'$'+n.toFixed(5);return'$'+n.toFixed(6);}
 function fmtUSD(n){const abs=Math.abs(n),str=abs>=1000?abs.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):abs.toFixed(2);return(n>=0?'+$':'-$')+str;}
 function fmtTime(iso){const d=new Date(iso);return d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' '+d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});}
+// Leverage-correct PnL: pnl = (Δprice / entry) * notional  where notional = margin * leverage
+function calcPnl(dir, entry, closePrice, size, leverage, rem) {
+  if (!entry || !closePrice || !size) return 0;
+  const lev = leverage || 1;
+  const notional = size * lev;
+  const rem2 = rem ?? 1;
+  const delta = dir === 'LONG' ? (closePrice - entry) / entry : (entry - closePrice) / entry;
+  return parseFloat((delta * notional * rem2).toFixed(4));
+}
+function calcRoe(pnl, size, leverage) {
+  const margin = size || 1;
+  return parseFloat((pnl / margin * 100).toFixed(2));
+}
 
 /* ── State ──────────────────────────────────────────────────── */
 let currentTab='open', pendingActionId=null, pendingAction=null, livePrices={};
@@ -706,7 +719,7 @@ function buildTradeCard(trade) {
         <div class="tc-lbox"><div class="tc-llbl">Leverage</div><div class="tc-lval" style="color:var(--text)">${trade.leverage}×</div></div>
       </div>
       <div style="padding:8px 16px;font-family:var(--font-n);font-size:.68rem;color:var(--muted)">
-        💰 ${fmtP(trade.amount)} USDT · ${fmtP(trade.notional)} notional · Opened ${fmtTime(trade.openTime)}
+        💰 ${fmtP(trade.amount)} USDT · ${(()=>{const n=trade.notional||(trade.amount&&trade.leverage?trade.amount*trade.leverage:0);return n?fmtP(n)+' notional':'';})()}  · Opened ${fmtTime(trade.openTime)}
       </div>
     </div>`;
   }
@@ -718,10 +731,10 @@ function buildTradeCard(trade) {
     if(price){
       // Live P&L on remaining position
       const rem = tp1hit ? 0.5 : 1.0; // after TP1: 50% remains
-      const livePnl = dir==='LONG'?(price-trade.entryPrice)*trade.size*rem:(trade.entryPrice-price)*trade.size*rem;
+      const livePnl = calcPnl(dir, trade.entryPrice, price, trade.size||trade.amount, trade.leverage, rem);
       const tp1PnlBanked = trade.tp1Pnl||0;
       pnl = livePnl+tp1PnlBanked;
-      roe = (pnl/trade.amount)*100;
+      roe = calcRoe(pnl, trade.amount||trade.size, trade.leverage);
     }
     const pnlCls=pnl>0?'profit':pnl<0?'loss':'neutral';
 
@@ -754,8 +767,8 @@ function buildTradeCard(trade) {
       <div class="tc-pnl-row">
         <div class="pnl-big">
           <div class="pnl-label">${tp1hit?'Total P&L (TP1 + live)':'Unrealised P&L'}</div>
-          <div class="pnl-value ${pnlCls}">${price?fmtUSD(pnl):'—'}</div>
-          <div class="pnl-roe ${pnlCls}">${price?(roe>0?'+':'')+roe.toFixed(2)+'% ROE':'—'}</div>
+          <div class="pnl-value ${pnlCls}">${price?fmtUSD(pnl):'<span style="font-size:.75rem;color:var(--muted)">⏳ fetching…</span>'}</div>
+          <div class="pnl-roe ${pnlCls}">${price?(roe>0?'+':'')+roe.toFixed(2)+'% ROE':''}</div>
         </div>
         <div style="font-family:var(--font-n);font-size:.72rem;color:var(--muted);text-align:right">
           <div>Current: <strong style="color:var(--cyan)">${price?fmtP(price):'—'}</strong></div>
@@ -778,7 +791,14 @@ function buildTradeCard(trade) {
         <div class="tc-lbox"><div class="tc-llbl">TP 1</div><div class="tc-lval ${tp1hit?'col-tp2':'col-tp1'}">${fmtP(trade.tp1)}${tp1hit?` <span style="font-size:.6rem;color:var(--green)">✓</span>`:''}</div></div>
         <div class="tc-lbox"><div class="tc-llbl">TP 2</div><div class="tc-lval col-tp2">${fmtP(trade.tp2)}</div></div>
         <div class="tc-lbox"><div class="tc-llbl">Stop Loss</div><div class="tc-lval ${tp1hit?'sl-moved col-sl':'col-sl'}">${fmtP(currentSL)}</div></div>
-        <div class="tc-lbox"><div class="tc-llbl">Liq Price</div><div class="tc-lval col-liq">${fmtP(trade.liqPrice)}</div></div>
+        <div class="tc-lbox"><div class="tc-llbl">Liq Price</div><div class="tc-lval col-liq">${(()=>{
+          const liq = trade.liqPrice || (trade.entryPrice && trade.leverage
+            ? (trade.direction==='LONG'
+                ? trade.entryPrice*(1-1/trade.leverage*0.9)
+                : trade.entryPrice*(1+1/trade.leverage*0.9))
+            : null);
+          return liq && !isNaN(liq) ? fmtP(liq) : '—';
+        })()}</div></div>
       </div>
       <div style="padding:6px 16px 12px;font-family:var(--font-n);font-size:.67rem;color:var(--muted)">
         Filled ${trade.fillTime?fmtTime(trade.fillTime):'—'} · ${trade.symbol}
@@ -836,9 +856,19 @@ async function fetchPricesNow() {
   const symbols = [...new Set(trades.map(t=>t.symbol))];
   if(!symbols.length) return;
   try {
+    // Try futures batch first
     const qs   = symbols.map(s=>`"${s}"`).join(',');
-    const data = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbols=[${qs}]`).then(r=>r.json());
-    data.forEach(d=>{ livePrices[d.symbol]=parseFloat(d.price); });
+    const futRes = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbols=[${qs}]`).then(r=>r.ok?r.json():[]).catch(()=>[]);
+    futRes.forEach(d=>{ if(d.price) livePrices[d.symbol]=parseFloat(d.price); });
+
+    // For any symbols not found in futures, fetch from spot individually
+    const missing = symbols.filter(s=>!livePrices[s]);
+    for (const sym of missing) {
+      try {
+        const sr = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}`).then(r=>r.ok?r.json():null).catch(()=>null);
+        if (sr?.price) livePrices[sym] = parseFloat(sr.price);
+      } catch(_) {}
+    }
     checkPendingFills();
     checkTpSl();
     if(currentTab==='open') renderTradeList();
@@ -946,7 +976,7 @@ function checkTpSl() {
 
     if(hit==='TP1'){
       /* ── TP1 hit → partial close 50%, move SL to entry ───── */
-      const tp1Pnl=(dir==='LONG'?(price-t.entryPrice)*t.size*0.5:(t.entryPrice-price)*t.size*0.5);
+      const tp1Pnl = calcPnl(dir, t.entryPrice, t.tp1||price, t.size||t.amount, t.leverage, 0.5);
       const trailOffset=Math.abs(t.tp1-t.entryPrice)*0.5;
       const _p4={status:'TP1_HIT',tp1HitPrice:price,tp1HitTime:new Date().toISOString(),tp1Pnl,currentSl:t.entryPrice,trailOffset};
       trades[i]={...t,..._p4};
@@ -954,13 +984,13 @@ function checkTpSl() {
       changed=true;
     } else if(hit==='TP2'){
       // Went straight to TP2 without hitting TP1 first (unusual but possible)
-      const pnl=dir==='LONG'?(price-t.entryPrice)*t.size:(t.entryPrice-price)*t.size;
-      const roe=(pnl/t.amount)*100;
+      const pnl = calcPnl(dir, t.entryPrice, price, t.size||t.amount, t.leverage, 1);
+      const roe  = calcRoe(pnl, t.amount||t.size, t.leverage);
       const _p5={status:'TP2',closePrice:price,closeTime:new Date().toISOString(),totalPnl:pnl,totalRoe:roe,pnl,roe};
       trades[i]={...t,..._p5}; _changedPatches.push({id:t.id,patch:_p5}); changed=true;
     } else if(hit==='SL'){
-      const pnl=dir==='LONG'?(price-t.entryPrice)*t.size:(t.entryPrice-price)*t.size;
-      const roe=(pnl/t.amount)*100;
+      const pnl = calcPnl(dir, t.entryPrice, price, t.size||t.amount, t.leverage, 1);
+      const roe  = calcRoe(pnl, t.amount||t.size, t.leverage);
       const _p5sl={status:'SL',closePrice:price,closeTime:new Date().toISOString(),totalPnl:pnl,totalRoe:roe,pnl,roe};
       trades[i]={...t,..._p5sl}; _changedPatches.push({id:t.id,patch:_p5sl}); changed=true;
     }
@@ -980,7 +1010,7 @@ function promptClose(id) {
   const price=livePrices[t.symbol]||t.entryPrice;
   const tp1Banked=t.tp1Pnl||0;
   const rem=isTP1Hit(t)?0.5:1.0;
-  const livePnl=t.direction==='LONG'?(price-t.entryPrice)*t.size*rem:(t.entryPrice-price)*t.size*rem;
+  const livePnl=calcPnl(t.direction, t.entryPrice, price, t.size||t.amount, t.leverage, rem);
   const totalPnl=tp1Banked+livePnl;
   document.getElementById('cmTitle').textContent='Close Position';
   document.getElementById('cmBody').innerHTML=`Close <strong>${t.pair}</strong> ${t.direction}?<br><br>
@@ -1008,8 +1038,8 @@ async function doCloseTrade() {
   const t=trades[idx],price=livePrices[t.symbol]||t.entryPrice;
   const tp1Banked=t.tp1Pnl||0;
   const rem=isTP1Hit(t)?0.5:1.0;
-  const livePnl=t.direction==='LONG'?(price-t.entryPrice)*t.size*rem:(t.entryPrice-price)*t.size*rem;
-  const totalPnl=tp1Banked+livePnl, totalRoe=(totalPnl/t.amount)*100;
+  const livePnl=calcPnl(t.direction, t.entryPrice, price, t.size||t.amount, t.leverage, rem);
+  const totalPnl=tp1Banked+livePnl, totalRoe=calcRoe(totalPnl, t.amount||t.size, t.leverage);
   const patch={status:'CLOSED',closePrice:price,closeTime:new Date().toISOString(),totalPnl,totalRoe,pnl:totalPnl,roe:totalRoe};
   trades[idx]={...t,...patch};
   saveTrades(trades);
@@ -1130,7 +1160,7 @@ async function openMonitor(tradeId) {
     const isLong = trade.direction === 'LONG';
     const rem = isTP1Hit(trade) ? 0.5 : 1.0;
     const size = trade.amount || trade.size || 0;
-    const livePnl = price ? ((isLong ? price - trade.entryPrice : trade.entryPrice - price) * size * rem) + (trade.tp1Pnl || 0) : null;
+    const livePnl = price ? (calcPnl(trade.direction, trade.entryPrice, price, trade.amount||trade.size, trade.leverage, rem) + (trade.tp1Pnl || 0)) : null;
     const pnlColor = livePnl === null ? 'var(--muted)' : livePnl >= 0 ? 'var(--green)' : 'var(--red)';
 
     const h4c = j.structureIntact?.h4 ? 'var(--green)' : 'var(--red)';
