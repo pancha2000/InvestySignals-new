@@ -1099,6 +1099,7 @@ Respond with ONLY this JSON (no markdown, no explanation):
   },
   "level5": {
     "direction": "LONG|SHORT|NEUTRAL",
+    "IMPORTANT": "Even if NEUTRAL, you MUST still provide real numeric values for entryHigh, entryLow, sl, tp1val, tp2val, tp3val based on key support/resistance levels. Never return null.",
     "entryZone": "$X.XX – $X.XX",
     "stopLoss": "$X.XX",
     "invalidationLevel": "$X.XX",
