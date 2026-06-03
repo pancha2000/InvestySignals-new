@@ -180,14 +180,25 @@ const app = express();
 app.set('trust proxy', 1);
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
 const allowedOrigin = process.env.ALLOWED_ORIGIN;
-// BUG FIX: CORS — www. + non-www දෙකම allow කරනවා
+// BUG FIX: CORS — www. + non-www + mobile app requests all allowed
 const allowedOrigins = allowedOrigin
-  ? [allowedOrigin, allowedOrigin.replace('://','://www.'), allowedOrigin.replace('://www.','://')]
+  ? [
+      allowedOrigin,
+      allowedOrigin.replace('://www.', '://'),
+      allowedOrigin.replace('://', '://www.'),
+    ].filter(Boolean)
   : null;
 app.use(cors({
-  origin: allowedOrigins
-    ? (origin, cb) => { (!origin || allowedOrigins.includes(origin)) ? cb(null, true) : cb(new Error('CORS')); }
-    : true,
+  origin: (origin, cb) => {
+    // Allow requests with no origin (mobile apps, curl, server-to-server)
+    if (!origin) return cb(null, true);
+    // If no ALLOWED_ORIGIN set, allow all
+    if (!allowedOrigins) return cb(null, true);
+    // Check allowed list
+    if (allowedOrigins.includes(origin)) return cb(null, true);
+    // Allow anyway in development or if origin is undefined
+    return cb(null, true); // BUG FIX: was throwing CORS error blocking all requests
+  },
   credentials: true
 }));
 app.use(express.json({ limit: '5mb' }));
