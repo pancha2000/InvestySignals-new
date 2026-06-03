@@ -173,7 +173,7 @@ const ANALYSIS_COOLDOWN = 0; // No cooldown — removed per user request
 // ── Thesis Tracking (per user per coin) ──────────────────────
 // Key: uid+':'+coin — stores previous analysis for flip detection
 const thesisState = new Map();
-const CONFLUENCE_THRESHOLD = 6; // score/10 — below this = NEUTRAL (prevents ±1 flip)
+const CONFLUENCE_THRESHOLD = 5; // score/10 — below this = NEUTRAL (5/10 now passes)
 
 // ── Express ───────────────────────────────────────────────────
 const app = express();
@@ -1143,7 +1143,16 @@ Respond with ONLY this JSON (no markdown, no explanation):
     try { analysis = JSON.parse(aiText); }
     catch(e) { throw new Error('AI response parse failed: ' + aiText.slice(0,100)); }
 
-    // Fill rawData entry/sl/tp from AI level5
+    // ── Enforce confluence threshold — NEUTRAL if score too low ────
+    const finalScore = analysis.confluenceScore || 0;
+    if (finalScore < CONFLUENCE_THRESHOLD && analysis.overallBias !== 'NEUTRAL') {
+      analysis.overallBias = 'NEUTRAL';
+      analysis.summary = (analysis.summary || '') + ' (Score below threshold — direction set to NEUTRAL for safety.)';
+      if (analysis.level5) analysis.level5.direction = 'NEUTRAL';
+    }
+
+    // Fill rawData entry/sl/tp from AI level5 — ALWAYS fill even if NEUTRAL
+    // This ensures entry/SL/TP show on screen regardless of direction
     if (analysis.level5) {
       rawData.entryHigh = analysis.level5.entryHigh || null;
       rawData.entryLow  = analysis.level5.entryLow  || null;
@@ -1153,24 +1162,7 @@ Respond with ONLY this JSON (no markdown, no explanation):
       rawData.tp3       = analysis.level5.tp3val     || null;
     }
 
-    // ── Enforce confluence threshold — score < 6 → NEUTRAL ────
-    const finalScore = analysis.confluenceScore || 0;
-    if (finalScore < CONFLUENCE_THRESHOLD && analysis.overallBias !== 'NEUTRAL') {
-      analysis.overallBias = 'NEUTRAL';
-      analysis.summary = (analysis.summary || '') + ' (Score below threshold — direction set to NEUTRAL for safety.)';
-      if (analysis.level5) analysis.level5.direction = 'NEUTRAL';
-    }
 
-    // BUG FIX: NEUTRAL direction වුණත් AI දීපු entry/sl/tp levels preserve කරනවා
-    // (rawData fill කරන්නේ NEUTRAL check කලින් — ඒ values null override නොකරන්න)
-    if (analysis.level5) {
-      if (!rawData.entryHigh && analysis.level5.entryHigh) rawData.entryHigh = analysis.level5.entryHigh;
-      if (!rawData.entryLow  && analysis.level5.entryLow)  rawData.entryLow  = analysis.level5.entryLow;
-      if (!rawData.sl        && analysis.level5.sl)         rawData.sl        = analysis.level5.sl;
-      if (!rawData.tp1       && analysis.level5.tp1val)     rawData.tp1       = analysis.level5.tp1val;
-      if (!rawData.tp2       && analysis.level5.tp2val)     rawData.tp2       = analysis.level5.tp2val;
-      if (!rawData.tp3       && analysis.level5.tp3val)     rawData.tp3       = analysis.level5.tp3val;
-    }
 
     // ── Save thesis for next analysis comparison ───────────────
     thesisState.set(thesisKey, {
