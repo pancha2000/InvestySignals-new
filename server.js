@@ -79,7 +79,7 @@ const SETTINGS_DEFAULTS = {
   highImpactMsg: 'High impact news period — signals temporarily paused.',
   groq_api_key: '',      // overrides .env GROQ_API_KEY if set
   groq_model: 'llama-3.3-70b-versatile',
-  groq_max_tokens: 1500,
+  groq_max_tokens: 2000, // BUG FIX: 1500 too low — AI truncates JSON causing parse errors
   groq_temperature: 0.2,
 };
 let globalSettings = { ...SETTINGS_DEFAULTS };
@@ -97,7 +97,7 @@ async function saveSettingToDB(key, value) {
 
 // ── [1][2] Klines Cache + Retry ──────────────────────────────
 const klinesCache   = new Map();
-const KLINES_TTL    = 15 * 60 * 1000; // 15min — reduces signal flip on re-analysis
+const KLINES_TTL    = 5 * 60 * 1000;  // BUG FIX: 5min TTL — 15min was too stale for fast markets
 
 async function fetchKlinesCached(symbol, interval, limit = 200, retries = 3) {
   const key    = `${symbol}_${interval}_${limit}`;
@@ -162,7 +162,7 @@ function sanitizeCandles(klines) {
   const closes = klines.map(k => parseFloat(k[4])).sort((a, b) => a - b);
   const median = closes[Math.floor(closes.length / 2)];
   if (median <= 0) return klines;
-  return klines.filter(k => Math.abs(parseFloat(k[4]) - median) / median < 0.15);
+  return klines.filter(k => Math.abs(parseFloat(k[4]) - median) / median < 0.30); // BUG FIX: 15%→30% — 15% too aggressive, removes valid volatile candles
 }
 
 // ── [13] State + [11] Throttle ───────────────────────────────
@@ -180,9 +180,13 @@ const app = express();
 app.set('trust proxy', 1);
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
 const allowedOrigin = process.env.ALLOWED_ORIGIN;
+// BUG FIX: CORS — www. + non-www දෙකම allow කරනවා
+const allowedOrigins = allowedOrigin
+  ? [allowedOrigin, allowedOrigin.replace('://','://www.'), allowedOrigin.replace('://www.','://')]
+  : null;
 app.use(cors({
-  origin: allowedOrigin
-    ? (origin, cb) => { (!origin || origin === allowedOrigin) ? cb(null, true) : cb(new Error('CORS')); }
+  origin: allowedOrigins
+    ? (origin, cb) => { (!origin || allowedOrigins.includes(origin)) ? cb(null, true) : cb(new Error('CORS')); }
     : true,
   credentials: true
 }));
@@ -585,13 +589,13 @@ app.patch('/api/paper/trades/:id', ptAuth, async (req, res) => {
 /* PATCH /api/paper/trade/:id/close — close by MongoDB _id (new frontend) */
 app.patch('/api/paper/trade/:id/close', ptAuth, async (req, res) => {
   try {
-    const filter = { $and: [
-      uidQuery(req.uid),
-      { $or: [
-        { _id: req.params.id.match(/^[a-f\d]{24}$/i) ? req.params.id : null },
-        { id: parseInt(req.params.id) || 0 }
-      ]}
-    ]};
+    // BUG FIX: smart id detection — ObjectId or numeric
+    const isObjectId = /^[a-f\d]{24}$/i.test(req.params.id);
+    const numericId  = parseInt(req.params.id);
+    const idFilter   = isObjectId
+      ? { _id: req.params.id }
+      : { id: numericId || 0 };
+    const filter = { $and: [ uidQuery(req.uid), idFilter ] };
     // Auto-calculate pnl if not provided but closePrice is given
     const tradeBeforeClose = await PT.findOne(filter).lean();
     if (!tradeBeforeClose) return res.status(404).json({ success:false, error:'Trade not found' });
@@ -630,13 +634,13 @@ app.patch('/api/paper/trade/:id/close', ptAuth, async (req, res) => {
 /* PATCH /api/paper/trade/:id/cancel — cancel pending order */
 app.patch('/api/paper/trade/:id/cancel', ptAuth, async (req, res) => {
   try {
-    const filter = { $and: [
-      uidQuery(req.uid),
-      { $or: [
-        { _id: req.params.id.match(/^[a-f\d]{24}$/i) ? req.params.id : null },
-        { id: parseInt(req.params.id) || 0 }
-      ]}
-    ]};
+    // BUG FIX: smart id detection — ObjectId or numeric
+    const isObjectId = /^[a-f\d]{24}$/i.test(req.params.id);
+    const numericId  = parseInt(req.params.id);
+    const idFilter   = isObjectId
+      ? { _id: req.params.id }
+      : { id: numericId || 0 };
+    const filter = { $and: [ uidQuery(req.uid), idFilter ] };
     const trade = await PT.findOneAndUpdate(filter,
       { $set: { status:'CANCELLED', closedAt:new Date(), closeTime:new Date().toISOString() } },
       { new: true }
@@ -950,7 +954,7 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     }
 
     // ── Thesis Tracking — compare with previous analysis ────────
-    const uid = req.uid || req.user?.uid || 'anon';
+    const uid = req.user?.uid || req.uid || 'anon'; // BUG FIX: verifyToken sets req.user.uid not req.uid
     const thesisKey = uid + ':' + coin;
     const prevThesis = thesisState.get(thesisKey);
 
@@ -963,9 +967,12 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
       const prevH4     = prevThesis.h4Struct;
       const d1Match    = prevD1 === d1Struct;
       const h4Match    = prevH4 === h4Struct;
-      const biasFlip   = prevBias !== 'NEUTRAL' && prevBias !== undefined;
+      const biasFlip   = prevBias !== undefined && prevBias !== 'NEUTRAL';
+      const currentBias = analysis.overallBias;
+      const actualFlip  = biasFlip && currentBias !== 'NEUTRAL' && currentBias !== prevBias;
 
-      if (!biasFlip || prevBias === undefined) {
+      // BUG FIX: was using biasFlip incorrectly — actualFlip checks real direction change
+      if (!actualFlip) {
         thesisStatus = 'CONFIRMED';
       } else if (d1Match && h4Match) {
         thesisStatus = 'CONFIRMED';           // both TFs same — no real flip
@@ -1004,7 +1011,7 @@ Rule: If confluenceScore < ${CONFLUENCE_THRESHOLD}, set overallBias to NEUTRAL.`
       : process.env.GROQ_API_KEY;
     if (!GROQ_API_KEY) return res.status(500).json({ success:false, error:'GROQ_API_KEY not configured. Set it in Admin Panel → AI Settings.' });
     const GROQ_MODEL       = (globalSettings.groq_model       || 'llama-3.3-70b-versatile').trim();
-    const GROQ_MAX_TOKENS  = parseInt(globalSettings.groq_max_tokens)  || 1500;
+    const GROQ_MAX_TOKENS  = parseInt(globalSettings.groq_max_tokens)  || 2000; // BUG FIX: increased default
     const GROQ_TEMPERATURE = parseFloat(globalSettings.groq_temperature) || 0.2;
 
     const earlyWarnText = earlyWarnings.length ? '\nEARLY WARNINGS (M15/H1 signals):\n' + earlyWarnings.map((w,i) => (i+1)+'. '+w).join('\n') : '';
@@ -1143,6 +1150,17 @@ Respond with ONLY this JSON (no markdown, no explanation):
       if (analysis.level5) analysis.level5.direction = 'NEUTRAL';
     }
 
+    // BUG FIX: NEUTRAL direction වුණත් AI දීපු entry/sl/tp levels preserve කරනවා
+    // (rawData fill කරන්නේ NEUTRAL check කලින් — ඒ values null override නොකරන්න)
+    if (analysis.level5) {
+      if (!rawData.entryHigh && analysis.level5.entryHigh) rawData.entryHigh = analysis.level5.entryHigh;
+      if (!rawData.entryLow  && analysis.level5.entryLow)  rawData.entryLow  = analysis.level5.entryLow;
+      if (!rawData.sl        && analysis.level5.sl)         rawData.sl        = analysis.level5.sl;
+      if (!rawData.tp1       && analysis.level5.tp1val)     rawData.tp1       = analysis.level5.tp1val;
+      if (!rawData.tp2       && analysis.level5.tp2val)     rawData.tp2       = analysis.level5.tp2val;
+      if (!rawData.tp3       && analysis.level5.tp3val)     rawData.tp3       = analysis.level5.tp3val;
+    }
+
     // ── Save thesis for next analysis comparison ───────────────
     thesisState.set(thesisKey, {
       bias:     analysis.overallBias,
@@ -1195,19 +1213,8 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
     if (!pair || !direction || !entry)
       return res.status(400).json({ success: false, error: 'pair, direction, entry required.' });
 
-    // Get live price from Binance
-    // Get live price — try futures first, fall back to spot (for coins like XLM not on futures)
-    let currentPrice = null;
-    try {
-      const fr = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${pair.toUpperCase()}`);
-      if (fr.ok) { const fd = await fr.json(); currentPrice = parseFloat(fd.price) || null; }
-    } catch(_) {}
-    if (!currentPrice) {
-      try {
-        const sr = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${pair.toUpperCase()}`);
-        if (sr.ok) { const sd = await sr.json(); currentPrice = parseFloat(sd.price) || null; }
-      } catch(_) {}
-    }
+    // BUG FIX: getLivePrice() use කරනවා — futures + spot fallback, cached
+    const currentPrice = await getLivePrice(pair.toUpperCase());
     if (!currentPrice) return res.status(502).json({ success: false, error: `Could not fetch live price for ${pair}. Check symbol name.` });
 
     // Fetch klines — try futures first, fall back to spot
@@ -1767,9 +1774,10 @@ app.post('/api/paper/balance/request', ptAuth, async (req, res) => {
 });
 
 // ── Catch-all (MUST be last) ───────────────────────────────────
+// BUG FIX: catch-all — /api/* routes that reach here return 404 JSON (not index.html)
 app.get('*',(req,res)=>{
-  const safe = path.basename(req.path.replace('/','') || 'index.html');
-  // Block sensitive server files from being served
+  if (req.path.startsWith('/api/')) return res.status(404).json({ success:false, error:'API route not found' });
+  const safe = path.basename(req.path.replace(/^\//,'') || 'index.html');
   if (BLOCKED_STATIC.includes(safe)) return res.status(403).json({ success:false, error:'Forbidden' });
   res.sendFile(path.join(__dirname, safe), err => {
     if (err) res.sendFile(path.join(__dirname, 'index.html'));
@@ -1956,7 +1964,7 @@ async function runTPSLCheck() {
   }
 }
 
-const PORT=process.env.PORT||3000;
+const PORT=process.env.PORT||2000;
 server.listen(PORT,()=>{
   console.log(`\n🚀 InvestySignals v5 running on port ${PORT}`);
   connectBinance();
