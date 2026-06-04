@@ -1072,11 +1072,11 @@ Rule: If confluenceScore < ${CONFLUENCE_THRESHOLD}, set overallBias to NEUTRAL.`
     const GROQ_TEMPERATURE = parseFloat(globalSettings.groq_temperature) || 0.2;
 
     const earlyWarnText = earlyWarnings.length ? '\nEARLY WARNINGS (M15/H1 signals):\n' + earlyWarnings.map((w,i) => (i+1)+'. '+w).join('\n') : '';
-    const prompt = `You are an expert crypto futures trader. Analyze ${coin}/USDT and respond ONLY with valid JSON.
+    const prompt = `You are a professional crypto futures trader who provides institutional-grade signals. Analyze ${coin}/USDT and respond ONLY with valid JSON.
 
 ${thesisContext}${earlyWarnText}
 
-Data:
+MARKET DATA:
 - Price: $${price}
 - BTC Trend (4H EMA20): ${btcTrend}
 - Funding: ${fundingRate!=null?fundingRate.toFixed(4)+'%':'-'} (${fundingBias})
@@ -1090,13 +1090,45 @@ Data:
 - BB 1H: upper=$${h1BB.upper} lower=$${h1BB.lower} mid=$${h1BB.middle}
 - S/R 4H: ${h4SR.join(',')}
 - S/R 1D: ${d1SR.join(',')}
-- FVG 4H: ${h4FVGs.map(f=>f.type+' '+f.low+'-'+f.high).join(' | ')||'none'}
-- FVG 1H: ${h1FVGs.map(f=>f.type+' '+f.low+'-'+f.high).join(' | ')||'none'}
-- OB 4H: ${h4OB?h4OB.type+' '+h4OB.low+'-'+h4OB.high:'none'}
+- FVG 4H (unmitigated): ${h4FVGs.map(f=>f.type+' $'+f.low+'-$'+f.high).join(' | ')||'none'}
+- FVG 1H (unmitigated): ${h1FVGs.map(f=>f.type+' $'+f.low+'-$'+f.high).join(' | ')||'none'}
+- OB 4H: ${h4OB?h4OB.type+' $'+h4OB.low+'-$'+h4OB.high:'none'}
+- OB 1D: ${d1OB?d1OB.type+' $'+d1OB.low+'-$'+d1OB.high:'none'}
 - Vol spike 1H: ${h1Vol.spike?'YES':'NO'} (${h1Vol.ratio}x)
 - Candle 15m: ${m15CP.pattern}
 - ATR 4H: ${atr4h} | ATR 1H: ${atr1h}
-- Prev Day H/L: ${prevDayHigh?.toFixed(4)}/${prevDayLow?.toFixed(4)}
+- Prev Day H/L: $${prevDayHigh?.toFixed(4)} / $${prevDayLow?.toFixed(4)}
+
+═══ MANDATORY ENTRY QUALITY RULES (follow these exactly — this determines signal quality) ═══
+
+RULE 1 — ENTRY ZONE (must be at a CONFLUENCE of ≥2 factors):
+  Priority order: 4H OB > 4H FVG > 1H FVG > EMA 4H 20/50 > 4H S/R level > Fib 61.8%
+  - LONG entry zone: identify the nearest BULLISH OB/FVG/S/R below current price
+  - SHORT entry zone: identify the nearest BEARISH OB/FVG/S/R above current price
+  - entryHigh = top of entry zone, entryLow = bottom of entry zone
+  - If no clear zone exists, use price ±(0.5×ATR 4H): entryHigh=$${(price + atr4h*0.5).toFixed(4)} entryLow=$${(price - atr4h*0.5).toFixed(4)}
+
+RULE 2 — STOP LOSS (ATR-based, must clear key S/R):
+  - ATR 4H = ${atr4h} | ATR 1H = ${atr1h}
+  - LONG SL: place 1.5×ATR4H BELOW entryLow → approximately $${(price - atr4h*1.5).toFixed(4)}
+  - SHORT SL: place 1.5×ATR4H ABOVE entryHigh → approximately $${(price + atr4h*1.5).toFixed(4)}
+  - SL MUST be below/above a significant S/R level (not arbitrary) — check 4H S/R: ${h4SR.join(', ')}
+  - Minimum SL distance: 1×ATR4H = $${atr4h} from entry
+
+RULE 3 — TAKE PROFITS (minimum R:R ratios — calculate R = |entry - sl|):
+  - TP1 MINIMUM: entry ± 1.5R (1.5:1 R:R) — use nearest resistance/support from ${h4SR.join(', ')}
+  - TP2 MINIMUM: entry ± 2.5R (2.5:1 R:R) — use next major resistance/support
+  - TP3 MINIMUM: entry ± 4.0R (4:1 R:R) — use 1D S/R or prev swing high/low: ${d1SR.join(', ')}
+  - TPs must land ON key S/R levels — never at arbitrary prices
+
+RULE 4 — RSI FILTER (hard rules):
+  - DO NOT give LONG direction if 4H RSI > 65 (currently ${h4RSI})
+  - DO NOT give SHORT direction if 4H RSI < 35 (currently ${h4RSI})
+  - If RSI violates filter: set level5.direction=NEUTRAL but still provide valid entry/SL/TP levels
+
+RULE 5 — CONFLUENCE MINIMUM:
+  - confluenceScore must reflect: D1 structure + 4H structure + RSI + MACD + volume + OB/FVG alignment
+  - If score < ${CONFLUENCE_THRESHOLD}: set overallBias=NEUTRAL, still provide valid numeric levels
 
 Respond with ONLY this JSON (no markdown, no explanation):
 {
@@ -1145,7 +1177,6 @@ Respond with ONLY this JSON (no markdown, no explanation):
   },
   "level5": {
     "direction": "LONG|SHORT|NEUTRAL",
-    "IMPORTANT": "Even if NEUTRAL, you MUST still provide real numeric values for entryHigh, entryLow, sl, tp1val, tp2val, tp3val based on key support/resistance levels. Never return null.",
     "entryZone": "$X.XX – $X.XX",
     "stopLoss": "$X.XX",
     "invalidationLevel": "$X.XX",
@@ -1154,9 +1185,9 @@ Respond with ONLY this JSON (no markdown, no explanation):
     "tp3": "$X.XX",
     "leverage": "5x–10x",
     "positionSize": "1–2% of capital",
-    "tradeManagement": "text",
+    "tradeManagement": "text describing TP1 partial close 50%, move SL to BE, trail to TP2",
     "reEntry": "text",
-    "riskNote": "text or null",
+    "riskNote": "ATR-based SL distance and R:R ratios confirmation",
     "entryHigh": number,
     "entryLow": number,
     "sl": number,
@@ -1281,90 +1312,140 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
     if (!pair || !direction || !entry)
       return res.status(400).json({ success: false, error: 'pair, direction, entry required.' });
 
-    // FIX: Normalize pair — "XLM" → "XLMUSDT" (main 502 bug fix)
     const normalizedPair = normalizePair(pair);
-
-    // FIX: getLivePrice with normalized USDT pair
     const currentPrice = await getLivePrice(normalizedPair);
-    if (!currentPrice) return res.status(502).json({ success: false, error: `Could not fetch live price for ${normalizedPair}. Check symbol name or Binance API.` });
+    if (!currentPrice) return res.status(502).json({ success: false, error: `Could not fetch live price for ${normalizedPair}.` });
 
-    // Fetch klines — try futures first, fall back to spot (also with normalized pair)
-    async function getKlines(symbol, interval, limit) {
+    // ── Fetch 4 timeframes ──────────────────────────────────────
+    async function getKlines(sym, interval, limit) {
       let klines = null;
       try {
-        const fr = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
+        const fr = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${sym}&interval=${interval}&limit=${limit}`);
         if (fr.ok) { const d = await fr.json(); if (Array.isArray(d) && d.length > 5) klines = d; }
       } catch(_) {}
       if (!klines) {
         try {
-          const sr = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
+          const sr = await fetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${interval}&limit=${limit}`);
           if (sr.ok) { const d = await sr.json(); if (Array.isArray(d) && d.length > 5) klines = d; }
         } catch(_) {}
       }
       if (!klines) return [];
-      return klines.map(k => ({ open:parseFloat(k[1]),high:parseFloat(k[2]),low:parseFloat(k[3]),close:parseFloat(k[4]),volume:parseFloat(k[5]) }));
+      return klines.map(k => ({ open:+k[1], high:+k[2], low:+k[3], close:+k[4], volume:+k[5] }));
     }
 
-    const [h4k, d1k] = await Promise.all([
-      getKlines(normalizedPair, '4h', 50),
-      getKlines(normalizedPair, '1d', 20),
+    const [m15k, h1k, h4k, d1k] = await Promise.all([
+      getKlines(normalizedPair, '15m', 100),
+      getKlines(normalizedPair, '1h',  100),
+      getKlines(normalizedPair, '4h',  100),
+      getKlines(normalizedPair, '1d',   30),
     ]);
 
-    // FIX: Guard against empty candles before structure detection
-    function detectStruct(candles) {
-      if (!candles || candles.length < 5) return 'RANGING';
-      const last  = candles.slice(-20);
-      const highs = last.map(c => c.high);
-      const lows  = last.map(c => c.low);
-      if (highs.length < 2 || lows.length < 2) return 'RANGING';
-      const prevHighs = highs.slice(0, -1);
-      const prevLows  = lows.slice(0, -1);
-      const hh = highs[highs.length-1] > Math.max(...prevHighs);
-      const hl = lows[lows.length-1]   > Math.min(...prevLows);
-      const lh = highs[highs.length-1] < Math.max(...prevHighs);
-      const ll = lows[lows.length-1]   < Math.min(...prevLows);
-      if (hh && hl) return 'BOS_BULLISH';
-      if (lh && ll) return 'BOS_BEARISH';
-      if (hh && ll) return 'CHOCH_BULLISH';
-      if (lh && hl) return 'CHOCH_BEARISH';
+    // ── Shared indicator helpers ────────────────────────────────
+    function monRsi(closes, period=14) {
+      if (closes.length < period + 2) return 50;
+      let g=0, l=0;
+      for (let i=1; i<=period; i++) { const d=closes[i]-closes[i-1]; d>=0?g+=d:l-=d; }
+      let ag=g/period, al=l/period;
+      for (let i=period+1; i<closes.length; i++) { const d=closes[i]-closes[i-1]; ag=(ag*13+(d>0?d:0))/14; al=(al*13+(d<0?-d:0))/14; }
+      if (al===0) return 100; if (ag===0) return 0;
+      return parseFloat((100-100/(1+ag/al)).toFixed(1));
+    }
+    function monEma(arr, n) {
+      if (arr.length < n) return arr[arr.length-1] || 0;
+      const k=2/(n+1); let v=arr.slice(0,n).reduce((a,b)=>a+b,0)/n;
+      for (let i=n; i<arr.length; i++) v=arr[i]*k+v*(1-k);
+      return parseFloat(v.toFixed(6));
+    }
+    function monMacd(closes) {
+      if (closes.length < 27) return { signal: 'NEUTRAL', hist: 0 };
+      const k=2/(13+1); const k2=2/(26+1);
+      let e12=closes.slice(0,12).reduce((a,b)=>a+b,0)/12;
+      let e26=closes.slice(0,26).reduce((a,b)=>a+b,0)/26;
+      for (let i=12; i<closes.length; i++) e12=closes[i]*k+e12*(1-k);
+      for (let i=26; i<closes.length; i++) e26=closes[i]*k2+e26*(1-k2);
+      const hist = parseFloat((e12-e26).toFixed(6));
+      return { signal: hist>0?'BULLISH':'BEARISH', hist };
+    }
+    function monStruct(candles) {
+      if (candles.length < 12) return 'RANGING';
+      const c = candles.slice(-20);
+      const mid = Math.floor(c.length/2);
+      const pHH = Math.max(...c.slice(0,mid).map(x=>x.high));
+      const pLL = Math.min(...c.slice(0,mid).map(x=>x.low));
+      const cHH = Math.max(...c.slice(mid).map(x=>x.high));
+      const cLL = Math.min(...c.slice(mid).map(x=>x.low));
+      const last = c[c.length-1].close;
+      // FIX: Require BOTH wicks AND close confirmation to avoid fakeouts
+      if (cHH>pHH && last>pHH) return 'BOS_BULLISH';
+      if (cLL<pLL && last<pLL) return 'BOS_BEARISH';
+      if (cHH>pHH) return 'CHOCH_BULLISH';
+      if (cLL<pLL) return 'CHOCH_BEARISH';
       return 'RANGING';
     }
+    function monAtr(candles, n=14) {
+      if (candles.length < n+1) return 0;
+      const trs = candles.slice(1).map((c,i) => Math.max(c.high-c.low, Math.abs(c.high-candles[i].close), Math.abs(c.low-candles[i].close)));
+      let atr = trs.slice(0,n).reduce((a,b)=>a+b,0)/n;
+      for (let i=n; i<trs.length; i++) atr=(atr*13+trs[i])/14;
+      return parseFloat(atr.toFixed(6));
+    }
+    function volRatio(candles, n=20) {
+      if (candles.length < n+1) return 1;
+      const avg = candles.slice(-n-1,-1).reduce((a,c)=>a+c.volume,0)/n;
+      return avg > 0 ? parseFloat((candles[candles.length-1].volume/avg).toFixed(2)) : 1;
+    }
 
-    const h4Struct = detectStruct(h4k);
-    const d1Struct = detectStruct(d1k);
+    // ── Compute indicators ──────────────────────────────────────
+    const m15c = m15k.slice(-50), h1c = h1k.slice(-80), h4c = h4k.slice(-80), d1c = d1k.slice(-30);
+    const m15cl = m15c.map(x=>x.close), h1cl = h1c.map(x=>x.close), h4cl = h4c.map(x=>x.close), d1cl = d1c.map(x=>x.close);
 
-    const isLong   = direction === 'LONG';
-    const entryNum = parseFloat(entry);
-    const slNum    = parseFloat(sl)  || null;
-    const tp1Num   = parseFloat(tp1) || null;
+    const m15RSI = monRsi(m15cl);
+    const h1RSI  = monRsi(h1cl);
+    const h4RSI  = monRsi(h4cl);
 
-    // H4 structure intact check
-    const h4Intact = isLong ? h4Struct.includes('BULLISH') : h4Struct.includes('BEARISH');
-    const d1Intact = isLong ? d1Struct.includes('BULLISH') : d1Struct.includes('BEARISH');
+    const h1Ema20  = monEma(h1cl, 20);
+    const h1Ema50  = monEma(h1cl, 50);
+    const h1Ema200 = monEma(h1cl, Math.min(200, h1cl.length-1));
+    const h4Ema20  = monEma(h4cl, 20);
+    const h4Ema50  = monEma(h4cl, 50);
 
-    // FIX: Guard against empty d1k before calculating swingHigh/swingLow
-    const d1Slice  = d1k.slice(-20);
-    const d1Highs  = d1Slice.length ? d1Slice.map(c => c.high)  : [entryNum * 1.05];
-    const d1Lows   = d1Slice.length ? d1Slice.map(c => c.low)   : [entryNum * 0.95];
+    const h1MACD = monMacd(h1cl);
+    const h4MACD = monMacd(h4cl);
 
-    const swingHigh = isLong ? Math.max(...d1Highs) : entryNum;
-    const swingLow  = isLong ? entryNum              : Math.min(...d1Lows);
-    const range     = swingHigh - swingLow;
+    const m15Struct = monStruct(m15c);
+    const h1Struct  = monStruct(h1c);
+    const h4Struct  = monStruct(h4c);
+    const d1Struct  = monStruct(d1c);
 
-    // FIX: Prevent division/calc errors when range is 0 or negative
-    const safeRange = range > 0 ? range : entryNum * 0.1;
+    const h4ATR = monAtr(h4c);
+    const h1ATR = monAtr(h1c);
+    const h1VolR = volRatio(h1c);
 
-    const fib382 = isLong ? swingHigh - safeRange * 0.382 : swingLow + safeRange * 0.382;
-    const fib500 = isLong ? swingHigh - safeRange * 0.500 : swingLow + safeRange * 0.500;
-    const fib618 = isLong ? swingHigh - safeRange * 0.618 : swingLow + safeRange * 0.618;
-    const fib786 = isLong ? swingHigh - safeRange * 0.786 : swingLow + safeRange * 0.786;
+    // ── EMA alignment signals ───────────────────────────────────
+    const priceAboveEma20H1  = currentPrice > h1Ema20;
+    const priceAboveEma50H1  = currentPrice > h1Ema50;
+    const priceAboveEma200H1 = currentPrice > h1Ema200;
+    const ema20AboveEma50H4  = h4Ema20 > h4Ema50;
 
-    // FIX: pullbackPct — use Math.max(0, ...) so it's never negative when trade is in profit
+    // ── Fibonacci from D1 swing ─────────────────────────────────
+    const isLong    = direction === 'LONG';
+    const entryNum  = parseFloat(entry);
+    const slNum     = parseFloat(sl)  || null;
+    const tp1Num    = parseFloat(tp1) || null;
+
+    const d1Highs = d1c.map(c=>c.high), d1Lows = d1c.map(c=>c.low);
+    const swingHigh = Math.max(...d1Highs.slice(-20));
+    const swingLow  = Math.min(...d1Lows.slice(-20));
+    const range     = Math.max(swingHigh - swingLow, entryNum * 0.01);
+    const fib382 = isLong ? swingHigh - range*0.382 : swingLow + range*0.382;
+    const fib500 = isLong ? swingHigh - range*0.500 : swingLow + range*0.500;
+    const fib618 = isLong ? swingHigh - range*0.618 : swingLow + range*0.618;
+    const fib786 = isLong ? swingHigh - range*0.786 : swingLow + range*0.786;
+
     const pullbackPct = isLong
-      ? Math.max(0, (entryNum - currentPrice) / entryNum * 100)
-      : Math.max(0, (currentPrice - entryNum) / entryNum * 100);
-
-    let pullbackZone = 'NONE'; // NONE = trade is in profit (above entry for LONG)
+      ? Math.max(0, (entryNum-currentPrice)/entryNum*100)
+      : Math.max(0, (currentPrice-entryNum)/entryNum*100);
+    let pullbackZone = 'NONE';
     if (isLong) {
       if      (currentPrice <= fib786) pullbackZone = 'CRITICAL';
       else if (currentPrice <= fib618) pullbackZone = 'DEEP';
@@ -1377,65 +1458,96 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
       else if (currentPrice >= fib382) pullbackZone = 'SHALLOW';
     }
 
-    // TP1 hit?
-    const tp1Hit = tp1Num && (isLong ? currentPrice >= tp1Num * 0.998 : currentPrice <= tp1Num * 1.002);
+    // ── Structure checks ────────────────────────────────────────
+    // FIX: RANGING ≠ against trade — only ACTIVE opposite BOS is a threat
+    const h4AgainstTrade = isLong ? h4Struct === 'BOS_BEARISH' : h4Struct === 'BOS_BULLISH';
+    const d1AgainstTrade = isLong ? d1Struct === 'BOS_BEARISH' : d1Struct === 'BOS_BULLISH';
+    const h4ForTrade     = isLong ? h4Struct.includes('BULLISH') : h4Struct.includes('BEARISH');
+    const d1ForTrade     = isLong ? d1Struct.includes('BULLISH') : d1Struct.includes('BEARISH');
 
-    // FIX: slClose — divide by currentPrice not entryNum for accurate proximity check
-    const slClose = slNum && Math.abs(currentPrice - slNum) / currentPrice < 0.01;
+    const tp1Hit = tp1Num && (isLong ? currentPrice >= tp1Num*0.998 : currentPrice <= tp1Num*1.002);
+    const slClose = slNum && Math.abs(currentPrice-slNum)/currentPrice < 0.008; // 0.8% from SL
 
-    // Decide ACTION
-    let action       = 'HOLD';
-    let reason       = '';
-    let dcaLevel     = null;
-    let newSL        = null;
-    let slMoveTarget = null;
+    // RSI confluence
+    const rsiOversold  = h4RSI < 35 && h1RSI < 40;  // LONG add zone
+    const rsiOverbought = h4RSI > 65 && h1RSI > 60; // SHORT add zone
 
-    if (!h4Intact && !d1Intact) {
+    // ── Decision engine ─────────────────────────────────────────
+    let action='HOLD', reason='', dcaLevel=null, newSL=null, slMoveTarget=null;
+    const warnings = [];
+
+    if (h4AgainstTrade && d1AgainstTrade) {
+      // BOTH timeframes actively broken against trade — real invalidation
       action = 'CLOSE';
-      reason = `Both D1 (${d1Struct}) and H4 (${h4Struct}) structures flipped against your ${direction}. Trade invalidated.`;
+      reason = `Structure fully invalidated: H4 (${h4Struct}) and D1 (${d1Struct}) both flipped ${isLong?'bearish':'bullish'}. Your ${direction} thesis is broken.`;
+    } else if (pullbackZone === 'CRITICAL' && h4AgainstTrade) {
+      // 78.6% pullback WITH H4 flip — double confirmation of reversal
+      action = 'CLOSE';
+      reason = `Price breached 78.6% Fib ($${fib786.toFixed(4)}) AND H4 structure flipped (${h4Struct}). High probability of full reversal.`;
     } else if (slClose) {
       action = 'CLOSE';
-      reason = `Price is very close to SL ($${slNum}). Risk/reward no longer valid.`;
-    } else if (pullbackZone === 'CRITICAL') {
-      action = 'CLOSE';
-      reason = `Price breached 78.6% Fibonacci level ($${fib786.toFixed(4)}). H4 reversal likely — exit to protect capital.`;
+      reason = `Price within 0.8% of Stop Loss ($${slNum}). R:R is no longer valid — protect capital by closing.`;
     } else if (tp1Hit) {
-      action       = 'MOVE_SL';
+      action = 'MOVE_SL';
       slMoveTarget = entryNum;
-      reason       = `TP1 ($${tp1Num}) reached! Move SL to break-even ($${entryNum}) to protect profits.`;
-    } else if (h4Intact && pullbackZone === 'DEEP') {
+      reason = `TP1 ($${tp1Num}) reached! Move Stop Loss to Break-Even ($${entryNum.toFixed(4)}) to protect profit. 50% position locked in.`;
+    } else if (pullbackZone === 'DEEP' && d1ForTrade && (isLong ? rsiOversold : rsiOverbought)) {
+      // DCA zone: 61.8% pullback + D1 intact + RSI oversold/overbought
       dcaLevel = parseFloat(fib618.toFixed(4));
-      newSL    = slNum ? parseFloat((slNum * (isLong ? 0.998 : 1.002)).toFixed(4)) : null;
-      action   = 'DCA';
-      reason   = `H4 structure intact (${h4Struct}). Price at 61.8% Fibonacci zone — valid DCA level. D1: ${d1Struct}.`;
-    } else if (h4Intact && !d1Intact) {
+      newSL = slNum ? parseFloat((isLong ? Math.min(slNum, fib786) : Math.max(slNum, fib786)).toFixed(4)) : null;
+      action = 'DCA';
+      reason = `Price at 61.8% Fib ($${fib618.toFixed(4)}) + D1 structure intact (${d1Struct}) + RSI confirms zone (${isLong?'H4='+h4RSI+' oversold':'H4='+h4RSI+' overbought'}). Valid DCA level.`;
+    } else if (pullbackZone === 'DEEP' && !d1ForTrade) {
+      // Deep pullback but D1 neutral — caution
+      warnings.push(`⚠️ Price at 61.8% Fib ($${fib618.toFixed(4)}) but D1 structure is ${d1Struct} — DCA risk is higher`);
       action = 'HOLD';
-      reason = `H4 intact (${h4Struct}) but D1 weakening (${d1Struct}). Hold current position, no DCA. Watch 61.8% level.`;
+      reason = `Significant pullback to 61.8% Fib but D1 structure (${d1Struct}) is not clearly ${isLong?'bullish':'bearish'}. No DCA — wait for confirmation.`;
+    } else if (pullbackZone === 'CRITICAL' && !h4AgainstTrade) {
+      // Critical pullback but structure still intact — watch closely
+      warnings.push(`🔴 Price below 78.6% Fib ($${fib786.toFixed(4)}) — near invalidation zone`);
+      action = 'HOLD';
+      reason = `Deep pullback to 78.6% Fib zone but H4 structure (${h4Struct}) has not confirmed reversal yet. Watch closely — if H4 closes ${isLong?'bearish':'bullish'} consider exit.`;
     } else {
-      action = 'HOLD';
+      // Normal hold
+      const emaTrend = isLong
+        ? (priceAboveEma20H1?'above EMA20':'below EMA20') + (priceAboveEma50H1?' + above EMA50':' + below EMA50')
+        : (!priceAboveEma20H1?'below EMA20':'above EMA20');
+      const trendText = (d1ForTrade?'D1 ✓':'D1 ranging') + ' · ' + (h4ForTrade?'H4 ✓':'H4 ranging');
       reason = pullbackZone === 'NONE'
-        ? `Trade is in profit territory. H4 (${h4Struct}) and D1 (${d1Struct}) structures support your ${direction}.`
-        : `H4 (${h4Struct}) and D1 (${d1Struct}) structures support your ${direction}. Pullback zone: ${pullbackZone}. Continue holding.`;
+        ? `Trade is in profit territory (${trendText}). H4 RSI ${h4RSI}, 1H ${emaTrend}. Continue holding — target TP${tp1Hit?'2':'1'}.`
+        : `Pullback (${pullbackZone} — ${pullbackPct.toFixed(1)}%) within normal range. Structures: ${trendText}. H4 RSI ${h4RSI}. Hold.`;
     }
 
-    // Warnings
-    const warnings = [];
-    if (pullbackZone === 'DEEP')     warnings.push(`⚠️ Price at deep pullback (61.8% fib: $${fib618.toFixed(4)})`);
-    if (pullbackZone === 'CRITICAL') warnings.push(`🔴 Price below 78.6% fib — reversal zone`);
-    if (!h4Intact && d1Intact)       warnings.push(`⚠️ H4 structure shifted against trade — thesis weakening`);
+    // Additional warnings
+    if (h4AgainstTrade && !d1AgainstTrade) warnings.push(`⚠️ H4 structure flipped ${isLong?'bearish':'bullish'} (${h4Struct}) — D1 still holds but monitor closely`);
+    if (!h4ForTrade && !h4AgainstTrade) warnings.push(`ℹ️ H4 structure is RANGING — no clear momentum confirmation for your ${direction}`);
+    if (h1MACD.signal !== (isLong?'BULLISH':'BEARISH')) warnings.push(`ℹ️ 1H MACD is ${h1MACD.signal} — against ${direction} direction`);
+    if (h1VolR > 2.5 && action !== 'CLOSE') warnings.push(`📊 High volume spike on 1H (${h1VolR}×) — significant move may be starting`);
 
-    // FIX: invalidationLevel — correct for both LONG and SHORT
-    const invalidationLevel = isLong ? fib786 : fib786;
+    // ── EMA alignment summary ───────────────────────────────────
+    const emaAlignment = isLong
+      ? { ok: priceAboveEma20H1 && priceAboveEma50H1, desc: (priceAboveEma20H1?'✅':'❌')+' EMA20  '+(priceAboveEma50H1?'✅':'❌')+' EMA50  '+(priceAboveEma200H1?'✅':'❌')+' EMA200' }
+      : { ok: !priceAboveEma20H1 && !priceAboveEma50H1, desc: (!priceAboveEma20H1?'✅':'❌')+' <EMA20  '+(!priceAboveEma50H1?'✅':'❌')+' <EMA50  '+(!priceAboveEma200H1?'✅':'❌')+' <EMA200' };
 
     res.json({
       success: true,
-      pair:    normalizedPair,
+      pair: normalizedPair,
       direction,
       currentPrice,
       action,
       reason,
       warnings,
-      structureIntact: { h4: h4Intact, d1: d1Intact },
+      // Multi-TF indicators
+      indicators: {
+        rsi:  { m15: m15RSI, h1: h1RSI, h4: h4RSI },
+        macd: { h1: h1MACD.signal, h4: h4MACD.signal },
+        ema:  { h1_20: h1Ema20, h1_50: h1Ema50, h1_200: h1Ema200, h4_20: h4Ema20, h4_50: h4Ema50 },
+        struct: { m15: m15Struct, h1: h1Struct, h4: h4Struct, d1: d1Struct },
+        atr: { h4: h4ATR, h1: h1ATR },
+        volume: { h1Ratio: h1VolR },
+        emaAlignment,
+      },
+      structureIntact: { h4: h4ForTrade, d1: d1ForTrade },
       h4Struct, d1Struct,
       pullbackZone,
       pullbackPct: parseFloat(pullbackPct.toFixed(2)),
@@ -1445,10 +1557,8 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
         fib618: parseFloat(fib618.toFixed(4)),
         fib786: parseFloat(fib786.toFixed(4)),
       },
-      dcaLevel,
-      newSL,
-      slMoveTarget,
-      invalidationLevel: parseFloat(invalidationLevel.toFixed(4)),
+      dcaLevel, newSL, slMoveTarget,
+      invalidationLevel: parseFloat(fib786.toFixed(4)),
       tp1Hit,
     });
   } catch(err) {
@@ -1456,7 +1566,6 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-
 // ═══════════════════════════════════════════════════════════════
 //  ADMIN — Users API
 // ═══════════════════════════════════════════════════════════════

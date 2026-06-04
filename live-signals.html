@@ -254,6 +254,16 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-b);line-heigh
 .btn-mon-close-trade:hover{background:rgba(244,63,110,.2);}
 .btn-mon-dismiss{padding:9px 16px;background:transparent;border:1px solid var(--border2);color:var(--muted);border-radius:var(--radius-sm);font-family:var(--font-b);cursor:pointer;transition:all .2s;min-height:40px;}
 .btn-mon-dismiss:hover{color:var(--text);}
+/* ── Monitor indicator table ── */
+.mon-ind-section{margin-bottom:14px;}
+.mon-ind-title{font-family:var(--font-n);font-size:.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px;}
+.mon-ind-table{width:100%;border-collapse:collapse;font-family:var(--font-n);font-size:.74rem;}
+.mon-ind-table th{font-size:.56rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.07em;padding:4px 8px;text-align:center;border-bottom:1px solid var(--border);}
+.mon-ind-table td{padding:6px 8px;text-align:center;border-bottom:1px solid rgba(255,255,255,.03);}
+.mon-ind-table tr:last-child td{border-bottom:none;}
+.mon-ind-table .ind-label{text-align:left;color:var(--muted);font-size:.67rem;}
+.ind-bull{color:var(--green);font-weight:700;}.ind-bear{color:var(--red);font-weight:700;}.ind-neut{color:var(--yellow);}
+.mon-ema-row{font-size:.72rem;padding:8px 12px;background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:10px;line-height:1.8;}
 </style>
 
 <meta name="robots" content="noindex,nofollow">
@@ -1183,19 +1193,75 @@ async function openMonitor(tradeId) {
     const actionIcon  = { HOLD:'⏳', DCA:'➕', CLOSE:'🔴', MOVE_SL:'🛡️' };
     const actionLabel = { HOLD:'Hold Position', DCA:'DCA Opportunity', CLOSE:'Exit Trade', MOVE_SL:'Move SL to Break-Even' };
 
-    // Live PnL — FIX: normalize symbol for livePrices lookup
+    // Live PnL
     const monSym = normalizeSym(trade.symbol || trade.pair);
-    const price = livePrices[monSym] || j.currentPrice;
-    const isLong = trade.direction === 'LONG';
-    const rem = isTP1Hit(trade) ? 0.5 : 1.0;
-    const size = trade.amount || trade.size || 0;
+    const price  = livePrices[monSym] || j.currentPrice;
+    const rem    = isTP1Hit(trade) ? 0.5 : 1.0;
     const livePnl = price ? (calcPnl(trade.direction, trade.entryPrice, price, trade.amount||trade.size, trade.leverage, rem) + (trade.tp1Pnl || 0)) : null;
     const pnlColor = livePnl === null ? 'var(--muted)' : livePnl >= 0 ? 'var(--green)' : 'var(--red)';
 
-    const h4c = j.structureIntact?.h4 ? 'var(--green)' : 'var(--red)';
-    const d1c = j.structureIntact?.d1 ? 'var(--green)' : 'var(--red)';
+    // Struct colors
+    const h4c = j.structureIntact?.h4 ? 'var(--green)' : j.h4Struct?.includes('BEARISH') ? 'var(--red)' : 'var(--yellow)';
+    const d1c = j.structureIntact?.d1 ? 'var(--green)' : j.d1Struct?.includes('BEARISH') ? 'var(--red)' : 'var(--yellow)';
 
     const warnsHtml = (j.warnings || []).map(w => `<div class="mon-warn">${w}</div>`).join('');
+
+    // ── Indicator table ─────────────────────────────────────────
+    const ind = j.indicators || {};
+    const rsi = ind.rsi || {}, macd = ind.macd || {}, structs = ind.struct || {}, ema = ind.ema || {};
+    function rsiCls(v, dir) {
+      if (dir==='LONG')  return v < 40 ? 'ind-bull' : v > 65 ? 'ind-bear' : 'ind-neut';
+      return v > 60 ? 'ind-bull' : v < 35 ? 'ind-bear' : 'ind-neut';
+    }
+    function structCls(s, dir) {
+      if (!s || s==='RANGING') return 'ind-neut';
+      const bull = s.includes('BULLISH'); const bear = s.includes('BEARISH');
+      if (dir==='LONG') return bull ? 'ind-bull' : bear ? 'ind-bear' : 'ind-neut';
+      return bear ? 'ind-bull' : bull ? 'ind-bear' : 'ind-neut';
+    }
+    function macdCls(s, dir) {
+      if (!s) return 'ind-neut';
+      if (dir==='LONG') return s==='BULLISH'?'ind-bull':'ind-bear';
+      return s==='BEARISH'?'ind-bull':'ind-bear';
+    }
+    const dir = trade.direction;
+    const indTable = `
+    <div class="mon-ind-section">
+      <div class="mon-ind-title">Multi-Timeframe Indicators</div>
+      <table class="mon-ind-table">
+        <thead><tr><th>Indicator</th><th>15m</th><th>1H</th><th>4H</th><th>1D</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="ind-label">RSI</td>
+            <td class="${rsiCls(rsi.m15,dir)}">${rsi.m15??'—'}</td>
+            <td class="${rsiCls(rsi.h1,dir)}">${rsi.h1??'—'}</td>
+            <td class="${rsiCls(rsi.h4,dir)}">${rsi.h4??'—'}</td>
+            <td class="ind-neut">—</td>
+          </tr>
+          <tr>
+            <td class="ind-label">MACD</td>
+            <td class="ind-neut">—</td>
+            <td class="${macdCls(macd.h1,dir)}">${macd.h1??'—'}</td>
+            <td class="${macdCls(macd.h4,dir)}">${macd.h4??'—'}</td>
+            <td class="ind-neut">—</td>
+          </tr>
+          <tr>
+            <td class="ind-label">Structure</td>
+            <td class="${structCls(structs.m15,dir)}">${(structs.m15||'—').replace('BOS_','').replace('CHOCH_','C.')}</td>
+            <td class="${structCls(structs.h1,dir)}">${(structs.h1||'—').replace('BOS_','').replace('CHOCH_','C.')}</td>
+            <td class="${structCls(structs.h4,dir)}">${(structs.h4||'—').replace('BOS_','').replace('CHOCH_','C.')}</td>
+            <td class="${structCls(structs.d1,dir)}">${(structs.d1||'—').replace('BOS_','').replace('CHOCH_','C.')}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="mon-ema-row">
+      <span style="color:var(--muted);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em">1H EMA Alignment&nbsp;&nbsp;</span>
+      ${ind.emaAlignment?.desc || '—'}
+      <span style="margin-left:10px;color:var(--muted)">│</span>
+      <span style="margin-left:10px;color:var(--muted);font-size:.62rem">Vol</span> <span style="${(ind.volume?.h1Ratio||1)>2?'color:var(--yellow)':'color:var(--muted)'}">${ind.volume?.h1Ratio??'—'}×</span>
+      &nbsp;&nbsp;<span style="color:var(--muted);font-size:.62rem">ATR 4H</span> <span style="color:var(--text)">${ind.atr?.h4?.toFixed(4)??'—'}</span>
+    </div>`;
 
     const fibHtml = j.fibonacci ? `
     <div class="mon-fib-box">
@@ -1211,7 +1277,7 @@ async function openMonitor(tradeId) {
     const dcaHtml = (j.action === 'DCA' && j.dcaLevel) ? `
     <div class="mon-dca-box">
       💡 <strong>DCA Level:</strong> <span style="font-family:var(--font-n);color:var(--cyan)">${j.dcaLevel}</span>
-      ${j.newSL ? ` &nbsp;·&nbsp; <strong>Adjusted SL:</strong> <span style="font-family:var(--font-n);color:var(--red)">${j.newSL}</span>` : ''}
+      ${j.newSL ? ` &nbsp;·&nbsp; <strong>New SL:</strong> <span style="font-family:var(--font-n);color:var(--red)">${j.newSL}</span>` : ''}
     </div>` : '';
 
     const slHtml = (j.action === 'MOVE_SL' && j.slMoveTarget) ? `
@@ -1228,11 +1294,12 @@ async function openMonitor(tradeId) {
       <div class="mon-grid">
         <div class="mon-stat"><div class="mon-stat-lbl">Live Price</div><div class="mon-stat-val">${fmtP(j.currentPrice)}</div></div>
         <div class="mon-stat"><div class="mon-stat-lbl">Unrealized P&L</div><div class="mon-stat-val" style="color:${pnlColor}">${livePnl !== null ? fmtUSD(livePnl) : '—'}</div></div>
-        <div class="mon-stat"><div class="mon-stat-lbl">H4 Structure</div><div class="mon-stat-val" style="color:${h4c};font-size:.76rem">${j.h4Struct || '—'}</div></div>
-        <div class="mon-stat"><div class="mon-stat-lbl">D1 Structure</div><div class="mon-stat-val" style="color:${d1c};font-size:.76rem">${j.d1Struct || '—'}</div></div>
+        <div class="mon-stat"><div class="mon-stat-lbl">H4 Structure</div><div class="mon-stat-val" style="color:${h4c};font-size:.74rem">${j.h4Struct || '—'}</div></div>
+        <div class="mon-stat"><div class="mon-stat-lbl">D1 Structure</div><div class="mon-stat-val" style="color:${d1c};font-size:.74rem">${j.d1Struct || '—'}</div></div>
         <div class="mon-stat"><div class="mon-stat-lbl">Pullback Zone</div><div class="mon-stat-val"><span class="zone-badge zone-${j.pullbackZone || 'SHALLOW'}">${j.pullbackZone || '—'}</span></div></div>
         <div class="mon-stat"><div class="mon-stat-lbl">Pullback %</div><div class="mon-stat-val">${j.pullbackPct != null ? j.pullbackPct + '%' : '—'}</div></div>
       </div>
+      ${indTable}
       ${fibHtml}
       <div style="font-size:.72rem;color:var(--muted);text-align:right;margin-top:4px">
         Invalidation: <span style="font-family:var(--font-n)">${j.invalidationLevel ? fmtP(j.invalidationLevel) : '—'}</span>
