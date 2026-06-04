@@ -708,11 +708,26 @@ window.runFullAnalysis = async function() {
         const tok = window._authUser ? await window._authUser.getIdToken() : null;
         if (!tok) throw new Error('Not authenticated');
 
-        const res = await fetch('/api/deep-analysis', {
-            method: 'POST',
-            headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + tok },
-            body: JSON.stringify({ coin: activeCoin }),
-        });
+        // FIX: Add 90s timeout — Groq can be slow, browser drops connection without this
+        const abortCtrl = new AbortController();
+        const fetchTimeout = setTimeout(() => abortCtrl.abort(), 90000);
+
+        let res;
+        try {
+            res = await fetch('/api/deep-analysis', {
+                method: 'POST',
+                signal: abortCtrl.signal,
+                headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + tok },
+                body: JSON.stringify({ coin: activeCoin }),
+            });
+        } catch(fetchErr) {
+            if (fetchErr.name === 'AbortError') {
+                throw new Error('Analysis timed out (>90s) — AI server is busy. Please try again in a moment.');
+            }
+            throw new Error('Server not reachable — check your connection or try again. (' + fetchErr.message + ')');
+        } finally {
+            clearTimeout(fetchTimeout);
+        }
         const contentType2 = res.headers.get('content-type') || '';
         if (!contentType2.includes('application/json')) {
             if (res.status === 502 || res.status === 503 || res.status === 504) {

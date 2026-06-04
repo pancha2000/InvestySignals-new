@@ -1166,16 +1166,27 @@ Respond with ONLY this JSON (no markdown, no explanation):
   }
 }`;
 
-    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+GROQ_API_KEY },
-      body: JSON.stringify({
-        model: GROQ_MODEL,
-        max_tokens: GROQ_MAX_TOKENS,
-        temperature: GROQ_TEMPERATURE,
-        messages: [{ role:'user', content:prompt }]
-      })
-    });
+    const groqController = new AbortController();
+    const groqTimeout = setTimeout(() => groqController.abort(), 60000); // 60s timeout — Groq can be slow
+    let groqRes;
+    try {
+      groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        signal: groqController.signal,
+        headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+GROQ_API_KEY },
+        body: JSON.stringify({
+          model: GROQ_MODEL,
+          max_tokens: GROQ_MAX_TOKENS,
+          temperature: GROQ_TEMPERATURE,
+          messages: [{ role:'user', content:prompt }]
+        })
+      });
+    } catch(fetchErr) {
+      if (fetchErr.name === 'AbortError') throw new Error('Groq AI timed out (>60s) — server is overloaded. Please try again in a moment.');
+      throw new Error('Groq API unreachable: ' + fetchErr.message);
+    } finally {
+      clearTimeout(groqTimeout);
+    }
 
     if (!groqRes.ok) {
       const errText = await groqRes.text();
@@ -1186,7 +1197,9 @@ Respond with ONLY this JSON (no markdown, no explanation):
     let aiText = groqData.choices?.[0]?.message?.content || '';
     // Strip markdown fences if present
     aiText = aiText.replace(/```json|```/g,'').trim();
-    let analysis;
+    // FIX: Use var instead of let to prevent Temporal Dead Zone ReferenceError
+    // var is hoisted+initialized to undefined — let can throw "Cannot access before initialization"
+    var analysis; // eslint-disable-line no-var
     try { analysis = JSON.parse(aiText); }
     catch(e) { throw new Error('AI response parse failed: ' + aiText.slice(0,100)); }
 
