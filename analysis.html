@@ -746,6 +746,12 @@ function renderFullAnalysis(data, container) {
     const a = data.analysis;
     const r = data.rawData;
 
+    // FIX: Guard against null/missing analysis object (AI parse failure)
+    if (!a || typeof a !== 'object') {
+        container.innerHTML = `<div style="color:var(--red);padding:20px;text-align:center;font-size:0.85rem;background:rgba(255,59,92,0.07);border:1px solid rgba(255,59,92,0.2);border-radius:var(--radius-sm);">⚠️ AI response was invalid — please try again. (analysis object missing)</div>`;
+        return;
+    }
+
     function biasClr(b)   { return ['BULLISH','STRONG_BULL','LONG','CONFIRMED'].includes(b)?'var(--green)':['BEARISH','STRONG_BEAR','SHORT','AVOID'].includes(b)?'var(--red)':'var(--gold)'; }
     function biasClass(b) { return ['BULLISH','STRONG_BULL','LONG','CONFIRMED'].includes(b)?'badge-bull':['BEARISH','STRONG_BEAR','SHORT','AVOID'].includes(b)?'badge-bear':'badge-neut'; }
     function gradeClr(g)  { return g==='S'?'var(--gold)':g==='A'?'var(--green)':g==='B'?'var(--blue)':'var(--red)'; }
@@ -1164,13 +1170,18 @@ async function getToken() {
 
 function buildPaperTradePanel(data) {
     ptCurrentData = data;
-    const dir   = data?.analysis?.overallBias || 'LONG';
-    const isLong = dir !== 'SHORT';
+    // FIX: Never pass 'NEUTRAL' as direction — default to LONG, let user override
+    const overallBias = data?.analysis?.overallBias;
+    const isNeutral = !overallBias || overallBias === 'NEUTRAL';
+    const dir   = isNeutral ? 'LONG' : overallBias;
+    const isLong = dir === 'LONG';
     const raw    = data?.rawData || {};
 
+    // FIX: Entry direction was backwards — LONG should enter at zone LOW (buy cheap),
+    // SHORT should enter at zone HIGH (sell expensive)
     const entryDef = isLong
-        ? (raw.entryHigh || raw.entryLow || '').toString()
-        : (raw.entryLow  || raw.entryHigh || '').toString();
+        ? (raw.entryLow  || raw.entryHigh || '').toString()  // LONG: enter at bottom of zone
+        : (raw.entryHigh || raw.entryLow  || '').toString(); // SHORT: enter at top of zone
     const slDef  = (raw.sl  || '').toString();
     const tp1Def = (raw.tp1 || '').toString();
     const tp2Def = (raw.tp2 || '').toString();
@@ -1197,6 +1208,24 @@ function buildPaperTradePanel(data) {
         <div class="pt-field">
             <label>Direction</label>
             <input type="text" id="ptDir" value="${dir}" readonly style="color:${isLong?'var(--green)':'var(--red)'};font-weight:700;">
+            ${isNeutral ? `<div style="display:flex;gap:4px;margin-top:4px;">
+              <button onclick="
+                document.getElementById('ptDir').value='LONG';
+                document.getElementById('ptDir').style.color='var(--green)';
+                this.style.background='rgba(0,200,150,0.2)';
+                this.nextElementSibling.style.background='transparent';
+                const sb=document.getElementById('ptSubmitBtn');
+                if(sb){sb.textContent='📈 OPEN LONG — PAPER TRADE';sb.className='pt-submit-btn long-btn';}
+              " style="flex:1;padding:3px;font-size:0.65rem;font-weight:700;border:1px solid rgba(0,200,150,0.4);border-radius:4px;background:rgba(0,200,150,0.2);color:var(--green);cursor:pointer;">▲ LONG</button>
+              <button onclick="
+                document.getElementById('ptDir').value='SHORT';
+                document.getElementById('ptDir').style.color='var(--red)';
+                this.style.background='rgba(255,59,92,0.2)';
+                this.previousElementSibling.style.background='transparent';
+                const sb=document.getElementById('ptSubmitBtn');
+                if(sb){sb.textContent='📉 OPEN SHORT — PAPER TRADE';sb.className='pt-submit-btn short-btn';}
+              " style="flex:1;padding:3px;font-size:0.65rem;font-weight:700;border:1px solid rgba(255,59,92,0.4);border-radius:4px;background:transparent;color:var(--red);cursor:pointer;">▼ SHORT</button>
+            </div>` : ''}
         </div>
         <div class="pt-field">
             <label>Size (USDT)</label>
@@ -1413,17 +1442,21 @@ async function ptSubmit() {
     if (!coin)              { ptShowMsg('Run a market scan first to select a coin.', true); return; }
     if (!size || size < 1) { ptShowMsg('Enter a valid size.', true); return; }
     if (!entry)             { ptShowMsg('Enter a valid entry price.', true); return; }
+    // FIX: Prevent NEUTRAL direction from being sent to server
+    if (!['LONG','SHORT'].includes(dir)) { ptShowMsg('⚠️ Direction select කරන්න — ▲ LONG හෝ ▼ SHORT', true); return; }
     if (size > ptBalance)   { ptShowMsg(`Insufficient balance ($${ptBalance.toFixed(2)}).`, true); return; }
 
     btn.disabled = true;
     btn.textContent = 'Opening...';
 
     try {
+        // FIX: Normalize pair to USDT — "XLM" → "XLMUSDT"
+        const normalizedPair = (coin + 'USDT').toUpperCase();
         const r = await fetch('/api/paper/trade', {
             method: 'POST',
             headers: { 'Content-Type':'application/json', Authorization:'Bearer '+tok },
             body: JSON.stringify({
-                pair: coin, direction: dir, orderType: ptOrderType,
+                pair: normalizedPair, direction: dir, orderType: ptOrderType,
                 entry, triggerPrice: ptOrderType==='LIMIT'?trigger:entry,
                 tp1, tp2, tp3, sl, leverage: lev, size,
             })
@@ -1448,7 +1481,9 @@ async function ptCloseTrade(id, entryPrice) {
     const tok = await getToken();
     if (!tok) return;
     // Get live price for close — try futures first, fall back to spot
-    const coin = ptOpenTrades.find(t=>t._id===id)?.pair || '';
+    // FIX: Normalize pair to USDT — "XLM" → "XLMUSDT"
+    const rawCoin = ptOpenTrades.find(t=>t._id===id)?.pair || '';
+    const coin = rawCoin.toUpperCase().endsWith('USDT') ? rawCoin.toUpperCase() : rawCoin.toUpperCase() + 'USDT';
     let closePrice = entryPrice;
     try {
         const pr = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${coin}`);
@@ -1585,23 +1620,33 @@ async function initPaperTrade() {
 
     ptSetOrderType(autoType);
 
-    // Make direction readonly (analysis decides direction)
+    // Make direction readonly only when NOT neutral (analysis has clear direction)
     const dirInput = document.getElementById('ptDir');
     if (dirInput) {
-        dirInput.readOnly = true;
-        dirInput.style.cursor = 'not-allowed';
-        dirInput.title = 'Direction is set by analysis';
+        if (overallBias && overallBias !== 'NEUTRAL') {
+            dirInput.readOnly = true;
+            dirInput.style.cursor = 'not-allowed';
+            dirInput.title = 'Direction is set by analysis';
+        } else {
+            // NEUTRAL — keep editable, user picks direction via toggle buttons
+            dirInput.readOnly = true; // still readonly but controlled by toggle buttons
+            dirInput.style.cursor = 'default';
+            dirInput.title = 'Market is NEUTRAL — select direction using the buttons above';
+        }
     }
 
     // Show a small info badge about why this order type was chosen
     const msgEl = document.getElementById('ptMsg');
     if (msgEl) {
-        const label = entryConclusion === 'CONFIRMED'
+        const label = overallBias === 'NEUTRAL' || !overallBias
+            ? '⚠️ NEUTRAL market — කරුණාකර ▲ LONG හෝ ▼ SHORT button එකෙන් direction select කරන්න'
+            : entryConclusion === 'CONFIRMED'
             ? '✅ Entry CONFIRMED — Market order set automatically'
             : entryConclusion === 'WAIT'
             ? '⏳ Entry is WAIT — Limit order set (safer entry)'
             : '⚠️ Entry is ' + (entryConclusion||'unknown') + ' — Limit order set by default';
-        const color = entryConclusion === 'CONFIRMED' ? 'var(--green)'
+        const color = overallBias === 'NEUTRAL' || !overallBias ? 'var(--gold)'
+                    : entryConclusion === 'CONFIRMED' ? 'var(--green)'
                     : entryConclusion === 'AVOID'     ? 'var(--red)'
                     : 'var(--gold)';
         msgEl.innerHTML = `<span style="color:${color};font-size:0.72rem;">${label}</span>`;

@@ -566,7 +566,7 @@ async function deleteTrade(id) {
 }
 
 async function clearClosedTrades() {
-  const closedStatuses = ['TP2','BE_CLOSE','TRAIL_WIN','SL','CLOSED','CANCELLED'];
+  const closedStatuses = ['TP2','TP2_HIT','TP3_HIT','BE_CLOSE','TRAIL_WIN','SL','SL_HIT','CLOSED','CANCELLED'];
   _tradesCache = _tradesCache.filter(t => !closedStatuses.includes(t.status));
   if (_serverAvail) {
     try { await fetch('/api/paper/trades', { method:'DELETE', headers: authHeader(), body: JSON.stringify({ scope:'closed' }) }); }
@@ -598,6 +598,13 @@ async function saveBalance(b) {
   }
 }
 
+/* ── Symbol normalizer — "XLM" → "XLMUSDT", "BTCUSDT" → "BTCUSDT" ── */
+function normalizeSym(s) {
+  if (!s) return '';
+  const p = s.toString().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return p.endsWith('USDT') ? p : p + 'USDT';
+}
+
 /* ── Status helpers ─────────────────────────────────────────── */
 function isPending(t) { return t.status==='PENDING_LONG'||t.status==='PENDING_SHORT'; }
 function isOpen(t)    { return t.status==='OPEN'; }
@@ -605,8 +612,8 @@ function isTP1Hit(t)  { return t.status==='TP1_HIT'; }
 function isActive(t)  { return isPending(t)||isOpen(t)||isTP1Hit(t); }
 function isClosed(t)  { return !isActive(t); }
 // WIN = TP2, BE_CLOSE (after TP1), TRAIL_WIN, or manual close with pnl>0
-function isWin(t)     { return t.status==='TP2'||t.status==='BE_CLOSE'||t.status==='TRAIL_WIN'||(t.status==='CLOSED'&&(t.totalPnl||t.pnl||0)>0); }
-function isLoss(t)    { return t.status==='SL'||(t.status==='CLOSED'&&(t.totalPnl||t.pnl||0)<0); }
+function isWin(t)     { return t.status==='TP2'||t.status==='TP2_HIT'||t.status==='TP3_HIT'||t.status==='BE_CLOSE'||t.status==='TRAIL_WIN'||(t.status==='CLOSED'&&(t.totalPnl||t.pnl||0)>0); }
+function isLoss(t)    { return t.status==='SL'||t.status==='SL_HIT'||(t.status==='CLOSED'&&(t.totalPnl||t.pnl||0)<0); }
 
 /* ── Stats ──────────────────────────────────────────────────── */
 function updateStats() {
@@ -652,6 +659,7 @@ async function initPage() {
   // Load trades and balance from server (migrates localStorage if needed)
   await loadServerData();
   renderAll();
+  fetchPricesNow(); // FIX: call immediately — don't wait 5s for first price
   setInterval(fetchPricesNow,5000);
   connectWS();
   if(window._uid) setInterval(async()=>{try{const _auth=window._auth;const _u=_auth?_auth.currentUser:null;const _t=_u?await _u.getIdToken():window._idToken;if(!_t)return;const r=await fetch('/api/user/status',{headers:{'Authorization':'Bearer '+_t}});const j=await r.json();if(j.success&&(j.status.maintenance||j.status.suspended))window.location.reload();}catch(_){}},15000);
@@ -674,17 +682,19 @@ function renderTradeList() {
 function buildTradeCard(trade) {
   const pending=isPending(trade), open=isOpen(trade), tp1hit=isTP1Hit(trade);
   const dir=trade.direction;
-  const price=livePrices[trade.symbol]||null;
+  // FIX: Normalize symbol for livePrices lookup
+  const sym=normalizeSym(trade.symbol||trade.pair);
+  const price=livePrices[sym]||null;
 
   // Status badge
   let badgeCls,badgeLabel;
   if(pending)          {badgeCls='pending';  badgeLabel='⏳ PENDING';}
   else if(open)        {badgeCls='open';     badgeLabel='● OPEN';}
   else if(tp1hit)      {badgeCls='tp1-hit';  badgeLabel='🎯 TP1 HIT — Trailing';}
-  else if(trade.status==='TP2')         {badgeCls='tp2';      badgeLabel='✅ TP2 — FULL WIN';}
+  else if(trade.status==='TP2'||trade.status==='TP2_HIT'||trade.status==='TP3_HIT'){badgeCls='tp2';      badgeLabel='✅ TP2 — FULL WIN';}
   else if(trade.status==='BE_CLOSE')    {badgeCls='be-close'; badgeLabel='✅ BE CLOSE — WIN';}
   else if(trade.status==='TRAIL_WIN')   {badgeCls='tp1';      badgeLabel='✅ TRAIL WIN';}
-  else if(trade.status==='SL')          {badgeCls='sl';       badgeLabel='❌ STOP LOSS';}
+  else if(trade.status==='SL'||trade.status==='SL_HIT'){badgeCls='sl';       badgeLabel='❌ STOP LOSS';}
   else if(trade.status==='CLOSED')      {badgeCls=(trade.totalPnl||trade.pnl||0)>=0?'tp1':'sl';badgeLabel='CLOSED';}
   else if(trade.status==='CANCELLED')   {badgeCls='sl';       badgeLabel='CANCELLED';}
   else {badgeCls='open';badgeLabel=trade.status;}
@@ -853,11 +863,12 @@ function buildTradeCard(trade) {
 
 async function fetchPricesNow() {
   const trades  = getTrades().filter(isActive);
-  const symbols = [...new Set(trades.map(t=>t.symbol))];
+  // FIX: Normalize all symbols to USDT — "XLM" → "XLMUSDT"
+  const symbols = [...new Set(trades.map(t => normalizeSym(t.symbol || t.pair)))];
   if(!symbols.length) return;
   try {
     // Try futures batch first
-    const qs   = symbols.map(s=>`"${s}"`).join(',');
+    const qs     = symbols.map(s=>`"${s}"`).join(',');
     const futRes = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbols=[${qs}]`).then(r=>r.ok?r.json():[]).catch(()=>[]);
     futRes.forEach(d=>{ if(d.price) livePrices[d.symbol]=parseFloat(d.price); });
 
@@ -881,7 +892,9 @@ function checkPendingFills() {
   const patches=[];
   trades.forEach((t,i)=>{
     if(!isPending(t)) return;
-    const price=livePrices[t.symbol]; if(price==null) return;
+    // FIX: Normalize symbol for livePrices lookup
+    const sym=normalizeSym(t.symbol||t.pair);
+    const price=livePrices[sym]; if(price==null) return;
     const fill=(t.status==='PENDING_LONG'&&price<=t.entryPrice)||(t.status==='PENDING_SHORT'&&price>=t.entryPrice);
     if(fill){
       const patch={status:'OPEN',fillTime:new Date().toISOString()};
@@ -904,7 +917,9 @@ function checkTpSl() {
   const _changedPatches=[];
   trades.forEach((t,i)=>{
     if(!isOpen(t)&&!isTP1Hit(t)) return;
-    const price=livePrices[t.symbol]; if(price==null) return;
+    // FIX: Normalize symbol for livePrices lookup
+    const sym=normalizeSym(t.symbol||t.pair);
+    const price=livePrices[sym]; if(price==null) return;
     const dir=t.direction;
 
     /* ── Already at TP1_HIT: trailing SL + TP2 watch ────────── */
@@ -1007,7 +1022,9 @@ function checkTpSl() {
 function promptClose(id) {
   pendingActionId=id; pendingAction='close';
   const t=getTrades().find(x=>x.id===id); if(!t) return;
-  const price=livePrices[t.symbol]||t.entryPrice;
+  // FIX: Normalize symbol for livePrices lookup
+  const sym=normalizeSym(t.symbol||t.pair);
+  const price=livePrices[sym]||t.entryPrice;
   const tp1Banked=t.tp1Pnl||0;
   const rem=isTP1Hit(t)?0.5:1.0;
   const livePnl=calcPnl(t.direction, t.entryPrice, price, t.size||t.amount, t.leverage, rem);
@@ -1035,7 +1052,10 @@ function doConfirmAction(){ if(!pendingActionId) return; if(pendingAction==='clo
 async function doCloseTrade() {
   const trades=getTrades(),idx=trades.findIndex(x=>x.id===pendingActionId);
   if(idx===-1){closeConfirmModal();return;}
-  const t=trades[idx],price=livePrices[t.symbol]||t.entryPrice;
+  const t=trades[idx];
+  // FIX: Normalize symbol for livePrices lookup
+  const sym=normalizeSym(t.symbol||t.pair);
+  const price=livePrices[sym]||t.entryPrice;
   const tp1Banked=t.tp1Pnl||0;
   const rem=isTP1Hit(t)?0.5:1.0;
   const livePnl=calcPnl(t.direction, t.entryPrice, price, t.size||t.amount, t.leverage, rem);
@@ -1126,15 +1146,23 @@ async function openMonitor(tradeId) {
   document.getElementById('monOverlay').classList.add('open');
 
   try {
-    const tok = window._idToken;
+    // FIX: Always get a fresh token — don't rely on stale window._idToken
+    let tok = window._idToken;
+    try {
+      const _u = window._auth?.currentUser;
+      if (_u) tok = await _u.getIdToken();
+    } catch(_) {}
     if (!tok) { document.getElementById('monBody').innerHTML = '<div style="color:var(--red);font-size:.88rem">❌ Not authenticated</div>'; return; }
+
+    // FIX: Normalize pair to USDT — "XLM" → "XLMUSDT"
+    const normalizedPair = normalizeSym(trade.symbol || trade.pair);
 
     const resp = await fetch('/api/trade-monitor', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         tradeId:   String(trade.id),
-        pair:      trade.symbol || trade.pair,
+        pair:      normalizedPair,
         direction: trade.direction,
         entry:     trade.entryPrice,
         sl:        trade.sl,
@@ -1155,8 +1183,9 @@ async function openMonitor(tradeId) {
     const actionIcon  = { HOLD:'⏳', DCA:'➕', CLOSE:'🔴', MOVE_SL:'🛡️' };
     const actionLabel = { HOLD:'Hold Position', DCA:'DCA Opportunity', CLOSE:'Exit Trade', MOVE_SL:'Move SL to Break-Even' };
 
-    // Live PnL
-    const price = livePrices[trade.symbol] || j.currentPrice;
+    // Live PnL — FIX: normalize symbol for livePrices lookup
+    const monSym = normalizeSym(trade.symbol || trade.pair);
+    const price = livePrices[monSym] || j.currentPrice;
     const isLong = trade.direction === 'LONG';
     const rem = isTP1Hit(trade) ? 0.5 : 1.0;
     const size = trade.amount || trade.size || 0;

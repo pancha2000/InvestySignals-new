@@ -156,6 +156,14 @@ async function getLivePrice(symbol) {
   } catch(e) { return null; }
 }
 
+// ── Normalize trading pair — always ensure USDT suffix ───────
+// XLM → XLMUSDT, BTCUSDT → BTCUSDT, btc → BTCUSDT
+function normalizePair(pair) {
+  if (!pair) return '';
+  const p = pair.toString().toUpperCase().replace(/[^A-Z0-9]/g, '').trim();
+  return p.endsWith('USDT') ? p : p + 'USDT';
+}
+
 // ── [3] Outlier Sanitization ─────────────────────────────────
 function sanitizeCandles(klines) {
   if (!klines || klines.length < 10) return klines;
@@ -462,8 +470,8 @@ app.get('/api/paper/trades', ptAuth, async (req, res) => {
       entry:      t.entry      || t.entryPrice || 0,
       amount:     t.amount     || t.size || 0,
       size:       t.size       || t.amount || 0,
-      symbol:     t.symbol     || t.pair || '',
-      pair:       t.pair       || t.symbol || '',
+      symbol:     normalizePair(t.symbol || t.pair),
+      pair:       normalizePair(t.pair   || t.symbol),
     }));
     res.json({ success:true, trades:normalized });
   } catch(e) { res.status(500).json({ success:false, error:e.message }); }
@@ -482,8 +490,8 @@ app.get('/api/paper-trades', ptAuth, async (req, res) => {
       entry:      t.entry      || t.entryPrice || 0,
       amount:     t.amount     || t.size || 0,
       size:       t.size       || t.amount || 0,
-      symbol:     t.symbol     || t.pair || '',
-      pair:       t.pair       || t.symbol || '',
+      symbol:     normalizePair(t.symbol || t.pair),
+      pair:       normalizePair(t.pair   || t.symbol),
     }));
     const balance = pb?.balance ?? 1000;
     // Return both field names for compatibility
@@ -500,8 +508,8 @@ app.post('/api/paper/trades', ptAuth, async (req, res) => {
       uid:        req.uid,
       userUid:    req.uid,
       id:         b.id || Date.now(),
-      symbol:     b.symbol || b.pair || '',
-      pair:       b.pair   || b.symbol || '',
+      symbol:     normalizePair(b.symbol || b.pair),
+      pair:       normalizePair(b.pair   || b.symbol),
       direction:  b.direction,
       entryType:  b.entryType  || b.orderType || 'MARKET',
       orderType:  b.orderType  || b.entryType || 'MARKET',
@@ -513,7 +521,11 @@ app.post('/api/paper/trades', ptAuth, async (req, res) => {
       leverage: b.leverage || 5,
       notional: b.notional,
       liqPrice: b.liqPrice,
-      status:   b.status || (b.entryType==='LIMIT'||b.orderType==='LIMIT' ? 'PENDING_LONG' : 'OPEN'),
+      status:   b.status || (
+        (b.entryType==='LIMIT'||b.orderType==='LIMIT')
+          ? (b.direction === 'SHORT' ? 'PENDING_SHORT' : 'PENDING_LONG')
+          : 'OPEN'
+      ),
       openTime: b.openTime || new Date().toISOString(),
       openedAt: b.openedAt ? new Date(b.openedAt) : new Date(),
       fillTime: b.fillTime,
@@ -550,8 +562,8 @@ app.post('/api/paper/trade', ptAuth, async (req, res) => {
       uid:        req.uid,
       userUid:    req.uid,
       id:         b.id || Date.now(),
-      symbol:     b.pair.toUpperCase(),
-      pair:       b.pair.toUpperCase(),
+      symbol:     normalizePair(b.pair),
+      pair:       normalizePair(b.pair),
       direction:  b.direction,
       entryType:  b.orderType || 'MARKET',
       orderType:  b.orderType || 'MARKET',
@@ -753,7 +765,10 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
       for(let i=1;i<=period;i++){const d=closes[i]-closes[i-1];d>=0?g+=d:l-=d;}
       let ag=g/period,al=l/period;
       for(let i=period+1;i<closes.length;i++){const d=closes[i]-closes[i-1];ag=(ag*13+(d>0?d:0))/14;al=(al*13+(d<0?-d:0))/14;}
-      return parseFloat((100-100/(1+(al===0?100:ag/al))).toFixed(2));
+      // FIX: al===0 means all gains → RSI must be exactly 100 (not 99.01 from 100/(1+100))
+      if(al===0) return 100;
+      if(ag===0) return 0;
+      return parseFloat((100-100/(1+ag/al)).toFixed(2));
     }
     // Helper: MACD
     function macd(closes) {
@@ -775,24 +790,35 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
       const trs=candles.slice(1).map((c,i)=>Math.max(c.high-c.low,Math.abs(c.high-candles[i].close),Math.abs(c.low-candles[i].close)));
       return parseFloat((trs.slice(-n).reduce((a,b)=>a+b,0)/n).toFixed(6));
     }
-    // Helper: structure BOS/CHoCH
+    // Helper: structure BOS/CHoCH — FIX: increased from 10→20 candles for proper swing detection
     function structure(candles) {
-      if(candles.length<10) return 'NEUTRAL';
-      const recent=candles.slice(-10);
-      const highs=recent.map(c=>c.high),lows=recent.map(c=>c.low);
-      const phH=Math.max(...highs.slice(0,5)),plL=Math.min(...lows.slice(0,5));
-      const cH=Math.max(...highs.slice(5)),cL=Math.min(...lows.slice(5));
-      if(cH>phH) return 'BOS_BULLISH';
-      if(cL<plL) return 'BOS_BEARISH';
+      if(candles.length<12) return 'NEUTRAL';
+      const recent=candles.slice(-20);
+      const mid=Math.floor(recent.length/2);
+      const prev=recent.slice(0,mid), curr=recent.slice(mid);
+      const phH=Math.max(...prev.map(c=>c.high)), plL=Math.min(...prev.map(c=>c.low));
+      const cH=Math.max(...curr.map(c=>c.high)), cL=Math.min(...curr.map(c=>c.low));
+      // Close-based BOS confirmation — use last close to avoid wick fakeouts
+      const lastClose=candles[candles.length-1].close;
+      if(lastClose>phH&&cH>phH) return 'BOS_BULLISH';
+      if(lastClose<plL&&cL<plL) return 'BOS_BEARISH';
+      if(cH>phH) return 'CHOCH_BULLISH';
+      if(cL<plL) return 'CHOCH_BEARISH';
       return 'NEUTRAL';
     }
-    // Helper: FVGs
+    // Helper: FVGs — FIX: filter mitigated (price already passed through the gap)
     function fvgs(candles) {
       const res=[];
+      const lastClose=candles[candles.length-1].close;
       for(let i=2;i<candles.length;i++){
         const prev=candles[i-2],curr=candles[i];
-        if(curr.low>prev.high) res.push({type:'BULL',low:prev.high,high:curr.low,idx:i});
-        else if(curr.high<prev.low) res.push({type:'BEAR',low:curr.high,high:prev.low,idx:i});
+        if(curr.low>prev.high){
+          // Bullish FVG: unmitigated if current price hasn't closed below the gap
+          if(lastClose>prev.high) res.push({type:'BULL',low:prev.high,high:curr.low,idx:i});
+        } else if(curr.high<prev.low){
+          // Bearish FVG: unmitigated if current price hasn't closed above the gap
+          if(lastClose<prev.low) res.push({type:'BEAR',low:curr.high,high:prev.low,idx:i});
+        }
       }
       return res.slice(-5);
     }
@@ -837,16 +863,25 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
         return 'BEAR_CANDLE';
       }
     }
-    // Helper: RSI divergence
+    // Helper: RSI divergence — FIX: increased from 5→20 candle window for meaningful divergence
     function rsiDiv(candles,rsiArr) {
-      if(candles.length<5||rsiArr.length<5) return 'NONE';
-      const pC=candles.slice(-5).map(c=>c.close);
-      const pR=rsiArr.slice(-5);
-      const cHigh=Math.max(...pC),pHigh=Math.max(...pC.slice(0,3));
-      const cLow=Math.min(...pC),pLow=Math.min(...pC.slice(0,3));
-      const rHigh=Math.max(...pR),rLow=Math.min(...pR);
-      if(cHigh>pHigh&&rHigh<Math.max(...pR.slice(0,3))) return 'BEARISH_DIV';
-      if(cLow<pLow&&rLow>Math.min(...pR.slice(0,3))) return 'BULLISH_DIV';
+      if(candles.length<10||rsiArr.length<10) return 'NONE';
+      const n=Math.min(candles.length,rsiArr.length,20);
+      const pC=candles.slice(-n).map(c=>c.close);
+      const pR=rsiArr.slice(-n);
+      const half=Math.floor(n/2);
+      const prevPriceHigh=Math.max(...pC.slice(0,half));
+      const prevPriceLow =Math.min(...pC.slice(0,half));
+      const currPriceHigh=Math.max(...pC.slice(half));
+      const currPriceLow =Math.min(...pC.slice(half));
+      const prevRsiHigh  =Math.max(...pR.slice(0,half));
+      const prevRsiLow   =Math.min(...pR.slice(0,half));
+      const currRsiHigh  =Math.max(...pR.slice(half));
+      const currRsiLow   =Math.min(...pR.slice(half));
+      // Bearish div: price higher high but RSI lower high
+      if(currPriceHigh>prevPriceHigh&&currRsiHigh<prevRsiHigh) return 'BEARISH_DIV';
+      // Bullish div: price lower low but RSI higher low
+      if(currPriceLow<prevPriceLow&&currRsiLow>prevRsiLow)     return 'BULLISH_DIV';
       return 'NONE';
     }
 
@@ -884,14 +919,29 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     const m15CP={pattern:candlePattern(m15Candle)};
     const prevDayHigh=d1c[d1c.length-2]?.high,prevDayLow=d1c[d1c.length-2]?.low;
 
-    // Multi-RSI for divergence
-    const h4rsiArr=[],h1rsiArr=[],m15rsiArr=[];
-    for(let i=20;i<h4closes.length;i++) h4rsiArr.push(rsi(h4closes.slice(0,i+1)));
-    for(let i=20;i<h1closes.length;i++) h1rsiArr.push(rsi(h1closes.slice(0,i+1)));
-    for(let i=20;i<m15closes.length;i++) m15rsiArr.push(rsi(m15closes.slice(0,i+1)));
-    const h4Div=rsiDiv(h4c.slice(-10),h4rsiArr.slice(-10));
-    const h1Div=rsiDiv(h1c.slice(-10),h1rsiArr.slice(-10));
-    const m15Div=rsiDiv(m15c.slice(-10),m15rsiArr.slice(-10));
+    // FIX BUG: O(n²) RSI array replaced with O(n) incremental Wilder RSI
+    // Old code called rsi(closes.slice(0,i+1)) in a loop = 18,000+ iterations, blocking event loop
+    function rsiArray(closes, period=14) {
+      if (closes.length < period + 1) return [];
+      const out = [];
+      let g=0, l=0;
+      for (let i=1; i<=period; i++) { const d=closes[i]-closes[i-1]; d>=0?g+=d:l-=d; }
+      let ag=g/period, al=l/period;
+      out.push(parseFloat((100-100/(1+(al===0?Infinity:ag/al))).toFixed(2)));
+      for (let i=period+1; i<closes.length; i++) {
+        const d=closes[i]-closes[i-1];
+        ag=(ag*(period-1)+(d>0?d:0))/period;
+        al=(al*(period-1)+(d<0?-d:0))/period;
+        out.push(parseFloat((100-100/(1+(al===0?Infinity:ag/al))).toFixed(2)));
+      }
+      return out;
+    }
+    const h4rsiArr  = rsiArray(h4closes);
+    const h1rsiArr  = rsiArray(h1closes);
+    const m15rsiArr = rsiArray(m15closes);
+    const h4Div=rsiDiv(h4c.slice(-20),h4rsiArr.slice(-20));
+    const h1Div=rsiDiv(h1c.slice(-20),h1rsiArr.slice(-20));
+    const m15Div=rsiDiv(m15c.slice(-20),m15rsiArr.slice(-20));
 
     // BTC trend
     const btcPrice=btcH4[btcH4.length-1].close;
@@ -978,15 +1028,11 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
       const prevH4     = prevThesis.h4Struct;
       const d1Match    = prevD1 === d1Struct;
       const h4Match    = prevH4 === h4Struct;
-      const biasFlip   = prevBias !== undefined && prevBias !== 'NEUTRAL';
-      const currentBias = analysis.overallBias;
-      const actualFlip  = biasFlip && currentBias !== 'NEUTRAL' && currentBias !== prevBias;
 
-      // BUG FIX: was using biasFlip incorrectly — actualFlip checks real direction change
-      if (!actualFlip) {
+      // FIX: Determine thesisStatus from STRUCTURE ONLY here (analysis not available yet)
+      // Cannot reference analysis.overallBias before groq call — was causing ReferenceError
+      if (d1Match && h4Match) {
         thesisStatus = 'CONFIRMED';
-      } else if (d1Match && h4Match) {
-        thesisStatus = 'CONFIRMED';           // both TFs same — no real flip
       } else if (d1Match && !h4Match) {
         thesisStatus = 'RETRACEMENT';         // H4 changed, D1 still intact
       } else if (!d1Match && h4Match) {
@@ -1144,6 +1190,11 @@ Respond with ONLY this JSON (no markdown, no explanation):
     try { analysis = JSON.parse(aiText); }
     catch(e) { throw new Error('AI response parse failed: ' + aiText.slice(0,100)); }
 
+    // FIX: Guard against null/non-object — prevents "Cannot access analysis before initialization" style errors
+    if (!analysis || typeof analysis !== 'object') {
+      throw new Error('AI returned invalid response (expected JSON object). Please try again.');
+    }
+
     // ── Enforce confluence threshold — NEUTRAL if score too low ────
     const finalScore = analysis.confluenceScore || 0;
     if (finalScore < CONFLUENCE_THRESHOLD && analysis.overallBias !== 'NEUTRAL') {
@@ -1217,11 +1268,14 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
     if (!pair || !direction || !entry)
       return res.status(400).json({ success: false, error: 'pair, direction, entry required.' });
 
-    // BUG FIX: getLivePrice() use කරනවා — futures + spot fallback, cached
-    const currentPrice = await getLivePrice(pair.toUpperCase());
-    if (!currentPrice) return res.status(502).json({ success: false, error: `Could not fetch live price for ${pair}. Check symbol name.` });
+    // FIX: Normalize pair — "XLM" → "XLMUSDT" (main 502 bug fix)
+    const normalizedPair = normalizePair(pair);
 
-    // Fetch klines — try futures first, fall back to spot
+    // FIX: getLivePrice with normalized USDT pair
+    const currentPrice = await getLivePrice(normalizedPair);
+    if (!currentPrice) return res.status(502).json({ success: false, error: `Could not fetch live price for ${normalizedPair}. Check symbol name or Binance API.` });
+
+    // Fetch klines — try futures first, fall back to spot (also with normalized pair)
     async function getKlines(symbol, interval, limit) {
       let klines = null;
       try {
@@ -1239,19 +1293,23 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
     }
 
     const [h4k, d1k] = await Promise.all([
-      getKlines(pair.toUpperCase(), '4h', 50),
-      getKlines(pair.toUpperCase(), '1d', 20),
+      getKlines(normalizedPair, '4h', 50),
+      getKlines(normalizedPair, '1d', 20),
     ]);
 
-    // Simple BOS/CHoCH detect
+    // FIX: Guard against empty candles before structure detection
     function detectStruct(candles) {
-      const last = candles.slice(-20);
+      if (!candles || candles.length < 5) return 'RANGING';
+      const last  = candles.slice(-20);
       const highs = last.map(c => c.high);
       const lows  = last.map(c => c.low);
-      const hh = highs[highs.length-1] > Math.max(...highs.slice(0,-1));
-      const hl = lows[lows.length-1]   > Math.min(...lows.slice(0,-1));
-      const lh = highs[highs.length-1] < Math.max(...highs.slice(0,-1));
-      const ll = lows[lows.length-1]   < Math.min(...lows.slice(0,-1));
+      if (highs.length < 2 || lows.length < 2) return 'RANGING';
+      const prevHighs = highs.slice(0, -1);
+      const prevLows  = lows.slice(0, -1);
+      const hh = highs[highs.length-1] > Math.max(...prevHighs);
+      const hl = lows[lows.length-1]   > Math.min(...prevLows);
+      const lh = highs[highs.length-1] < Math.max(...prevHighs);
+      const ll = lows[lows.length-1]   < Math.min(...prevLows);
       if (hh && hl) return 'BOS_BULLISH';
       if (lh && ll) return 'BOS_BEARISH';
       if (hh && ll) return 'CHOCH_BULLISH';
@@ -1262,46 +1320,45 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
     const h4Struct = detectStruct(h4k);
     const d1Struct = detectStruct(d1k);
 
-    const isLong = direction === 'LONG';
+    const isLong   = direction === 'LONG';
+    const entryNum = parseFloat(entry);
+    const slNum    = parseFloat(sl)  || null;
+    const tp1Num   = parseFloat(tp1) || null;
 
     // H4 structure intact check
-    const h4Intact = isLong
-      ? h4Struct.includes('BULLISH')
-      : h4Struct.includes('BEARISH');
-    const d1Intact = isLong
-      ? d1Struct.includes('BULLISH')
-      : d1Struct.includes('BEARISH');
+    const h4Intact = isLong ? h4Struct.includes('BULLISH') : h4Struct.includes('BEARISH');
+    const d1Intact = isLong ? d1Struct.includes('BULLISH') : d1Struct.includes('BEARISH');
 
-    // Fibonacci pullback depth from entry
-    const entryNum = parseFloat(entry);
-    const slNum    = parseFloat(sl) || null;
-    const tp1Num   = parseFloat(tp1) || null;
-    const swingHigh = isLong
-      ? Math.max(...d1k.slice(-20).map(c => c.high))
-      : entryNum;
-    const swingLow  = isLong
-      ? entryNum
-      : Math.min(...d1k.slice(-20).map(c => c.low));
-    const range = swingHigh - swingLow;
+    // FIX: Guard against empty d1k before calculating swingHigh/swingLow
+    const d1Slice  = d1k.slice(-20);
+    const d1Highs  = d1Slice.length ? d1Slice.map(c => c.high)  : [entryNum * 1.05];
+    const d1Lows   = d1Slice.length ? d1Slice.map(c => c.low)   : [entryNum * 0.95];
 
-    const fib382 = isLong ? swingHigh - range * 0.382 : swingLow + range * 0.382;
-    const fib500 = isLong ? swingHigh - range * 0.500 : swingLow + range * 0.500;
-    const fib618 = isLong ? swingHigh - range * 0.618 : swingLow + range * 0.618;
-    const fib786 = isLong ? swingHigh - range * 0.786 : swingLow + range * 0.786;
+    const swingHigh = isLong ? Math.max(...d1Highs) : entryNum;
+    const swingLow  = isLong ? entryNum              : Math.min(...d1Lows);
+    const range     = swingHigh - swingLow;
 
-    // Pullback depth assessment
+    // FIX: Prevent division/calc errors when range is 0 or negative
+    const safeRange = range > 0 ? range : entryNum * 0.1;
+
+    const fib382 = isLong ? swingHigh - safeRange * 0.382 : swingLow + safeRange * 0.382;
+    const fib500 = isLong ? swingHigh - safeRange * 0.500 : swingLow + safeRange * 0.500;
+    const fib618 = isLong ? swingHigh - safeRange * 0.618 : swingLow + safeRange * 0.618;
+    const fib786 = isLong ? swingHigh - safeRange * 0.786 : swingLow + safeRange * 0.786;
+
+    // FIX: pullbackPct — use Math.max(0, ...) so it's never negative when trade is in profit
     const pullbackPct = isLong
-      ? ((entryNum - currentPrice) / entryNum * 100)
-      : ((currentPrice - entryNum) / entryNum * 100);
+      ? Math.max(0, (entryNum - currentPrice) / entryNum * 100)
+      : Math.max(0, (currentPrice - entryNum) / entryNum * 100);
 
-    let pullbackZone = 'SHALLOW';
+    let pullbackZone = 'NONE'; // NONE = trade is in profit (above entry for LONG)
     if (isLong) {
-      if (currentPrice <= fib786) pullbackZone = 'CRITICAL';
+      if      (currentPrice <= fib786) pullbackZone = 'CRITICAL';
       else if (currentPrice <= fib618) pullbackZone = 'DEEP';
       else if (currentPrice <= fib500) pullbackZone = 'NORMAL';
       else if (currentPrice <= fib382) pullbackZone = 'SHALLOW';
     } else {
-      if (currentPrice >= fib786) pullbackZone = 'CRITICAL';
+      if      (currentPrice >= fib786) pullbackZone = 'CRITICAL';
       else if (currentPrice >= fib618) pullbackZone = 'DEEP';
       else if (currentPrice >= fib500) pullbackZone = 'NORMAL';
       else if (currentPrice >= fib382) pullbackZone = 'SHALLOW';
@@ -1310,14 +1367,14 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
     // TP1 hit?
     const tp1Hit = tp1Num && (isLong ? currentPrice >= tp1Num * 0.998 : currentPrice <= tp1Num * 1.002);
 
-    // SL proximity (within 1%)
-    const slClose = slNum && Math.abs(currentPrice - slNum) / entryNum < 0.01;
+    // FIX: slClose — divide by currentPrice not entryNum for accurate proximity check
+    const slClose = slNum && Math.abs(currentPrice - slNum) / currentPrice < 0.01;
 
     // Decide ACTION
-    let action = 'HOLD';
-    let reason  = '';
-    let dcaLevel = null;
-    let newSL    = null;
+    let action       = 'HOLD';
+    let reason       = '';
+    let dcaLevel     = null;
+    let newSL        = null;
     let slMoveTarget = null;
 
     if (!h4Intact && !d1Intact) {
@@ -1330,11 +1387,10 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
       action = 'CLOSE';
       reason = `Price breached 78.6% Fibonacci level ($${fib786.toFixed(4)}). H4 reversal likely — exit to protect capital.`;
     } else if (tp1Hit) {
-      action = 'MOVE_SL';
+      action       = 'MOVE_SL';
       slMoveTarget = entryNum;
-      reason = `TP1 ($${tp1Num}) reached! Move SL to break-even ($${entryNum}) to protect profits.`;
+      reason       = `TP1 ($${tp1Num}) reached! Move SL to break-even ($${entryNum}) to protect profits.`;
     } else if (h4Intact && pullbackZone === 'DEEP') {
-      // DCA conditions: H4 intact + deep pullback
       dcaLevel = parseFloat(fib618.toFixed(4));
       newSL    = slNum ? parseFloat((slNum * (isLong ? 0.998 : 1.002)).toFixed(4)) : null;
       action   = 'DCA';
@@ -1344,21 +1400,26 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
       reason = `H4 intact (${h4Struct}) but D1 weakening (${d1Struct}). Hold current position, no DCA. Watch 61.8% level.`;
     } else {
       action = 'HOLD';
-      reason = `H4 (${h4Struct}) and D1 (${d1Struct}) structures support your ${direction}. Pullback zone: ${pullbackZone}. Continue holding.`;
+      reason = pullbackZone === 'NONE'
+        ? `Trade is in profit territory. H4 (${h4Struct}) and D1 (${d1Struct}) structures support your ${direction}.`
+        : `H4 (${h4Struct}) and D1 (${d1Struct}) structures support your ${direction}. Pullback zone: ${pullbackZone}. Continue holding.`;
     }
 
-    // Early warning signals
+    // Warnings
     const warnings = [];
-    if (pullbackZone === 'DEEP')    warnings.push(`⚠️ Price at deep pullback (61.8% fib: $${fib618.toFixed(4)})`);
+    if (pullbackZone === 'DEEP')     warnings.push(`⚠️ Price at deep pullback (61.8% fib: $${fib618.toFixed(4)})`);
     if (pullbackZone === 'CRITICAL') warnings.push(`🔴 Price below 78.6% fib — reversal zone`);
     if (!h4Intact && d1Intact)       warnings.push(`⚠️ H4 structure shifted against trade — thesis weakening`);
 
+    // FIX: invalidationLevel — correct for both LONG and SHORT
+    const invalidationLevel = isLong ? fib786 : fib786;
+
     res.json({
       success: true,
-      pair: pair.toUpperCase(),
+      pair:    normalizedPair,
       direction,
       currentPrice,
-      action,   // HOLD | DCA | CLOSE | MOVE_SL
+      action,
       reason,
       warnings,
       structureIntact: { h4: h4Intact, d1: d1Intact },
@@ -1374,7 +1435,7 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
       dcaLevel,
       newSL,
       slMoveTarget,
-      invalidationLevel: parseFloat((isLong ? fib786 : fib786).toFixed(4)),
+      invalidationLevel: parseFloat(invalidationLevel.toFixed(4)),
       tp1Hit,
     });
   } catch(err) {
@@ -1844,14 +1905,16 @@ wss.on('connection',async(ws,req)=>{
 // Also fills PENDING (LIMIT) orders when price reaches trigger
 async function runTPSLCheck() {
   try {
+    // FIX: Added TP1_HIT — was missing, so trades after TP1 never checked for TP2/SL
     const openTrades = await PT.find({
-      status: { $in: ['OPEN', 'PENDING', 'PENDING_LONG', 'PENDING_SHORT'] }
+      status: { $in: ['OPEN', 'TP1_HIT', 'PENDING', 'PENDING_LONG', 'PENDING_SHORT'] }
     });
     if (!openTrades.length) return;
 
     for (const trade of openTrades) {
       try {
-        const symbol = trade.pair || trade.symbol;
+        // FIX: Normalize symbol to USDT — "XLM" → "XLMUSDT"
+        const symbol = normalizePair(trade.pair || trade.symbol);
         if (!symbol) continue;
 
         const price = await getLivePrice(symbol);
@@ -1929,6 +1992,11 @@ async function runTPSLCheck() {
         }
 
         if (newStatus) {
+          // FIX: Normalize status names to match frontend expectations
+          // Server was setting 'SL_HIT'/'TP2_HIT'/'TP3_HIT' but frontend checks 'SL'/'TP2'
+          const statusMap = { SL_HIT:'SL', TP2_HIT:'TP2', TP3_HIT:'TP2' };
+          const finalStatus = statusMap[newStatus] || newStatus;
+
           // Leverage-correct PnL: pnl = Δprice/entry * notional
           let pnl = 0;
           if (entry && notional) {
@@ -1940,7 +2008,7 @@ async function runTPSLCheck() {
           const roe = notional ? parseFloat((pnl / (notional / lev) * 100).toFixed(2)) : 0;
 
           await PT.findByIdAndUpdate(trade._id, {
-            status: newStatus,
+            status: finalStatus,
             closePrice,
             closedAt:   new Date(),
             closeTime:  new Date().toISOString(),
@@ -1948,16 +2016,20 @@ async function runTPSLCheck() {
             roe,
           });
 
-          // Refund margin + pnl to balance (already deducted at open)
-          const marginUsed = size; // margin = size (USDT deposited)
+          // FIX: balance refund — if TP1 already hit, 50% margin was already refunded
+          // Only refund the REMAINING size to avoid double-refund
+          const tp1AlreadyHit = trade.status === 'TP1_HIT';
+          const marginToRefund = tp1AlreadyHit
+            ? (trade.remainingSize || size * 0.5)  // only remaining 50%
+            : size;                                  // full margin
           await PB.findOneAndUpdate(
             { uid: trade.uid },
-            { $inc: { balance: marginUsed + pnl } },
+            { $inc: { balance: marginToRefund + pnl } },
             { upsert: true }
           );
 
-          broadcastToAll({ type: 'trade_closed', tradeId: trade._id, symbol, status: newStatus, closePrice, pnl });
-          console.log(`⚡ Auto-closed ${symbol} ${trade.direction} → ${newStatus} @ ${closePrice} PnL:${pnl}`);
+          broadcastToAll({ type: 'trade_closed', tradeId: trade._id, symbol, status: finalStatus, closePrice, pnl });
+          console.log(`⚡ Auto-closed ${symbol} ${trade.direction} → ${finalStatus} @ ${closePrice} PnL:${pnl}`);
         }
       } catch(tradeErr) {
         console.error('runTPSLCheck trade error:', tradeErr.message);
