@@ -1242,11 +1242,11 @@ function buildPaperTradePanel(data) {
         <button class="pt-order-btn ${lockedType==='MARKET'?'active '+(isLong?'long-active':'short-active'):'pt-btn-locked'}"
                 id="ptBtnMkt"
                 ${lockedType!=='MARKET'?'disabled title="Analysis requires LIMIT entry — price not at zone yet"':''}
-                onclick="${lockedType==='MARKET'?'ptSetOrderType('MARKET')':'void(0)'}">⚡ MARKET</button>
+                onclick="${lockedType==='MARKET'?'ptSetOrderType(&quot;MARKET&quot;)':'void(0)'}">⚡ MARKET</button>
         <button class="pt-order-btn ${lockedType==='LIMIT'?'active '+(isLong?'long-active':'short-active'):'pt-btn-locked'}"
                 id="ptBtnLmt"
                 ${lockedType!=='LIMIT'?'disabled title="Analysis requires MARKET entry — confirmed now"':''}
-                onclick="${lockedType==='LIMIT'?'ptSetOrderType('LIMIT')':'void(0)'}">🎯 LIMIT</button>
+                onclick="${lockedType==='LIMIT'?'ptSetOrderType(&quot;LIMIT&quot;)':'void(0)'}">🎯 LIMIT</button>
     </div>
     <div style="font-size:0.65rem;color:var(--text-muted);text-align:center;margin:-4px 0 8px;">${lockLabel}</div>
 
