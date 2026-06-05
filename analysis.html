@@ -876,8 +876,8 @@ function renderFullAnalysis(data, container) {
         </div>
         <div style="flex:1;">
             <div style="font-size:0.58rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);font-family:'JetBrains Mono',monospace;margin-bottom:4px;">Confluence · Grade ${a.grade}</div>
-            <div style="font-size:1rem;font-weight:700;color:${biasClr(a.overallBias)};margin-bottom:4px;">
-                ${a.overallBias==='LONG'?'🟢 LONG Setup':a.overallBias==='SHORT'?'🔴 SHORT Setup':'⚪ NEUTRAL'}
+            <div style="font-size:1rem;font-weight:700;color:${a.overallBias==='LONG'?'var(--green)':a.overallBias==='SHORT'?'var(--red)':'var(--gold)'};margin-bottom:4px;">
+                ${a.overallBias==='LONG'?'🟢 LONG Setup':a.overallBias==='SHORT'?'🔴 SHORT Setup':`⏳ Watch Zone · ${(a.level5?.direction||'LONG')} Setup`}
             </div>
             <div style="font-size:0.75rem;color:var(--text-muted);line-height:1.5;">${a.summary||''}</div>
         </div>

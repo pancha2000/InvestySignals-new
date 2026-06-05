@@ -292,6 +292,7 @@ function planLevel(plan) { return PLAN_LEVEL[plan] ?? 0; }
 // ============================================================
 
 app.get('/api/health', (req, res) => res.json({ success: true, status: 'ok', time: new Date().toISOString() }));
+app.get('/api/version', (req, res) => res.json({ version:'TDZ-FIX-v3', tdzFixed:true, analysisScope:'function-level', note:'let analysis=null declared before try — TDZ impossible' }));
 
 app.get('/api/analysis', async (req, res) => {
   try {
