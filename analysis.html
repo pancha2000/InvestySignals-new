@@ -269,6 +269,10 @@
         .pt-order-btn.active { background: var(--surface2); color: var(--text); }
         .pt-order-btn.active.long-active { color: var(--green); background: rgba(0,217,126,0.1); }
         .pt-order-btn.active.short-active { color: var(--red); background: rgba(255,59,92,0.1); }
+        .pt-order-btn.pt-btn-locked, .pt-order-btn:disabled {
+            opacity: 0.35; cursor: not-allowed; pointer-events: none;
+            text-decoration: line-through;
+        }
         .pt-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
         .pt-row.single { grid-template-columns: 1fr; }
         .pt-field label {
@@ -1136,7 +1140,15 @@ function renderFullAnalysis(data, container) {
             <div style="text-align:right;"><span style="font-size:0.68rem;color:var(--text-muted);text-transform:uppercase;">Score</span><br><span style="font-family:'JetBrains Mono',monospace;font-size:1.2rem;font-weight:700;color:${gradeClr(a.grade)}">${a.grade} · ${data.confluenceScore||'—'}/10</span></div>
         </div>
         <div class="setup-grid">
-            <div class="setup-item"><div class="setup-lbl">Direction</div><div class="setup-val" style="color:${biasClr(a.level5?.direction)}">${a.level5?.direction||'—'}</div></div>
+            <div class="setup-item"><div class="setup-lbl">Direction</div><div class="setup-val" style="color:${
+                (!a.level5?.direction || a.level5?.direction==='NEUTRAL')
+                    ? 'var(--gold)'
+                    : biasClr(a.level5?.direction)
+            };">${
+                (!a.level5?.direction || a.level5?.direction==='NEUTRAL')
+                    ? '⏳ WATCH ZONE'
+                    : a.level5.direction
+            }</div></div>
             <div class="setup-item"><div class="setup-lbl">Entry Zone</div><div class="setup-val" style="font-size:0.74rem;">${a.level5?.entryZone||'—'}</div></div>
             <div class="setup-item"><div class="setup-lbl">Stop Loss</div><div class="setup-val" style="color:var(--red);">${a.level5?.stopLoss||'—'}</div></div>
             <div class="setup-item"><div class="setup-lbl">Invalidation</div><div class="setup-val" style="font-size:0.72rem;color:var(--red);">${a.level5?.invalidationLevel||'—'}</div></div>
@@ -1185,18 +1197,32 @@ async function getToken() {
 
 function buildPaperTradePanel(data) {
     ptCurrentData = data;
-    // FIX: Never pass 'NEUTRAL' as direction — default to LONG, let user override
-    const overallBias = data?.analysis?.overallBias;
-    const isNeutral = !overallBias || overallBias === 'NEUTRAL';
-    const dir   = isNeutral ? 'LONG' : overallBias;
+    const overallBias     = data?.analysis?.overallBias;
+    const entryConclusion = data?.analysis?.level4?.entryConclusion || '';
+    const level5Dir       = data?.analysis?.level5?.direction || '';
+    const isNeutral       = !overallBias || overallBias === 'NEUTRAL';
+
+    // When NEUTRAL — show Watch Zone panel (no trading yet, just monitor)
+    if (isNeutral) {
+        return buildWatchZonePanel(data);
+    }
+
+    // Clear directional trade
+    const dir    = overallBias; // always LONG or SHORT here
     const isLong = dir === 'LONG';
     const raw    = data?.rawData || {};
 
-    // FIX: Entry direction was backwards — LONG should enter at zone LOW (buy cheap),
-    // SHORT should enter at zone HIGH (sell expensive)
+    // Lock order type from analysis — user cannot override
+    // CONFIRMED entry → MARKET (price already at entry zone)
+    // WAIT/AVOID/other → LIMIT (wait for price to come to zone)
+    const lockedType = entryConclusion === 'CONFIRMED' ? 'MARKET' : 'LIMIT';
+    const lockLabel  = lockedType === 'MARKET'
+        ? '🔒 MARKET — Entry confirmed now'
+        : '🔒 LIMIT — Wait for price zone';
+
     const entryDef = isLong
-        ? (raw.entryLow  || raw.entryHigh || '').toString()  // LONG: enter at bottom of zone
-        : (raw.entryHigh || raw.entryLow  || '').toString(); // SHORT: enter at top of zone
+        ? (raw.entryLow  || raw.entryHigh || '').toString()
+        : (raw.entryHigh || raw.entryLow  || '').toString();
     const slDef  = (raw.sl  || '').toString();
     const tp1Def = (raw.tp1 || '').toString();
     const tp2Def = (raw.tp2 || '').toString();
@@ -1207,40 +1233,30 @@ function buildPaperTradePanel(data) {
     return `
 <div class="pt-panel" id="ptMainPanel">
     <div class="pt-header">
-        <div class="pt-title">🚀 Paper Trade — ${coin}</div>
+        <div class="pt-title">${isLong?'📈':'📉'} Paper Trade — ${coin}</div>
         <div class="pt-balance-chip" id="ptBalChip">Balance: $—</div>
     </div>
 
-    <!-- Order type toggle — auto set by analysis, user can still override -->
+    <!-- Order type — LOCKED by analysis, no manual override -->
     <div class="pt-order-toggle">
-        <button class="pt-order-btn active ${isLong?'long-active':'short-active'}" id="ptBtnMkt" onclick="ptSetOrderType('MARKET')">⚡ MARKET</button>
-        <button class="pt-order-btn" id="ptBtnLmt" onclick="ptSetOrderType('LIMIT')">🎯 LIMIT</button>
+        <button class="pt-order-btn ${lockedType==='MARKET'?'active '+(isLong?'long-active':'short-active'):'pt-btn-locked'}"
+                id="ptBtnMkt"
+                ${lockedType!=='MARKET'?'disabled title="Analysis requires LIMIT entry — price not at zone yet"':''}
+                onclick="${lockedType==='MARKET'?'ptSetOrderType('MARKET')':'void(0)'}">⚡ MARKET</button>
+        <button class="pt-order-btn ${lockedType==='LIMIT'?'active '+(isLong?'long-active':'short-active'):'pt-btn-locked'}"
+                id="ptBtnLmt"
+                ${lockedType!=='LIMIT'?'disabled title="Analysis requires MARKET entry — confirmed now"':''}
+                onclick="${lockedType==='LIMIT'?'ptSetOrderType('LIMIT')':'void(0)'}">🎯 LIMIT</button>
     </div>
-    <div style="font-size:0.65rem;color:var(--text-muted);text-align:center;margin:-4px 0 6px;">📊 Analysis result මත auto-set වෙනවා</div>
+    <div style="font-size:0.65rem;color:var(--text-muted);text-align:center;margin:-4px 0 8px;">${lockLabel}</div>
 
-    <!-- Direction & Size -->
+    <!-- Direction (read-only — set by analysis) -->
     <div class="pt-row">
         <div class="pt-field">
             <label>Direction</label>
-            <input type="text" id="ptDir" value="${dir}" readonly style="color:${isLong?'var(--green)':'var(--red)'};font-weight:700;">
-            ${isNeutral ? `<div style="display:flex;gap:4px;margin-top:4px;">
-              <button onclick="
-                document.getElementById('ptDir').value='LONG';
-                document.getElementById('ptDir').style.color='var(--green)';
-                this.style.background='rgba(0,200,150,0.2)';
-                this.nextElementSibling.style.background='transparent';
-                const sb=document.getElementById('ptSubmitBtn');
-                if(sb){sb.textContent='📈 OPEN LONG — PAPER TRADE';sb.className='pt-submit-btn long-btn';}
-              " style="flex:1;padding:3px;font-size:0.65rem;font-weight:700;border:1px solid rgba(0,200,150,0.4);border-radius:4px;background:rgba(0,200,150,0.2);color:var(--green);cursor:pointer;">▲ LONG</button>
-              <button onclick="
-                document.getElementById('ptDir').value='SHORT';
-                document.getElementById('ptDir').style.color='var(--red)';
-                this.style.background='rgba(255,59,92,0.2)';
-                this.previousElementSibling.style.background='transparent';
-                const sb=document.getElementById('ptSubmitBtn');
-                if(sb){sb.textContent='📉 OPEN SHORT — PAPER TRADE';sb.className='pt-submit-btn short-btn';}
-              " style="flex:1;padding:3px;font-size:0.65rem;font-weight:700;border:1px solid rgba(255,59,92,0.4);border-radius:4px;background:transparent;color:var(--red);cursor:pointer;">▼ SHORT</button>
-            </div>` : ''}
+            <input type="text" id="ptDir" value="${dir}" readonly
+                   style="color:${isLong?'var(--green)':'var(--red)'};font-weight:700;cursor:not-allowed;"
+                   title="Direction is locked by analysis">
         </div>
         <div class="pt-field">
             <label>Size (USDT)</label>
@@ -1254,11 +1270,11 @@ function buildPaperTradePanel(data) {
             <label id="ptEntryLbl">Entry Price</label>
             <input type="number" id="ptEntry" value="${entryDef}" step="any" placeholder="Entry">
         </div>
-        <div class="pt-field" id="ptTriggerWrap" style="display:none;">
+        <div class="pt-field" id="ptTriggerWrap" style="${lockedType==='LIMIT'?'':'display:none'}">
             <label>Trigger (Limit)</label>
             <input type="number" id="ptTrigger" value="${entryDef}" step="any" placeholder="Trigger">
         </div>
-        <div class="pt-field" id="ptLevWrap">
+        <div class="pt-field" id="ptLevWrap" style="${lockedType==='MARKET'?'':'display:none'}">
             <label>Leverage</label>
             <input type="number" id="ptLev" value="${levDef}" min="1" max="125">
         </div>
@@ -1294,7 +1310,6 @@ function buildPaperTradePanel(data) {
 
     <hr class="pt-divider">
 
-    <!-- Balance management -->
     <div style="display:flex;gap:8px;align-items:center;">
         <div style="flex:1;font-size:0.7rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace;">Balance</div>
         <button onclick="ptShowBalModal()" style="padding:5px 12px;border-radius:4px;border:1px solid var(--border-soft);background:transparent;color:var(--text-muted);font-size:0.7rem;cursor:pointer;">⚙️ Manage</button>
@@ -1351,6 +1366,123 @@ function buildPaperTradePanel(data) {
             <button onclick="ptHideBalModal()" style="background:transparent;border:1px solid var(--border-soft);color:var(--text-muted);">
                 Close
             </button>
+        </div>
+    </div>
+</div>
+    `;
+}
+
+// ══ WATCH ZONE PANEL — shown when analysis is NEUTRAL (no trade yet, just monitor) ══
+function buildWatchZonePanel(data) {
+    const a    = data?.analysis;
+    const raw  = data?.rawData || {};
+    const coin = data?.coin || '';
+    const score = data?.confluenceScore || 0;
+    const watchDir = a?.level5?.direction || '';
+    const isLong   = watchDir !== 'SHORT';
+    const entryZone = a?.level5?.entryZone || '—';
+    const sl        = a?.level5?.stopLoss  || '—';
+    const tp1       = a?.level5?.tp1       || '—';
+    const tp2       = a?.level5?.tp2       || '—';
+    const tp3       = a?.level5?.tp3       || '—';
+    const dirColor  = isLong ? 'var(--green)' : 'var(--red)';
+    const dirLabel  = watchDir || (isLong ? 'LONG' : 'SHORT');
+
+    return `
+<div class="pt-panel" id="ptMainPanel" style="border-color:rgba(240,180,41,0.3);">
+    <div class="pt-header">
+        <div class="pt-title">👁️ Watch Zone — ${coin}</div>
+        <div class="pt-balance-chip" id="ptBalChip">Balance: $—</div>
+    </div>
+
+    <!-- Status banner -->
+    <div style="background:rgba(240,180,41,0.08);border:1px solid rgba(240,180,41,0.3);border-radius:8px;padding:12px 14px;margin-bottom:12px;">
+        <div style="color:var(--gold);font-weight:700;font-size:0.78rem;margin-bottom:5px;">⏳ Score ${score}/10 — No Entry Now</div>
+        <div style="font-size:0.72rem;color:var(--text-muted);line-height:1.6;">
+            Confluence low — confirmations insufficient for live trade.
+            Potential <strong style="color:${dirColor}">${dirLabel}</strong> setup forming.
+            Price reach zone below → Re-analyze → Enter if confirmed.
+        </div>
+    </div>
+
+    <!-- Watch levels -->
+    <div style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:8px;">📍 Levels To Monitor</div>
+    <div class="setup-grid" style="margin-bottom:12px;">
+        <div class="setup-item" style="grid-column:1/-1">
+            <div class="setup-lbl">Watch Zone (Potential Entry)</div>
+            <div class="setup-val" style="color:${dirColor};">${entryZone}</div>
+        </div>
+        <div class="setup-item">
+            <div class="setup-lbl">Stop Loss</div>
+            <div class="setup-val" style="color:var(--red);">${sl}</div>
+        </div>
+        <div class="setup-item">
+            <div class="setup-lbl">TP1 Target</div>
+            <div class="setup-val" style="color:var(--green);">${tp1}</div>
+        </div>
+        <div class="setup-item">
+            <div class="setup-lbl">TP2 Target</div>
+            <div class="setup-val" style="color:var(--green);">${tp2}</div>
+        </div>
+        <div class="setup-item">
+            <div class="setup-lbl">TP3 Target</div>
+            <div class="setup-val" style="color:var(--green);">${tp3}</div>
+        </div>
+    </div>
+
+    <!-- Instructions -->
+    <div style="font-size:0.7rem;color:var(--text-muted);text-align:center;padding:10px 12px;border:1px dashed rgba(240,180,41,0.25);border-radius:6px;line-height:1.7;margin-bottom:12px;">
+        📌 Price reaches Watch Zone → Click <strong style="color:var(--gold);">Re-analyze</strong><br>
+        If score improves &amp; entry confirmed → Paper Trade opens
+    </div>
+
+    <div id="ptMsg" class="pt-msg" style="margin-top:4px;"></div>
+
+    <hr class="pt-divider">
+    <div style="display:flex;gap:8px;align-items:center;">
+        <div style="flex:1;font-size:0.7rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace;">Balance</div>
+        <button onclick="ptShowBalModal()" style="padding:5px 12px;border-radius:4px;border:1px solid var(--border-soft);background:transparent;color:var(--text-muted);font-size:0.7rem;cursor:pointer;">⚙️ Manage</button>
+    </div>
+</div>
+
+<!-- Open trades (still show even in watch mode) -->
+<div class="pt-trades-wrap" id="ptTradesWrap" style="display:none;">
+    <div style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);font-family:'JetBrains Mono',monospace;margin:10px 0 6px;">Open Trades</div>
+    <div id="ptTradesList"></div>
+</div>
+
+<!-- Balance modal (shared) -->
+<div class="pt-modal-overlay" id="ptBalModal" style="display:none;" onclick="if(event.target===this)ptHideBalModal()">
+    <div class="pt-modal">
+        <h3>⚙️ Paper Balance</h3>
+        <div id="ptFirstTimeSection">
+            <p style="font-size:0.8rem;color:var(--text-muted);">ඔබේ paper trading balance set කරන්න. <strong>එකවරක් විතරයි</strong> ඔබට directly set කරන්න පුළුවන්.</p>
+            <div class="pt-field" style="margin-bottom:10px;">
+                <label>Starting Balance (100 – 1,000,000 USDT)</label>
+                <input type="number" id="ptCustomBal" min="100" max="1000000" placeholder="e.g. 10000" style="width:100%;background:var(--surface);border:1px solid var(--border-soft);color:var(--text);padding:9px 12px;border-radius:var(--radius-xs);font-family:'JetBrains Mono',monospace;font-size:0.85rem;outline:none;box-sizing:border-box;">
+            </div>
+            <div class="pt-modal-actions">
+                <button onclick="ptSetCustomBalance()" style="background:rgba(0,217,126,0.12);border:1px solid rgba(0,217,126,0.3);color:var(--green);">✅ Set Balance</button>
+            </div>
+            <hr style="border-color:var(--border-soft);margin:14px 0 10px;">
+        </div>
+        <div id="ptAdminSection">
+            <p style="font-size:0.8rem;color:var(--text-muted);" id="ptAdminLabel">Balance reset කරන්න admin request කරන්න:</p>
+            <div class="pt-field" style="margin-bottom:8px;">
+                <label>Amount (USDT)</label>
+                <input type="number" id="ptReqAmount" min="100" max="1000000" placeholder="e.g. 10000" style="width:100%;background:var(--surface);border:1px solid var(--border-soft);color:var(--text);padding:9px 12px;border-radius:var(--radius-xs);font-family:'JetBrains Mono',monospace;font-size:0.85rem;outline:none;box-sizing:border-box;">
+            </div>
+            <div class="pt-field" style="margin-bottom:10px;">
+                <label>Reason <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+                <input type="text" id="ptReqReason" placeholder="e.g. strategy test" style="width:100%;background:var(--surface);border:1px solid var(--border-soft);color:var(--text);padding:9px 12px;border-radius:var(--radius-xs);font-family:'JetBrains Mono',monospace;font-size:0.82rem;outline:none;box-sizing:border-box;">
+            </div>
+            <div class="pt-modal-actions">
+                <button onclick="ptRequestReset()" style="background:var(--surface);border:1px solid var(--border-soft);color:var(--text-muted);">📩 Request Admin Reset</button>
+            </div>
+        </div>
+        <div id="ptBalMsg"></div>
+        <div class="pt-modal-actions" style="margin-top:6px;">
+            <button onclick="ptHideBalModal()" style="background:transparent;border:1px solid var(--border-soft);color:var(--text-muted);">Close</button>
         </div>
     </div>
 </div>
@@ -1621,47 +1753,46 @@ async function initPaperTrade() {
     await ptLoadBalance();
     await ptLoadTrades();
 
-    // Auto-detect order type from analysis
-    const a = ptCurrentData?.analysis;
+    const a           = ptCurrentData?.analysis;
+    const overallBias = a?.overallBias || 'NEUTRAL';
+    const isNeutral   = !overallBias || overallBias === 'NEUTRAL';
+
+    // Watch Zone mode — no order type buttons to configure
+    if (isNeutral) return;
+
+    // Directional trade — lock order type from analysis, no manual override
     const entryConclusion = a?.level4?.entryConclusion || '';
-    const overallBias     = a?.overallBias || 'NEUTRAL';
-    const raw             = ptCurrentData?.rawData || {};
+    const lockedType = entryConclusion === 'CONFIRMED' ? 'MARKET' : 'LIMIT';
+    ptSetOrderType(lockedType);
 
-    // If analysis says WAIT → LIMIT order (price not at entry yet)
-    // If analysis says CONFIRMED → MARKET order (price is at entry now)
-    // If AVOID → still allow but default LIMIT as safer
-    let autoType = 'LIMIT'; // safe default
-    if (entryConclusion === 'CONFIRMED') autoType = 'MARKET';
-
-    ptSetOrderType(autoType);
-
-    // Make direction readonly only when NOT neutral (analysis has clear direction)
-    const dirInput = document.getElementById('ptDir');
-    if (dirInput) {
-        if (overallBias && overallBias !== 'NEUTRAL') {
-            dirInput.readOnly = true;
-            dirInput.style.cursor = 'not-allowed';
-            dirInput.title = 'Direction is set by analysis';
-        } else {
-            // NEUTRAL — keep editable, user picks direction via toggle buttons
-            dirInput.readOnly = true; // still readonly but controlled by toggle buttons
-            dirInput.style.cursor = 'default';
-            dirInput.title = 'Market is NEUTRAL — select direction using the buttons above';
+    // Disable the non-active order type button to prevent override
+    const btnMkt = document.getElementById('ptBtnMkt');
+    const btnLmt = document.getElementById('ptBtnLmt');
+    if (lockedType === 'MARKET') {
+        if (btnLmt) {
+            btnLmt.disabled = true;
+            btnLmt.classList.add('pt-btn-locked');
+            btnLmt.title = 'LIMIT blocked — entry is confirmed at current price (MARKET)';
+        }
+    } else {
+        if (btnMkt) {
+            btnMkt.disabled = true;
+            btnMkt.classList.add('pt-btn-locked');
+            btnMkt.title = 'MARKET blocked — price not at entry zone yet, use LIMIT';
         }
     }
 
-    // Show a small info badge about why this order type was chosen
+    // Info message
     const msgEl = document.getElementById('ptMsg');
     if (msgEl) {
-        const label = overallBias === 'NEUTRAL' || !overallBias
-            ? '⚠️ NEUTRAL market — කරුණාකර ▲ LONG හෝ ▼ SHORT button එකෙන් direction select කරන්න'
-            : entryConclusion === 'CONFIRMED'
-            ? '✅ Entry CONFIRMED — Market order set automatically'
+        const label = entryConclusion === 'CONFIRMED'
+            ? '✅ Entry CONFIRMED — enter at market price now'
             : entryConclusion === 'WAIT'
-            ? '⏳ Entry is WAIT — Limit order set (safer entry)'
-            : '⚠️ Entry is ' + (entryConclusion||'unknown') + ' — Limit order set by default';
-        const color = overallBias === 'NEUTRAL' || !overallBias ? 'var(--gold)'
-                    : entryConclusion === 'CONFIRMED' ? 'var(--green)'
+            ? '⏳ Entry WAIT — price approaching zone, LIMIT order placed'
+            : entryConclusion === 'AVOID'
+            ? '🚫 Entry AVOID — risky conditions, limit set as safeguard'
+            : '⏳ LIMIT order — wait for price to reach entry zone';
+        const color = entryConclusion === 'CONFIRMED' ? 'var(--green)'
                     : entryConclusion === 'AVOID'     ? 'var(--red)'
                     : 'var(--gold)';
         msgEl.innerHTML = `<span style="color:${color};font-size:0.72rem;">${label}</span>`;

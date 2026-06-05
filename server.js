@@ -740,6 +740,10 @@ app.get('/api/paper/balance/my-requests', ptAuth, async (req, res) => {
 //  DEEP ANALYSIS — Full multi-timeframe AI analysis
 // ═══════════════════════════════════════════════════════════════
 app.post('/api/deep-analysis', verifyToken, async (req, res) => {
+  // DEFINITIVE FIX: Declare analysis at function scope (outside try block)
+  // This eliminates ANY possibility of TDZ — analysis is always 'null' until assigned,
+  // never "not initialized". Fixes "Cannot access 'analysis' before initialization" on re-analyze.
+  let analysis = null;
   try {
     const coin = ((req.body.coin || 'BTC').toUpperCase().replace(/USDT$/,'').replace(/[^A-Z0-9]/g,'')).trim();
     if (!coin) return res.status(400).json({ success:false, error:'coin required' });
@@ -1124,7 +1128,7 @@ RULE 3 — TAKE PROFITS (minimum R:R ratios — calculate R = |entry - sl|):
 RULE 4 — RSI FILTER (hard rules):
   - DO NOT give LONG direction if 4H RSI > 65 (currently ${h4RSI})
   - DO NOT give SHORT direction if 4H RSI < 35 (currently ${h4RSI})
-  - If RSI violates filter: set level5.direction=NEUTRAL but still provide valid entry/SL/TP levels
+  - If RSI violates filter: set overallBias=NEUTRAL, but level5.direction MUST still be LONG or SHORT (best guess direction for monitoring — user will re-analyze before entering)
 
 RULE 5 — CONFLUENCE MINIMUM:
   - confluenceScore must reflect: D1 structure + 4H structure + RSI + MACD + volume + OB/FVG alignment
@@ -1176,7 +1180,7 @@ Respond with ONLY this JSON (no markdown, no explanation):
     "sessionNote": "text"
   },
   "level5": {
-    "direction": "LONG|SHORT|NEUTRAL",
+    "direction": "LONG|SHORT (NEVER NEUTRAL — always give best directional guess)",
     "entryZone": "$X.XX – $X.XX",
     "stopLoss": "$X.XX",
     "invalidationLevel": "$X.XX",
@@ -1228,9 +1232,7 @@ Respond with ONLY this JSON (no markdown, no explanation):
     let aiText = groqData.choices?.[0]?.message?.content || '';
     // Strip markdown fences if present
     aiText = aiText.replace(/```json|```/g,'').trim();
-    // FIX: Use var instead of let to prevent Temporal Dead Zone ReferenceError
-    // var is hoisted+initialized to undefined — let can throw "Cannot access before initialization"
-    var analysis; // eslint-disable-line no-var
+    // analysis is declared at function scope (before try block) — no TDZ possible
     try { analysis = JSON.parse(aiText); }
     catch(e) { throw new Error('AI response parse failed: ' + aiText.slice(0,100)); }
 
@@ -1243,8 +1245,14 @@ Respond with ONLY this JSON (no markdown, no explanation):
     const finalScore = analysis.confluenceScore || 0;
     if (finalScore < CONFLUENCE_THRESHOLD && analysis.overallBias !== 'NEUTRAL') {
       analysis.overallBias = 'NEUTRAL';
-      analysis.summary = (analysis.summary || '') + ' (Score below threshold — direction set to NEUTRAL for safety.)';
-      if (analysis.level5) analysis.level5.direction = 'NEUTRAL';
+      analysis.summary = (analysis.summary || '') + ' (Score below threshold — watch zone only, no entry now.)';
+      // level5.direction stays LONG/SHORT — it is the WATCH direction, not a trade signal
+    }
+    // Ensure level5.direction is never NEUTRAL — fallback if AI still returns it
+    if (analysis.level5 && (!analysis.level5.direction || analysis.level5.direction === 'NEUTRAL')) {
+      const fallback = (analysis.overallBias === 'LONG' || analysis.overallBias === 'SHORT')
+        ? analysis.overallBias : 'LONG';
+      analysis.level5.direction = fallback;
     }
 
     // Fill rawData entry/sl/tp from AI level5 — ALWAYS fill even if NEUTRAL
