@@ -1746,4 +1746,83 @@ async function ptShowBalModal() {
         const d = await r.json();
         const ft = document.getElementById('ptFirstTimeSection');
         const lbl = document.getElementById('ptAdminLabel');
-        if (ft) ft.style.display = d.hasSetInitialBal
+        if (ft) ft.style.display = d.hasSetInitialBalance ? 'none' : 'block';
+        if (lbl) lbl.textContent = d.hasSetInitialBalance
+            ? 'Balance reset කරන්න admin request කරන්න:'
+            : 'Otherwise, request an admin reset:';
+    } catch(e) { /* silent */ }
+}
+
+function ptHideBalModal() {
+    const m = document.getElementById('ptBalModal');
+    if (m) m.style.display = 'none';
+    const msg = document.getElementById('ptBalMsg');
+    if (msg) msg.innerHTML = '';
+}
+
+async function ptSetCustomBalance() {
+    const inp = document.getElementById('ptCustomBal');
+    const val = parseFloat(inp?.value);
+    if (isNaN(val) || val < 100 || val > 1000000) {
+        ptShowBalMsg('100 – 1,000,000 USDT range enter කරන්න.', true);
+        return;
+    }
+    const tok = await getToken();
+    if (!tok) return;
+    const btn = document.querySelector('#ptFirstTimeSection .pt-modal-actions button');
+    if (btn) { btn.disabled = true; btn.textContent = 'Setting...'; }
+    try {
+        const r = await fetch('/api/paper/balance/set', {
+            method: 'POST',
+            headers: { 'Content-Type':'application/json', Authorization:'Bearer '+tok },
+            body: JSON.stringify({ amount: val })
+        });
+        const d = await r.json();
+        if (d.success) {
+            ptShowBalMsg(`Balance set: $${parseFloat(d.balance).toFixed(2)}`);
+            const ft = document.getElementById('ptFirstTimeSection');
+            if (ft) ft.style.display = 'none';
+            await ptLoadBalance();
+        } else {
+            ptShowBalMsg(d.error || 'Balance set failed.', true);
+        }
+    } catch(e) { ptShowBalMsg('Network error.', true); }
+    if (btn) { btn.disabled = false; btn.textContent = '✅ Set Balance'; }
+}
+
+async function ptRequestReset() {
+    const amt    = parseFloat(document.getElementById('ptReqAmount')?.value);
+    const reason = (document.getElementById('ptReqReason')?.value || '').trim();
+    if (isNaN(amt) || amt < 100 || amt > 1000000) {
+        ptShowBalMsg('100 – 1,000,000 USDT range enter කරන්න.', true);
+        return;
+    }
+    const tok = await getToken();
+    if (!tok) return;
+    const btn = document.querySelector('#ptAdminSection .pt-modal-actions button');
+    if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
+    try {
+        const r = await fetch('/api/paper/balance/request', {
+            method: 'POST',
+            headers: { 'Content-Type':'application/json', Authorization:'Bearer '+tok },
+            body: JSON.stringify({ amount: amt, reason })
+        });
+        const d = await r.json();
+        if (d.success) {
+            ptShowBalMsg('Request sent! Admin will review shortly.');
+        } else {
+            ptShowBalMsg(d.error || 'Request failed.', true);
+        }
+    } catch(e) { ptShowBalMsg('Network error.', true); }
+    if (btn) { btn.disabled = false; btn.textContent = '📩 Request Admin Reset'; }
+}
+
+function ptShowBalMsg(msg, isErr = false) {
+    const el = document.getElementById('ptBalMsg');
+    if (!el) return;
+    el.className = 'pt-msg ' + (isErr ? 'err' : 'ok');
+    el.textContent = msg;
+}
+</script>
+</body>
+</html>

@@ -703,9 +703,16 @@ app.delete('/api/paper/trades', ptAuth, async (req, res) => {
 /* GET /api/paper/balance */
 app.get('/api/paper/balance', ptAuth, async (req, res) => {
   try {
-    let pb = await PB.findOne({ uid: req.uid });
+    let [pb, user] = await Promise.all([
+      PB.findOne({ uid: req.uid }),
+      User.findOne({ uid: req.uid }).lean(),
+    ]);
     if (!pb) pb = await PB.create({ uid: req.uid, balance: 1000 });
-    res.json({ success:true, balance: pb.balance });
+    res.json({
+      success: true,
+      balance: pb.balance,
+      hasSetInitialBalance: user?.hasSetInitialBalance ?? false,
+    });
   } catch(e) { res.status(500).json({ success:false, error:e.message }); }
 });
 
@@ -725,7 +732,10 @@ app.post('/api/paper/balance/set', ptAuth, async (req, res) => {
     const bal = parseFloat(req.body.amount || req.body.balance);
     if (isNaN(bal) || bal < 1 || bal > 1_000_000)
       return res.status(400).json({ success:false, error:'Amount must be between 1 and 1,000,000.' });
-    const pb = await PB.findOneAndUpdate({ uid: req.uid }, { balance: bal }, { upsert:true, new:true });
+    const [pb] = await Promise.all([
+      PB.findOneAndUpdate({ uid: req.uid }, { balance: bal }, { upsert:true, new:true }),
+      User.findOneAndUpdate({ uid: req.uid }, { hasSetInitialBalance: true }),
+    ]);
     res.json({ success:true, balance: pb.balance });
   } catch(e) { res.status(500).json({ success:false, error:e.message }); }
 });
@@ -733,6 +743,32 @@ app.post('/api/paper/balance/set', ptAuth, async (req, res) => {
 /* GET /api/paper/balance/my-requests (stub — keeps old routes alive) */
 app.get('/api/paper/balance/my-requests', ptAuth, async (req, res) => {
   res.json({ success:true, requests:[] });
+});
+
+/* POST /api/paper/balance/request — user submits a balance reset/custom request */
+app.post('/api/paper/balance/request', ptAuth, async (req, res) => {
+  try {
+    const amount = parseFloat(req.body.amount);
+    if (isNaN(amount) || amount < 100 || amount > 1_000_000)
+      return res.status(400).json({ success:false, error:'Amount must be 100 – 1,000,000 USDT.' });
+    const reason = (req.body.reason || '').trim().slice(0, 300);
+    const [user, pb] = await Promise.all([
+      User.findOne({ uid: req.uid }).lean(),
+      PB.findOne({ uid: req.uid }),
+    ]);
+    const BR_m = mongoose.models.BalanceRequest || require('./models/BalanceRequest');
+    await BR_m.create({
+      userUid:         req.uid,
+      userEmail:       user?.email       || '',
+      displayName:     user?.displayName || '',
+      requestType:     'CUSTOM',
+      requestedAmount: amount,
+      currentBalance:  pb?.balance ?? 1000,
+      reason,
+      status: 'pending',
+    });
+    res.json({ success:true });
+  } catch(e) { res.status(500).json({ success:false, error:e.message }); }
 });
 
 // ── Trade Monitor ─────────────────────────────────────────────
