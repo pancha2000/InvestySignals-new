@@ -389,6 +389,9 @@
         .cta-section h2 { font-size: clamp(2rem,4vw,3.2rem); margin-bottom: 16px; position: relative; }
         .cta-section p { color: var(--text-muted); font-size: 1.05rem; margin-bottom: 36px; position: relative; }
     </style>
+    <!-- Google AdSense Auto Ads -->
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5034247623532581"
+     crossorigin="anonymous"></script>
 </head>
 <body>
 
@@ -771,6 +774,23 @@
     }, { threshold: 0.3 });
     const statsBanner = document.querySelector('.stats-banner');
     if(statsBanner) statsObs.observe(statsBanner);
+</script>
+<!-- Cookie Consent Banner -->
+<div id="cookieBanner" style="position:fixed; bottom:20px; left:20px; right:20px; background:var(--bg2); border:1px solid var(--border); padding:16px; border-radius:12px; z-index:9999; display:none; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; box-shadow:var(--shadow);">
+    <span style="font-size:0.85rem; color:var(--text-muted);">We use cookies to personalize ads and analyze our traffic in accordance with our <a href="privacy.html" style="color:var(--gold); text-decoration:underline;">Privacy Policy</a>.</span>
+    <button onclick="acceptCookies()" class="btn btn-gold btn-sm">Accept Cookies</button>
+</div>
+
+<script>
+    window.addEventListener('DOMContentLoaded', () => {
+        if (!localStorage.getItem('cookiesAccepted')) {
+            document.getElementById('cookieBanner').style.display = 'flex';
+        }
+    });
+    function acceptCookies() {
+        localStorage.setItem('cookiesAccepted', 'true');
+        document.getElementById('cookieBanner').style.display = 'none';
+    }
 </script>
 </body>
 </html>
