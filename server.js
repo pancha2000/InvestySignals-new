@@ -885,6 +885,126 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     return out;
   }
 
+
+  // ══════════════════════════════════════════════════════════════
+  // ADVANCED INDICATORS — ADX, Multiple OBs, Fibonacci, Open Interest
+  // ══════════════════════════════════════════════════════════════
+
+  // ── ADX (Average Directional Index) — Full Wilder implementation ──
+  // Returns: { adx, plusDI, minusDI, trend, strength }
+  // ADX > 25 = trending | ADX < 20 = ranging | ADX > 50 = strong trend
+  // +DI > -DI = bullish momentum | -DI > +DI = bearish momentum
+  function _da_adx(candles, period = 14) {
+    if (candles.length < period * 2 + 1) return { adx: 0, plusDI: 0, minusDI: 0, trend: 'RANGING', strength: 'WEAK' };
+
+    const trArr = [], plusDM = [], minusDM = [];
+    for (let i = 1; i < candles.length; i++) {
+      const curr = candles[i], prev = candles[i - 1];
+      const highDiff = curr.high - prev.high;
+      const lowDiff  = prev.low  - curr.low;
+      const tr = Math.max(curr.high - curr.low, Math.abs(curr.high - prev.close), Math.abs(curr.low - prev.close));
+      trArr.push(tr);
+      plusDM.push(highDiff > 0 && highDiff > lowDiff ? highDiff : 0);
+      minusDM.push(lowDiff > 0 && lowDiff > highDiff ? lowDiff : 0);
+    }
+
+    // Wilder's smoothing (same as RSI)
+    function wilderSmooth(arr, p) {
+      let sum = arr.slice(0, p).reduce((a, b) => a + b, 0);
+      const out = [sum];
+      for (let i = p; i < arr.length; i++) {
+        sum = sum - sum / p + arr[i];
+        out.push(sum);
+      }
+      return out;
+    }
+
+    const smoothTR  = wilderSmooth(trArr, period);
+    const smoothPDM = wilderSmooth(plusDM, period);
+    const smoothMDM = wilderSmooth(minusDM, period);
+
+    const dxArr = [];
+    for (let i = 0; i < smoothTR.length; i++) {
+      if (smoothTR[i] === 0) { dxArr.push(0); continue; }
+      const pdi = 100 * smoothPDM[i] / smoothTR[i];
+      const mdi = 100 * smoothMDM[i] / smoothTR[i];
+      const dx  = Math.abs(pdi - mdi) / (pdi + mdi || 1) * 100;
+      dxArr.push(dx);
+    }
+
+    const adxArr = wilderSmooth(dxArr, period);
+    const adxVal  = parseFloat(adxArr[adxArr.length - 1].toFixed(2));
+    const lastTR  = smoothTR[smoothTR.length - 1];
+    const plusDIv = lastTR ? parseFloat((100 * smoothPDM[smoothPDM.length - 1] / lastTR).toFixed(2)) : 0;
+    const minDIv  = lastTR ? parseFloat((100 * smoothMDM[smoothMDM.length - 1] / lastTR).toFixed(2)) : 0;
+
+    const trend    = adxVal > 25 ? (plusDIv > minDIv ? 'TRENDING_BULL' : 'TRENDING_BEAR') : 'RANGING';
+    const strength = adxVal > 50 ? 'VERY_STRONG' : adxVal > 35 ? 'STRONG' : adxVal > 25 ? 'MODERATE' : adxVal > 15 ? 'WEAK' : 'NO_TREND';
+
+    return { adx: adxVal, plusDI: plusDIv, minusDI: minDIv, trend, strength };
+  }
+
+  // ── Multiple Order Blocks — up to 5 valid unmitigated OBs ──
+  // BULL_OB: last bearish candle before a strong bullish impulse, price hasn't closed below OB low
+  // BEAR_OB: last bullish candle before a strong bearish impulse, price hasn't closed above OB high
+  function _da_orderBlocks(candles, maxCount = 5) {
+    const lastClose = candles[candles.length - 1].close;
+    const obs = [];
+    // Minimum impulse: next candle body > 0.5× average body
+    const avgBody = candles.slice(-30).reduce((s, c) => s + Math.abs(c.close - c.open), 0) / 30;
+    const minImpulse = avgBody * 0.5;
+
+    for (let i = candles.length - 4; i >= 1; i--) {
+      if (obs.length >= maxCount) break;
+      const ob   = candles[i];
+      const next = candles[i + 1];
+      const impulseBody = Math.abs(next.close - next.open);
+      if (impulseBody < minImpulse) continue;
+
+      // BULL_OB: ob is bearish, next is strong bullish, price still above OB low
+      if (ob.close < ob.open && next.close > next.open && next.close > ob.high) {
+        if (lastClose > ob.low) { // not mitigated (price hasn't closed below OB low)
+          const mitigated = candles.slice(i + 2).some(c => c.close < ob.low);
+          if (!mitigated) obs.push({ type: 'BULL_OB', low: parseFloat(ob.low.toFixed(4)), high: parseFloat(ob.high.toFixed(4)), bodyLow: parseFloat(Math.min(ob.open, ob.close).toFixed(4)), bodyHigh: parseFloat(Math.max(ob.open, ob.close).toFixed(4)), idx: i });
+        }
+      }
+      // BEAR_OB: ob is bullish, next is strong bearish, price still below OB high
+      if (ob.close > ob.open && next.close < next.open && next.close < ob.low) {
+        if (lastClose < ob.high) { // not mitigated
+          const mitigated = candles.slice(i + 2).some(c => c.close > ob.high);
+          if (!mitigated) obs.push({ type: 'BEAR_OB', low: parseFloat(ob.low.toFixed(4)), high: parseFloat(ob.high.toFixed(4)), bodyLow: parseFloat(Math.min(ob.open, ob.close).toFixed(4)), bodyHigh: parseFloat(Math.max(ob.open, ob.close).toFixed(4)), idx: i });
+        }
+      }
+    }
+    return obs; // sorted nearest-first (most recent first)
+  }
+
+  // ── Fibonacci Retracement — from most recent swing high/low ──
+  // Returns key fib levels for entry zone confluence
+  function _da_fibonacci(candles, lookback = 50) {
+    const recent = candles.slice(-lookback);
+    const swingHigh = Math.max(...recent.map(c => c.high));
+    const swingLow  = Math.min(...recent.map(c => c.low));
+    const range = swingHigh - swingLow;
+    if (range === 0) return null;
+    const lastClose = candles[candles.length - 1].close;
+    // Detect direction: is price above or below the midpoint?
+    const mid = swingLow + range * 0.5;
+    const direction = lastClose > mid ? 'BEARISH_RETRACE' : 'BULLISH_RETRACE';
+    // Calculate levels
+    const fmt = v => parseFloat(v.toFixed(4));
+    return {
+      direction,
+      swingHigh: fmt(swingHigh),
+      swingLow:  fmt(swingLow),
+      f236:  fmt(direction === 'BEARISH_RETRACE' ? swingHigh - range * 0.236 : swingLow + range * 0.236),
+      f382:  fmt(direction === 'BEARISH_RETRACE' ? swingHigh - range * 0.382 : swingLow + range * 0.382),
+      f500:  fmt(direction === 'BEARISH_RETRACE' ? swingHigh - range * 0.500 : swingLow + range * 0.500),
+      f618:  fmt(direction === 'BEARISH_RETRACE' ? swingHigh - range * 0.618 : swingLow + range * 0.618),
+      f786:  fmt(direction === 'BEARISH_RETRACE' ? swingHigh - range * 0.786 : swingLow + range * 0.786),
+    };
+  }
+
   try {
     const coin = ((req.body.coin || 'BTC').toUpperCase().replace(/USDT$/,'').replace(/[^A-Z0-9]/g,'')).trim();
     if (!coin) return res.status(400).json({ success:false, error:'coin required' });
@@ -923,6 +1043,50 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     const m15Candle=m15c[m15c.length-1];
     const m15CP={pattern:_da_candlePattern(m15Candle)};
     const prevDayHigh=d1c[d1c.length-2]?.high,prevDayLow=d1c[d1c.length-2]?.low;
+
+    // ── ADVANCED INDICATORS ──────────────────────────────────────
+    // ADX — trend strength and direction
+    const h4ADX = _da_adx(h4c, 14);
+    const d1ADX = _da_adx(d1c, 14);
+    const h1ADX = _da_adx(h1c, 14);
+
+    // Multiple Order Blocks (up to 5 valid unmitigated OBs per TF)
+    const h4OBs = _da_orderBlocks(h4c, 5);
+    const d1OBs = _da_orderBlocks(d1c, 5);
+    const h1OBs = _da_orderBlocks(h1c, 3);
+
+    // Fibonacci Retracement (last 50 candles)
+    const h4Fib = _da_fibonacci(h4c, 50);
+    const d1Fib = _da_fibonacci(d1c, 50);
+
+    // Open Interest — Binance Futures API (live OI + 4h history for trend)
+    let oiData = null;
+    try {
+      const [oiNow, oiHist] = await Promise.all([
+        fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${symbol}`).then(r => r.json()),
+        fetch(`https://fapi.binance.com/futures/data/openInterestHist?symbol=${symbol}&period=1h&limit=6`).then(r => r.json()),
+      ]);
+      if (oiNow?.openInterest) {
+        const oiCurrent = parseFloat(oiNow.openInterest);
+        // OI trend: compare oldest vs newest in history
+        const oiTrend = Array.isArray(oiHist) && oiHist.length >= 2
+          ? parseFloat(oiHist[oiHist.length-1].sumOpenInterest) > parseFloat(oiHist[0].sumOpenInterest)
+            ? 'RISING' : 'FALLING'
+          : 'UNKNOWN';
+        // OI + Price interpretation
+        const lastClose = h1c[h1c.length-1].close;
+        const prevClose = h1c[h1c.length-7]?.close || lastClose;
+        const priceDir  = lastClose > prevClose ? 'UP' : 'DOWN';
+        // Classic OI interpretation
+        const oiSignal =
+          oiTrend === 'RISING'  && priceDir === 'UP'   ? 'BULLISH_CONTINUATION'   : // new longs entering
+          oiTrend === 'RISING'  && priceDir === 'DOWN'  ? 'BEARISH_CONTINUATION'   : // new shorts entering
+          oiTrend === 'FALLING' && priceDir === 'UP'    ? 'SHORT_SQUEEZE'          : // shorts covering → bullish
+          oiTrend === 'FALLING' && priceDir === 'DOWN'  ? 'LONG_LIQUIDATION'       : // longs exiting → bearish
+          'NEUTRAL';
+        oiData = { current: oiCurrent, trend: oiTrend, signal: oiSignal, priceDir };
+      }
+    } catch(_) {}
 
     const h4rsiArr  = _da_rsiArray(h4closes);
     const h1rsiArr  = _da_rsiArray(h1closes);
@@ -965,6 +1129,11 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
       atr4h, atr1h,
       m15Candle:m15CP,
       prevDayHigh, prevDayLow,
+      // Advanced indicators
+      h4ADX, d1ADX, h1ADX,
+      h4OBs, d1OBs, h1OBs,
+      h4Fib, d1Fib,
+      oiData,
       // Entry/SL/TP placeholders (filled by AI)
       entryHigh: null, entryLow: null, sl: null, tp1: null, tp2: null, tp3: null,
     };
@@ -1086,15 +1255,25 @@ MARKET DATA:
 - Candle 15m: ${m15CP.pattern}
 - ATR 4H: ${atr4h} | ATR 1H: ${atr1h}
 - Prev Day H/L: $${prevDayHigh?.toFixed(4)} / $${prevDayLow?.toFixed(4)}
+- ADX D1: ${d1ADX.adx} (${d1ADX.strength}) +DI=${d1ADX.plusDI} -DI=${d1ADX.minusDI} → ${d1ADX.trend}
+- ADX 4H: ${h4ADX.adx} (${h4ADX.strength}) +DI=${h4ADX.plusDI} -DI=${h4ADX.minusDI} → ${h4ADX.trend}
+- ADX 1H: ${h1ADX.adx} (${h1ADX.strength}) +DI=${h1ADX.plusDI} -DI=${h1ADX.minusDI} → ${h1ADX.trend}
+- ORDER BLOCKS 4H (${h4OBs.length} unmitigated): ${h4OBs.map(o=>o.type+' $'+o.bodyLow+'-$'+o.bodyHigh).join(' | ')||'none'}
+- ORDER BLOCKS D1 (${d1OBs.length} unmitigated): ${d1OBs.map(o=>o.type+' $'+o.bodyLow+'-$'+o.bodyHigh).join(' | ')||'none'}
+- ORDER BLOCKS 1H (${h1OBs.length} unmitigated): ${h1OBs.map(o=>o.type+' $'+o.bodyLow+'-$'+o.bodyHigh).join(' | ')||'none'}
+- FIBONACCI 4H: ${h4Fib?'SwH=$'+h4Fib.swingHigh+' SwL=$'+h4Fib.swingLow+' | 38.2=$'+h4Fib.f382+' 50=$'+h4Fib.f500+' 61.8=$'+h4Fib.f618:'N/A'}
+- FIBONACCI D1: ${d1Fib?'SwH=$'+d1Fib.swingHigh+' SwL=$'+d1Fib.swingLow+' | 38.2=$'+d1Fib.f382+' 50=$'+d1Fib.f500+' 61.8=$'+d1Fib.f618:'N/A'}
+- OPEN INTEREST: ${oiData?'OI='+oiData.current.toFixed(0)+' Trend='+oiData.trend+' Signal='+oiData.signal:'N/A'}
 
 ═══ MANDATORY ENTRY QUALITY RULES (follow these exactly — this determines signal quality) ═══
 
-RULE 1 — ENTRY ZONE (must be at a CONFLUENCE of ≥2 factors):
-  Priority order: 4H OB > 4H FVG > 1H FVG > EMA 4H 20/50 > 4H S/R level > Fib 61.8%
-  - LONG entry zone: identify the nearest BULLISH OB/FVG/S/R below current price
-  - SHORT entry zone: identify the nearest BEARISH OB/FVG/S/R above current price
-  - entryHigh = top of entry zone, entryLow = bottom of entry zone
-  - If no clear zone exists, use price ±(0.5×ATR 4H): entryHigh=$${(price + atr4h*0.5).toFixed(4)} entryLow=$${(price - atr4h*0.5).toFixed(4)}
+RULE 1 — ENTRY ZONE (must be at CONFLUENCE of ≥2 factors):
+  Priority order: D1 OB > 4H OB > 4H FVG > Fib 61.8% > 1H OB > 1H FVG > EMA 4H 20/50 > 4H S/R
+  - LONG: nearest BULLISH OB/FVG/Fib below price — check h4OBs, d1OBs for BULL_OB types
+  - SHORT: nearest BEARISH OB/FVG/Fib above price — check h4OBs, d1OBs for BEAR_OB types
+  - Fibonacci 61.8% is HIGH-PRIORITY confluence — if price near h4Fib.f618 or d1Fib.f618, use it as entry zone edge
+  - entryHigh = top of confluence zone, entryLow = bottom
+  - If no zone: use price ±(0.5×ATR 1H): entryHigh=$${(price+atr1h*0.5).toFixed(4)} entryLow=$${(price-atr1h*0.5).toFixed(4)}
 
 RULE 2 — STOP LOSS (ATR-based, must clear key S/R):
   - ATR 4H = ${atr4h} | ATR 1H = ${atr1h}
@@ -1115,7 +1294,14 @@ RULE 4 — RSI FILTER (hard rules):
   - If RSI violates filter: set overallBias=NEUTRAL, but level5.direction MUST still be LONG or SHORT (best guess direction for monitoring — user will re-analyze before entering)
 
 RULE 5 — CONFLUENCE MINIMUM:
-  - confluenceScore must reflect: D1 structure + 4H structure + RSI + MACD + volume + OB/FVG alignment
+  - confluenceScore (0-10) MUST reflect ALL available data:
+    +1 D1 structure aligned  |  +1 4H structure aligned  |  +1 H1 structure aligned
+    +1 RSI not extreme + confirms direction  |  +1 MACD cross/histogram confirms
+    +1 OB confluence (price near valid OB)  |  +1 FVG confluence
+    +1 Fibonacci 61.8% confluence  |  +1 ADX > 25 (trending, not ranging)
+    +1 OI signal confirms direction (BULLISH_CONTINUATION or SHORT_SQUEEZE for LONG, etc.)
+  - ADX RULE: if h4ADX.adx < 20 (RANGING), reduce score by 1 — range-bound markets have low follow-through
+  - OI RULE: if oiData.signal is LONG_LIQUIDATION and bias=LONG, reduce score by 1
   - If score < ${CONFLUENCE_THRESHOLD}: set overallBias=NEUTRAL, still provide valid numeric levels
 
 Respond with ONLY this JSON (no markdown, no explanation):
@@ -1129,7 +1315,8 @@ Respond with ONLY this JSON (no markdown, no explanation):
     "macroConclusion": "BULLISH|BEARISH|NEUTRAL",
     "btcTrend": "text",
     "fundingSignal": "text",
-    "oiSignal": "text"
+    "oiSignal": "text — interpret: trend=${oiData?.trend||'N/A'} signal=${oiData?.signal||'N/A'}",
+    "adxContext": "text — D1 ADX=${d1ADX.adx}(${d1ADX.strength}), 4H ADX=${h4ADX.adx}(${h4ADX.strength}): trending or ranging?"
   },
   "level2": {
     "structureConclusion": "BULLISH|BEARISH|NEUTRAL",
@@ -1139,8 +1326,9 @@ Respond with ONLY this JSON (no markdown, no explanation):
     "h4EMA": "text",
     "h4Divergence": "text",
     "keyLevels": "text",
-    "orderBlock": "text",
-    "fvgZones": "text"
+    "orderBlock": "text — reference nearest relevant OB from h4OBs/d1OBs",
+    "fvgZones": "text",
+    "fibLevels": "text — key Fib levels: 38.2=$${h4Fib?.f382||'N/A'}, 50=$${h4Fib?.f500||'N/A'}, 61.8=$${h4Fib?.f618||'N/A'}"
   },
   "level3": {
     "momentumConclusion": "BULLISH|BEARISH|NEUTRAL",
@@ -1292,11 +1480,18 @@ Respond with ONLY this JSON (no markdown, no explanation):
       coin,
       price,
       confluenceScore: finalScore,
-      thesisStatus,                    // CONFIRMED/RETRACEMENT/WEAKENING/INVALIDATED/NEW
-      fibLevels,                        // pullback fib levels (if RETRACEMENT)
-      earlyWarnings,                    // M15+H1 early warning signals
+      thesisStatus,
+      fibLevels,
+      earlyWarnings,
       analysis,
       rawData,
+      // Advanced indicators for frontend display
+      adv: {
+        adx:          { h4: h4ADX, d1: d1ADX, h1: h1ADX },
+        orderBlocks:  { h4: h4OBs, d1: d1OBs, h1: h1OBs },
+        fibonacci:    { h4: h4Fib, d1: d1Fib },
+        openInterest: oiData,
+      },
     });
 
   } catch(err) {
@@ -1923,253 +2118,4 @@ app.post('/api/admin/ai-settings/test', verifyAdmin, async (req, res) => {
     const data = await testRes.json();
     const reply = data.choices?.[0]?.message?.content || '';
     res.json({ success: true, message: `✅ API key works! Model "${modelToTest}" responded: "${reply.slice(0,50)}"` });
-  } catch(e) { res.json({ success: false, error: 'Connection failed: ' + e.message }); }
-});
-
-// ═══════════════════════════════════════════════════════════════
-//  Paper Balance Request (user-facing)
-// ═══════════════════════════════════════════════════════════════
-
-/* POST /api/paper/balance/request — user requests balance reset/topup */
-app.post('/api/paper/balance/request', ptAuth, async (req, res) => {
-  try {
-    const { requestType, requestedAmount, reason } = req.body;
-    if (!requestedAmount || requestedAmount < 100)
-      return res.status(400).json({ success: false, error: 'Amount must be at least 100.' });
-
-    // Get user info for the request record
-    let dbUser = null;
-    try { dbUser = await User.findOne({ uid: req.uid }); } catch(_) {}
-
-    let pb = await PB.findOne({ uid: req.uid });
-    if (!pb) pb = await PB.create({ uid: req.uid, balance: 1000 });
-
-    const br = await BR.create({
-      userUid:         req.uid,
-      userEmail:       dbUser?.email  || '',
-      displayName:     dbUser?.displayName || '',
-      requestType:     requestType    || 'RESET',
-      requestedAmount: parseFloat(requestedAmount),
-      currentBalance:  pb.balance,
-      reason:          reason || '',
-      status:          'pending',
-    });
-
-    res.json({ success: true, data: br, message: 'Request submitted. Admin will review soon.' });
-  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
-});
-
-// ── Catch-all (MUST be last) ───────────────────────────────────
-// BUG FIX: catch-all — /api/* routes that reach here return 404 JSON (not index.html)
-app.get('*',(req,res)=>{
-  if (req.path.startsWith('/api/')) return res.status(404).json({ success:false, error:'API route not found' });
-  const safe = path.basename(req.path.replace(/^\//,'') || 'index.html');
-  if (BLOCKED_STATIC.includes(safe)) return res.status(403).json({ success:false, error:'Forbidden' });
-  res.sendFile(path.join(__dirname, safe), err => {
-    if (err) res.sendFile(path.join(__dirname, 'index.html'));
-  });
-});
-
-// ============================================================
-//  WebSocket + Server
-// ============================================================
-const server=http.createServer(app);
-const wss=new WebSocket.Server({server});
-
-function broadcastToAll(data){
-  const msg=JSON.stringify(data);
-  wss.clients.forEach(c=>{if(c.readyState===WebSocket.OPEN){try{c.send(msg);}catch(_){}}});
-}
-
-const BINANCE_STREAM='wss://fstream.binance.com/stream?streams='+
-  ['btcusdt@ticker','ethusdt@ticker','bnbusdt@ticker','solusdt@ticker','xrpusdt@ticker','adausdt@ticker','dogeusdt@ticker','dotusdt@ticker'].join('/');
-let binanceWs=null,binanceReconnectTimer=null;
-
-function connectBinance(){
-  if(binanceWs){try{binanceWs.terminate();}catch(_){}}
-  console.log('🔌 Connecting Binance WS...');
-  binanceWs=new WebSocket(BINANCE_STREAM);
-  binanceWs.on('open',()=>{console.log('✅ Binance WS connected');if(binanceReconnectTimer){clearTimeout(binanceReconnectTimer);binanceReconnectTimer=null;}});
-  binanceWs.on('message',raw=>{try{const d=JSON.parse(raw).data;if(!d)return;broadcastToAll({type:'market_update',ticker:[{symbol:d.s,price:parseFloat(d.c),change:parseFloat(d.P),high:parseFloat(d.h),low:parseFloat(d.l),volume:parseFloat(d.v)}]});}catch(_){}});
-  binanceWs.on('close',()=>{console.log('⚠️ Binance WS closed — reconnect 5s');binanceReconnectTimer=setTimeout(connectBinance,5000);});
-  binanceWs.on('error',err=>{console.error('Binance WS error:',err.message);try{binanceWs.terminate();}catch(_){}});
-}
-
-wss.on('connection',async(ws,req)=>{
-  const up=new URLSearchParams(req.url.replace(/^.*\?/,''));
-  const wsToken=up.get('token');
-  let wsUser=null;
-  if(wsToken){try{wsUser=await admin.auth().verifyIdToken(wsToken);}catch(_){}}
-  if(wsUser){
-    console.log('Auth WS. Total:',wss.clients.size);
-    try{
-      const dbUser=await User.findOne({uid:wsUser.uid});
-      const uPlan=dbUser?dbUser.plan:'free',uRole=dbUser?dbUser.role:'user';
-      const pf=uRole==='admin'?{}:{plan:{$in:Object.keys(PLAN_LEVEL).filter(p=>planLevel(p)<=planLevel(uPlan))}};
-      const signals=await Signal.find({active:true,...pf}).sort({createdAt:-1}).limit(20);
-      ws.send(JSON.stringify({type:'signals_update',signals}));
-      const now=new Date();
-      const ann=await Announcement.findOne({active:true,showFrom:{$lte:now},$or:[{showUntil:null},{showUntil:{$gte:now}}]}).sort({createdAt:-1});
-      if(ann)ws.send(JSON.stringify({type:'announcement',data:ann}));
-    }catch(_){}
-  }else{
-    console.log('Unauth WS. Total:',wss.clients.size);
-    try{const now=new Date();const ann=await Announcement.findOne({active:true,showFrom:{$lte:now},$or:[{showUntil:null},{showUntil:{$gte:now}}]}).sort({createdAt:-1});if(ann)ws.send(JSON.stringify({type:'announcement',data:ann}));}catch(_){}
-  }
-  ws.on('close',()=>console.log('WS disc. Total:',wss.clients.size));
-  ws.on('error',()=>{});
-});
-
-
-// ── Auto TP/SL Check Engine ───────────────────────────────────
-// Checks all OPEN paper trades and auto-closes if TP or SL is hit
-// Also fills PENDING (LIMIT) orders when price reaches trigger
-async function runTPSLCheck() {
-  try {
-    // FIX: Added TP1_HIT — was missing, so trades after TP1 never checked for TP2/SL
-    const openTrades = await PT.find({
-      status: { $in: ['OPEN', 'TP1_HIT', 'PENDING', 'PENDING_LONG', 'PENDING_SHORT'] }
-    });
-    if (!openTrades.length) return;
-
-    for (const trade of openTrades) {
-      try {
-        // FIX: Normalize symbol to USDT — "XLM" → "XLMUSDT"
-        const symbol = normalizePair(trade.pair || trade.symbol);
-        if (!symbol) continue;
-
-        const price = await getLivePrice(symbol);
-        if (!price) continue;
-
-        const isLong  = trade.direction === 'LONG';
-        const entry   = trade.entryPrice || trade.entry;
-        const trigger = trade.triggerPrice || entry;
-        const lev     = trade.leverage || 1;
-        const size    = trade.remainingSize || trade.size || trade.amount || 0;
-        // notional = size * leverage; coin_qty = notional / entry
-        // pnl = (closePrice - entry) / entry * notional  (for LONG)
-        const notional = trade.notional || (size * lev);
-
-        // ── Fill PENDING LIMIT orders ────────────────────────────
-        const isPending = ['PENDING','PENDING_LONG','PENDING_SHORT'].includes(trade.status);
-        if (isPending) {
-          const shouldFill = isLong ? price <= trigger : price >= trigger;
-          if (shouldFill) {
-            await PT.findByIdAndUpdate(trade._id, {
-              status:   'OPEN',
-              entry:    trigger,
-              entryPrice: trigger,
-              fillTime: new Date().toISOString(),
-              filledAt: new Date(),
-            });
-            broadcastToAll({ type: 'order_filled', tradeId: trade._id, symbol, price: trigger });
-            console.log(`✅ Limit order filled: ${symbol} ${trade.direction} @ ${trigger}`);
-          }
-          continue; // don't check TP/SL on pending orders
-        }
-
-        // ── TP / SL checks ───────────────────────────────────────
-        const sl  = trade.currentSl || trade.sl;
-        const tp1 = trade.tp1;
-        const tp2 = trade.tp2;
-        const tp3 = trade.tp3;
-
-        let newStatus  = null;
-        let closePrice = price;
-
-        if (sl) {
-          if (isLong  && price <= sl) newStatus = 'SL_HIT';
-          if (!isLong && price >= sl) newStatus = 'SL_HIT';
-        }
-        if (!newStatus && tp3) {
-          if (isLong  && price >= tp3) newStatus = 'TP3_HIT';
-          if (!isLong && price <= tp3) newStatus = 'TP3_HIT';
-        }
-        if (!newStatus && tp2) {
-          if (isLong  && price >= tp2) newStatus = 'TP2_HIT';
-          if (!isLong && price <= tp2) newStatus = 'TP2_HIT';
-        }
-        // TP1 partial close
-        if (!newStatus && tp1 && !trade.tp1HitPrice) {
-          const tp1Hit = isLong ? price >= tp1 : price <= tp1;
-          if (tp1Hit) {
-            const tp1Pnl = entry
-              ? (isLong ? (tp1 - entry) : (entry - tp1)) / entry * (notional * 0.5)
-              : 0;
-            await PT.findByIdAndUpdate(trade._id, {
-              tp1HitPrice:   tp1,
-              tp1HitTime:    new Date().toISOString(),
-              tp1Pnl:        parseFloat(tp1Pnl.toFixed(4)),
-              remainingSize: size * 0.5,
-            });
-            // Partial refund: 50% margin + tp1 pnl returned
-            const partialRefund = size * 0.5 + tp1Pnl;
-            if (partialRefund) {
-              await PB.findOneAndUpdate({ uid: trade.uid }, { $inc: { balance: partialRefund } }, { upsert: true });
-            }
-            broadcastToAll({ type: 'tp1_hit', tradeId: trade._id, symbol, price: tp1, tp1Pnl });
-            continue;
-          }
-        }
-
-        if (newStatus) {
-          // FIX: Normalize status names to match frontend expectations
-          // Server was setting 'SL_HIT'/'TP2_HIT'/'TP3_HIT' but frontend checks 'SL'/'TP2'
-          const statusMap = { SL_HIT:'SL', TP2_HIT:'TP2', TP3_HIT:'TP2' };
-          const finalStatus = statusMap[newStatus] || newStatus;
-
-          // Leverage-correct PnL: pnl = Δprice/entry * notional
-          let pnl = 0;
-          if (entry && notional) {
-            pnl = isLong
-              ? (closePrice - entry) / entry * notional
-              : (entry - closePrice) / entry * notional;
-            pnl = parseFloat(pnl.toFixed(4));
-          }
-          const roe = notional ? parseFloat((pnl / (notional / lev) * 100).toFixed(2)) : 0;
-
-          await PT.findByIdAndUpdate(trade._id, {
-            status: finalStatus,
-            closePrice,
-            closedAt:   new Date(),
-            closeTime:  new Date().toISOString(),
-            pnl,
-            roe,
-          });
-
-          // FIX: balance refund — if TP1 already hit, 50% margin was already refunded
-          // Only refund the REMAINING size to avoid double-refund
-          const tp1AlreadyHit = trade.status === 'TP1_HIT';
-          const marginToRefund = tp1AlreadyHit
-            ? (trade.remainingSize || size * 0.5)  // only remaining 50%
-            : size;                                  // full margin
-          await PB.findOneAndUpdate(
-            { uid: trade.uid },
-            { $inc: { balance: marginToRefund + pnl } },
-            { upsert: true }
-          );
-
-          broadcastToAll({ type: 'trade_closed', tradeId: trade._id, symbol, status: finalStatus, closePrice, pnl });
-          console.log(`⚡ Auto-closed ${symbol} ${trade.direction} → ${finalStatus} @ ${closePrice} PnL:${pnl}`);
-        }
-      } catch(tradeErr) {
-        console.error('runTPSLCheck trade error:', tradeErr.message);
-      }
-    }
-  } catch(err) {
-    console.error('runTPSLCheck error:', err.message);
-  }
-}
-
-const PORT=process.env.PORT||2000;
-server.listen(PORT,()=>{
-  console.log(`\n🚀 InvestySignals v5 running on port ${PORT}`);
-  connectBinance();
-  // Start auto TP/SL check engine
-  setInterval(runTPSLCheck, 30 * 1000);
-  console.log('⚡ Auto TP/SL engine started (30s interval)');
-});
-process.on('SIGTERM',()=>server.close(()=>process.exit(0)));
-process.on('SIGINT', ()=>server.close(()=>process.exit(0)));
-process.on('unhandledRejection',(reason)=>{ console.error('⚠️ Unhandled Rejection:', reason); });
-process.on('uncaughtException',(err)=>{ console.error('⚠️ Uncaught Exception:', err.message); });
+  } catch(e) { res.json({ success: false, error: 'Conn

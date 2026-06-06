@@ -271,6 +271,14 @@
         .pt-order-btn.active.short-active { color: var(--red); background: rgba(255,59,92,0.1); }
         .pt-order-btn.pt-btn-locked, .pt-order-btn:disabled {
             opacity: 0.35; cursor: not-allowed; pointer-events: none;
+
+/* ── Advanced Indicators Panel ── */
+.adv-panel{background:var(--bg-card);border:1px solid rgba(245,200,66,.15);border-radius:var(--radius);padding:14px 16px;margin:10px 0;font-size:.8rem;}
+.adv-header{font-weight:700;font-size:.9rem;color:var(--gold);margin-bottom:10px;letter-spacing:.02em;}
+.adv-section-title{font-size:.68rem;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;padding:6px 0 3px;border-top:1px solid rgba(255,255,255,.06);margin-top:4px;}
+.adv-row{display:flex;align-items:center;gap:8px;padding:3px 0;flex-wrap:wrap;}
+.adv-label{min-width:100px;color:var(--text-dim);font-size:.72rem;}
+.adv-val{font-size:.75rem;font-weight:600;}
             text-decoration: line-through;
         }
         .pt-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
@@ -1099,6 +1107,7 @@ function renderFullAnalysis(data, container) {
         ['BTC Trend (1D)', a.level1?.btcTrend],
         ['Funding Rate',   a.level1?.fundingSignal],
         ['Open Interest',  a.level1?.oiSignal],
+        ['ADX Trend',      a.level1?.adxContext],
     ], false) +
 
     levelCard('🏗️','HTF Structure (Daily + 4H)',a.level2?.structureConclusion||'—',biasClass(a.level2?.structureConclusion),[
@@ -1110,6 +1119,7 @@ function renderFullAnalysis(data, container) {
         ['Key S/R Levels',     a.level2?.keyLevels],
         ['Order Block',        a.level2?.orderBlock],
         ['FVG Zones',          a.level2?.fvgZones],
+        ['Fibonacci Levels',   a.level2?.fibLevels],
     ], false) +
 
     levelCard('⚡','Momentum (1H)',a.level3?.momentumConclusion||'—',biasClass(a.level3?.momentumConclusion),[
@@ -1167,6 +1177,8 @@ function renderFullAnalysis(data, container) {
         ${a.level5?.riskNote ? `<div style="margin-top:6px;font-size:0.72rem;color:var(--red);">⚠️ ${a.level5.riskNote}</div>` : ''}
     </div>` +
 
+    buildAdvancedPanel(data) +
+
     `<div id="ptPanelWrap"></div>` +
 
     `<div style="font-size:0.65rem;color:var(--text-dim);text-align:center;padding-top:4px;">
@@ -1182,6 +1194,59 @@ function renderFullAnalysis(data, container) {
 }
 
 
+
+// ══════════════════════════════════════════
+//  ADVANCED INDICATORS PANEL
+// ══════════════════════════════════════════
+function buildAdvancedPanel(data) {
+    const adv = data?.adv;
+    if (!adv) return '';
+    const h4ADX = adv.adx?.h4, d1ADX = adv.adx?.d1;
+    const h4OBs = adv.orderBlocks?.h4 || [], d1OBs = adv.orderBlocks?.d1 || [], h1OBs = adv.orderBlocks?.h1 || [];
+    const h4Fib = adv.fibonacci?.h4, d1Fib = adv.fibonacci?.d1;
+    const oi    = adv.openInterest;
+
+    const adxColor = h4ADX ? (h4ADX.adx > 35 ? 'var(--green)' : h4ADX.adx > 25 ? 'var(--gold)' : 'var(--text-dim)') : 'var(--text-dim)';
+    const oiColor  = oi?.signal === 'BULLISH_CONTINUATION' || oi?.signal === 'SHORT_SQUEEZE' ? 'var(--green)'
+                   : oi?.signal === 'BEARISH_CONTINUATION' || oi?.signal === 'LONG_LIQUIDATION' ? 'var(--red)' : 'var(--text-dim)';
+
+    const adxRow = (label, a) => !a ? '' :
+        `<div class="adv-row"><span class="adv-label">${label}</span>
+         <span class="adv-val" style="color:${a.adx>25?'var(--green)':'var(--text-dim)'}">ADX ${a.adx} · ${a.strength}</span>
+         <span class="adv-val">+DI ${a.plusDI} / -DI ${a.minusDI}</span>
+         <span class="adv-val" style="color:${a.trend.includes('BULL')?'var(--green)':a.trend.includes('BEAR')?'var(--red)':'var(--text-dim)'}">${a.trend}</span></div>`;
+
+    const obRows = (obs, label) => obs.length === 0 ? `<div class="adv-row"><span class="adv-label">${label}</span><span class="adv-val" style="color:var(--text-dim)">No unmitigated OBs</span></div>` :
+        obs.map(ob => `<div class="adv-row"><span class="adv-label">${label}</span>
+            <span class="adv-val" style="color:${ob.type==='BULL_OB'?'var(--green)':'var(--red)'}">${ob.type}</span>
+            <span class="adv-val">$${ob.bodyLow} – $${ob.bodyHigh}</span></div>`).join('');
+
+    const fibRows = (fib, label) => !fib ? '' :
+        `<div class="adv-row"><span class="adv-label">${label}</span>
+         <span class="adv-val">SwH $${fib.swingHigh} · SwL $${fib.swingLow}</span></div>
+         <div class="adv-row"><span class="adv-label">Fib 38.2%</span><span class="adv-val" style="color:var(--gold)">$${fib.f382}</span></div>
+         <div class="adv-row"><span class="adv-label">Fib 50%</span><span class="adv-val" style="color:var(--gold)">$${fib.f500}</span></div>
+         <div class="adv-row"><span class="adv-label">Fib 61.8%</span><span class="adv-val" style="color:var(--green)">$${fib.f618}</span>
+         <span class="adv-val" style="font-size:0.65rem;color:var(--text-dim)">★ Golden Pocket</span></div>`;
+
+    return `<div class="adv-panel">
+        <div class="adv-header">📐 Advanced Indicators</div>
+        <div class="adv-section-title">ADX — Trend Strength</div>
+        ${adxRow('D1 ADX', d1ADX)}
+        ${adxRow('4H ADX', h4ADX)}
+        <div class="adv-section-title">Order Blocks — Unmitigated</div>
+        ${obRows(d1OBs, 'D1 OB')}
+        ${obRows(h4OBs, '4H OB')}
+        ${obRows(h1OBs, '1H OB')}
+        <div class="adv-section-title">Fibonacci Retracement</div>
+        ${fibRows(d1Fib, 'D1 Range')}
+        ${fibRows(h4Fib, '4H Range')}
+        <div class="adv-section-title">Open Interest</div>
+        ${oi ? `<div class="adv-row"><span class="adv-label">OI Signal</span>
+            <span class="adv-val" style="color:${oiColor}">${oi.signal}</span>
+            <span class="adv-val">Trend: ${oi.trend}</span></div>` : '<div class="adv-row"><span class="adv-label">OI</span><span class="adv-val" style="color:var(--text-dim)">N/A</span></div>'}
+    </div>`;
+}
 
 // ══════════════════════════════════════════
 //  PAPER TRADE SYSTEM
@@ -1681,161 +1746,4 @@ async function ptShowBalModal() {
         const d = await r.json();
         const ft = document.getElementById('ptFirstTimeSection');
         const lbl = document.getElementById('ptAdminLabel');
-        if (ft) ft.style.display = d.hasSetInitialBalance ? 'none' : '';
-        if (lbl) lbl.textContent = d.hasSetInitialBalance
-            ? 'Balance reset කරන්න admin request කරන්න:'
-            : 'හෝ admin reset request කරන්න:';
-    } catch(e) {}
-}
-function ptHideBalModal() {
-    const m = document.getElementById('ptBalModal');
-    if (m) m.style.display = 'none';
-    const bm = document.getElementById('ptBalMsg');
-    if (bm) { bm.textContent=''; bm.className=''; }
-}
-
-async function ptSetCustomBalance() {
-    const amount = parseFloat(document.getElementById('ptCustomBal')?.value || 0);
-    if (!amount || amount < 100) {
-        showBalMsg('Enter a valid amount (min 100).', true); return;
-    }
-    if (!confirm(`Set balance to $${amount.toLocaleString()}? This can only be done once.`)) return;
-    const tok = await getToken();
-    try {
-        const r = await fetch('/api/paper/balance/set', {
-            method: 'POST',
-            headers: { 'Content-Type':'application/json', Authorization:'Bearer '+tok },
-            body: JSON.stringify({ amount })
-        });
-        const d = await r.json();
-        if (d.success) {
-            showBalMsg(`✅ Balance set to $${amount.toLocaleString()}!`);
-            await ptLoadBalance();
-            await ptLoadTrades();
-            // Hide first-time section since it's now used
-            const ft = document.getElementById('ptFirstTimeSection');
-            if (ft) ft.style.display = 'none';
-            const lbl = document.getElementById('ptAdminLabel');
-            if (lbl) lbl.textContent = 'Balance reset කරන්න admin request කරන්න:';
-            setTimeout(ptHideBalModal, 1800);
-        } else {
-            showBalMsg(d.error || 'Failed.', true);
-            // If already set, hide the first-time section
-            if (d.error && d.error.includes('already set')) {
-                const ft = document.getElementById('ptFirstTimeSection');
-                if (ft) ft.style.display = 'none';
-            }
-        }
-    } catch(e) { showBalMsg('Network error.', true); }
-}
-
-async function ptRequestReset() {
-    const amount = parseFloat(document.getElementById('ptReqAmount')?.value || 0);
-    const reason = document.getElementById('ptReqReason')?.value?.trim() || '';
-    if (!amount || amount < 100) { showBalMsg('Amount enter කරන්න (min 100).', true); return; }
-    const tok = await getToken();
-    try {
-        const r = await fetch('/api/paper/balance/request', {
-            method: 'POST',
-            headers: { 'Content-Type':'application/json', Authorization:'Bearer '+tok },
-            body: JSON.stringify({ requestType:'RESET', requestedAmount: amount, reason })
-        });
-        const d = await r.json();
-        if (d.success) showBalMsg('✅ Request sent! Admin will review soon.');
-        else showBalMsg(d.error || 'Failed.', true);
-    } catch(e) { showBalMsg('Network error.', true); }
-}
-
-function showBalMsg(msg, isErr=false) {
-    const el = document.getElementById('ptBalMsg');
-    if (!el) return;
-    el.className = 'pt-msg ' + (isErr?'err':'ok');
-    el.textContent = msg;
-}
-
-// Init paper trade when analysis result shown
-async function initPaperTrade() {
-    await ptLoadBalance();
-    await ptLoadTrades();
-
-    const a           = ptCurrentData?.analysis;
-    const overallBias = a?.overallBias || 'NEUTRAL';
-    const level5Dir   = a?.level5?.direction || '';
-    const isNeutral   = !overallBias || overallBias === 'NEUTRAL';
-
-    // FIX: NEUTRAL bias does NOT block a LIMIT entry.
-    // Use level5.direction when overallBias is NEUTRAL.
-    // Only skip if there is truly NO direction at all.
-    const dir = isNeutral ? level5Dir : overallBias;
-    if (!dir || dir === 'NEUTRAL') return;
-
-    // NEUTRAL bias => always LIMIT (low confluence, wait for zone, never market)
-    // CONFIRMED + strong bias => MARKET (price is at the zone right now)
-    // everything else => LIMIT
-    const entryConclusion = a?.level4?.entryConclusion || '';
-    const lockedType = (!isNeutral && entryConclusion === 'CONFIRMED') ? 'MARKET' : 'LIMIT';
-    ptSetOrderType(lockedType);
-
-    // Disable the non-active order type button
-    const btnMkt = document.getElementById('ptBtnMkt');
-    const btnLmt = document.getElementById('ptBtnLmt');
-    if (lockedType === 'MARKET') {
-        if (btnLmt) {
-            btnLmt.disabled = true;
-            btnLmt.classList.add('pt-btn-locked');
-            btnLmt.title = 'LIMIT blocked — entry is confirmed at current price (MARKET)';
-        }
-    } else {
-        if (btnMkt) {
-            btnMkt.disabled = true;
-            btnMkt.classList.add('pt-btn-locked');
-            btnMkt.title = 'MARKET blocked — price not at entry zone yet, use LIMIT';
-        }
-    }
-
-    // Info message
-    const msgEl = document.getElementById('ptMsg');
-    if (msgEl) {
-        const dirLabel = dir === 'LONG' ? 'LONG' : 'SHORT';
-        const label = isNeutral
-            ? '⚠️ Low Confluence — LIMIT ' + dirLabel + ' only. Wait for price to reach zone.'
-            : entryConclusion === 'CONFIRMED'
-            ? '✅ Entry CONFIRMED — enter at market price now'
-            : entryConclusion === 'WAIT'
-            ? '⏳ Entry WAIT — price approaching zone, LIMIT order placed'
-            : entryConclusion === 'AVOID'
-            ? '🚫 Entry AVOID — risky conditions, limit set as safeguard'
-            : '⏳ LIMIT order — wait for price to reach entry zone';
-        const color = isNeutral ? 'var(--gold)'
-                    : entryConclusion === 'CONFIRMED' ? 'var(--green)'
-                    : entryConclusion === 'AVOID'     ? 'var(--red)'
-                    : 'var(--gold)';
-        msgEl.innerHTML = '<span style="color:' + color + ';font-size:0.72rem;">' + label + '</span>';
-    }
-}
-
-// WS events for trade updates
-function handlePTWebSocket(d) {
-    if (d.type === 'paper_trade_update' || d.type === 'paper_trade_filled') {
-        ptLoadBalance();
-        ptLoadTrades();
-    }
-    if (d.type === 'balance_approved') {
-        ptLoadBalance();
-        ptShowMsg('✅ Balance request approved!');
-    }
-    if (d.type === 'balance_rejected') {
-        ptShowMsg('❌ Balance request was rejected.', true);
-    }
-}
-
-window.toggleLC = function(id) {
-    const el  = document.getElementById(id);
-    const arr = document.getElementById('arr_' + id);
-    if (!el) return;
-    el.classList.toggle('open');
-    if (arr) arr.textContent = el.classList.contains('open') ? '▲' : '▼';
-};
-</script>
-</body>
-</html>
+        if (ft) ft.style.display = d.hasSetInitialBal
