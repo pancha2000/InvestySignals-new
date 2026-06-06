@@ -28,8 +28,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-b);line-heigh
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* Ticker */
-.ticker-bar{background:linear-gradient(90deg,var(--surface),#0a1020,var(--surface));border-bottom:1px solid var(--border);overflow:hidden;height:36px;position:sticky;top:0;z-index:300;}
-.ticker-track{display:flex;animation:tickerScroll 32s linear infinite;white-space:nowrap;height:100%;}
+.ticker-bar{display:none}
+
 .ticker-track:hover{animation-play-state:paused;}
 @keyframes tickerScroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
 .ticker-item{display:inline-flex;align-items:center;gap:8px;padding:0 22px;height:100%;border-right:1px solid var(--border);font-family:var(--font-n);font-size:.72rem;flex-shrink:0;}
@@ -39,7 +39,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-b);line-heigh
 
 /* Layout */
 .dash-wrap{display:flex;min-height:100vh;}
-.dash-sidebar{width:var(--sidebar-w);background:var(--surface);border-right:1px solid var(--border);position:fixed;top:36px;left:0;height:calc(100vh - 36px);display:flex;flex-direction:column;z-index:200;transition:transform .3s cubic-bezier(.4,0,.2,1);}
+.dash-sidebar{width:var(--sidebar-w);background:var(--surface);border-right:1px solid var(--border);position:fixed;top:64px;left:0;height:calc(100vh - 64px);display:flex;flex-direction:column;z-index:200;transition:transform .3s cubic-bezier(.4,0,.2,1);}
 .ds-brand{padding:18px 16px 14px;border-bottom:1px solid var(--border);background:linear-gradient(135deg,rgba(245,200,66,.04),transparent);}
 .ds-logo{font-family:var(--font-h);font-size:1.18rem;font-weight:700;letter-spacing:.06em;display:flex;align-items:center;gap:8px;}
 .ds-logo span{color:var(--gold);}
@@ -278,20 +278,6 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-b);line-heigh
   <div class="guard-spinner"></div>
 </div>
 
-<div class="ticker-bar">
-  <div class="ticker-track" id="tickerTrack">
-    <div class="ticker-item"><span class="t-sym">BTC</span><span class="t-price" id="tk-BTC-p">—</span><span class="t-chg" id="tk-BTC-c">—</span></div>
-    <div class="ticker-item"><span class="t-sym">ETH</span><span class="t-price" id="tk-ETH-p">—</span><span class="t-chg" id="tk-ETH-c">—</span></div>
-    <div class="ticker-item"><span class="t-sym">BNB</span><span class="t-price" id="tk-BNB-p">—</span><span class="t-chg" id="tk-BNB-c">—</span></div>
-    <div class="ticker-item"><span class="t-sym">SOL</span><span class="t-price" id="tk-SOL-p">—</span><span class="t-chg" id="tk-SOL-c">—</span></div>
-    <div class="ticker-item"><span class="t-sym">XRP</span><span class="t-price" id="tk-XRP-p">—</span><span class="t-chg" id="tk-XRP-c">—</span></div>
-    <div class="ticker-item"><span class="t-sym">BTC</span><span class="t-price" id="tk-BTC-p2">—</span><span class="t-chg" id="tk-BTC-c2">—</span></div>
-    <div class="ticker-item"><span class="t-sym">ETH</span><span class="t-price" id="tk-ETH-p2">—</span><span class="t-chg" id="tk-ETH-c2">—</span></div>
-    <div class="ticker-item"><span class="t-sym">BNB</span><span class="t-price" id="tk-BNB-p2">—</span><span class="t-chg" id="tk-BNB-c2">—</span></div>
-    <div class="ticker-item"><span class="t-sym">SOL</span><span class="t-price" id="tk-SOL-p2">—</span><span class="t-chg" id="tk-SOL-c2">—</span></div>
-    <div class="ticker-item"><span class="t-sym">XRP</span><span class="t-price" id="tk-XRP-p2">—</span><span class="t-chg" id="tk-XRP-c2">—</span></div>
-  </div>
-</div>
 
 <div class="mob-overlay" id="mobOverlay" onclick="closeMobSidebar()"></div>
 
