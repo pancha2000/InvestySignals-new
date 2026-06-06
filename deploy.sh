@@ -233,9 +233,17 @@ cmd_update() {
   log "npm updated"
 
   info "Restarting..."
-  pm2 restart "$APP_NAME" --update-env || \
-    pm2 start server.js --name "$APP_NAME" --restart-delay=3000
+  if pm2 describe "$APP_NAME" > /dev/null 2>&1; then
+    pm2 reload "$APP_NAME" --update-env 2>/dev/null \
+      || pm2 restart "$APP_NAME" --update-env 2>/dev/null \
+      || { pm2 delete "$APP_NAME" 2>/dev/null || true
+           pm2 start "$APP_DIR/server.js" --name "$APP_NAME" --restart-delay=3000 --max-restarts=10 --time; }
+  else
+    pm2 start "$APP_DIR/server.js" --name "$APP_NAME" --restart-delay=3000 --max-restarts=10 --time
+  fi
   pm2 save
+  sleep 2
+  log "App restarted"
 
   echo ""
   echo -e "${GREEN}╔══════════════════════════════════════╗${NC}"

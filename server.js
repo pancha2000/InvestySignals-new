@@ -2154,4 +2154,5 @@ app.post('/api/admin/ai-settings/test', verifyAdmin, async (req, res) => {
     const data = await testRes.json();
     const reply = data.choices?.[0]?.message?.content || '';
     res.json({ success: true, message: `✅ API key works! Model "${modelToTest}" responded: "${reply.slice(0,50)}"` });
-  } catch(e) { res.json({ success: false, error: 'Conn
+  } catch(e) { res.json({ success: false, error: 'Connection error: ' + e.message }); }
+});
