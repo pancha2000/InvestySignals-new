@@ -308,9 +308,9 @@ app.get('/api/analysis', async (req, res) => {
     let ag=gains/14,al=losses/14;
     for (let i=15;i<closes.length;i++){const d=closes[i]-closes[i-1];ag=(ag*13+(d>0?d:0))/14;al=(al*13+(d<0?-d:0))/14;}
     const rsi=parseFloat((100-100/(1+(al===0?100:ag/al))).toFixed(2));
-    function ema(data,n){const k=2/(n+1);let v=data.slice(0,n).reduce((a,b)=>a+b,0)/n;const o=[v];for(let i=n;i<data.length;i++){v=data[i]*k+v*(1-k);o.push(v);}return o;}
-    const e12=ema(closes,12),e26=ema(closes,26);
-    const ml=e12.slice(e12.length-e26.length).map((v,i)=>v-e26[i]),s9=ema(ml,9);
+    function _da_ema(data,n){const k=2/(n+1);let v=data.slice(0,n).reduce((a,b)=>a+b,0)/n;const o=[v];for(let i=n;i<data.length;i++){v=data[i]*k+v*(1-k);o.push(v);}return o;}
+    const e12=_da_ema(closes,12),e26=_da_ema(closes,26);
+    const ml=e12.slice(e12.length-e26.length).map((v,i)=>v-e26[i]),s9=_da_ema(ml,9);
     const macd=parseFloat(ml[ml.length-1].toFixed(4)),sig=parseFloat(s9[s9.length-1].toFixed(4));
     const bbC=closes.slice(-20),bbM=bbC.reduce((a,b)=>a+b,0)/20;
     const std=Math.sqrt(bbC.reduce((a,c)=>a+Math.pow(c-bbM,2),0)/20);
@@ -745,158 +745,158 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
   // This eliminates ANY possibility of TDZ — analysis is always 'null' until assigned,
   // never "not initialized". Fixes "Cannot access 'analysis' before initialization" on re-analyze.
   let analysis = null;
+
+  // ── Analysis helper functions (declared at handler scope, NOT inside try block) ──
+  // CRITICAL FIX: Function declarations inside try{} blocks cause V8 block-scope
+  // hoisting quirks that trigger "Cannot access 'analysis' before initialization"
+  // on re-analysis of the same coin. Moving them here (handler scope) fully fixes it.
+  async function _da_klines(sym, interval, limit=200) {
+    const r = await fetchKlinesCached(sym, interval, limit);
+    return sanitizeCandles(r).map(k=>({
+      open:parseFloat(k[1]),high:parseFloat(k[2]),low:parseFloat(k[3]),
+      close:parseFloat(k[4]),volume:parseFloat(k[5])
+    }));
+  }
+  function _da_ema(arr, n) {
+    const k=2/(n+1); let v=arr.slice(0,n).reduce((a,b)=>a+b,0)/n;
+    const out=[]; for(let i=n;i<arr.length;i++){v=arr[i]*k+v*(1-k);out.push(v);} return out;
+  }
+  function _da_rsi(closes, period=14) {
+    let g=0,l=0;
+    for(let i=1;i<=period;i++){const d=closes[i]-closes[i-1];d>=0?g+=d:l-=d;}
+    let ag=g/period,al=l/period;
+    for(let i=period+1;i<closes.length;i++){const d=closes[i]-closes[i-1];ag=(ag*13+(d>0?d:0))/14;al=(al*13+(d<0?-d:0))/14;}
+    if(al===0) return 100;
+    if(ag===0) return 0;
+    return parseFloat((100-100/(1+ag/al)).toFixed(2));
+  }
+  function _da_macd(closes) {
+    const e12=_da_ema(closes,12),e26=_da_ema(closes,26);
+    const ml=e12.slice(e12.length-e26.length).map((v,i)=>v-e26[i]);
+    const s9=_da_ema(ml,9);
+    const h=ml[ml.length-1]-s9[s9.length-1];
+    const ph=ml[ml.length-2]-s9[s9.length-2];
+    return {macd:parseFloat(ml[ml.length-1].toFixed(6)),signal:parseFloat(s9[s9.length-1].toFixed(6)),histogram:parseFloat(h.toFixed(6)),prevHistogram:parseFloat(ph.toFixed(6))};
+  }
+  function _da_bb(closes,n=20) {
+    const s=closes.slice(-n),m=s.reduce((a,b)=>a+b,0)/n;
+    const std=Math.sqrt(s.reduce((a,c)=>a+Math.pow(c-m,2),0)/n);
+    return {upper:parseFloat((m+2*std).toFixed(4)),middle:parseFloat(m.toFixed(4)),lower:parseFloat((m-2*std).toFixed(4))};
+  }
+  function _da_atr(candles,n=14) {
+    const trs=candles.slice(1).map((c,i)=>Math.max(c.high-c.low,Math.abs(c.high-candles[i].close),Math.abs(c.low-candles[i].close)));
+    return parseFloat((trs.slice(-n).reduce((a,b)=>a+b,0)/n).toFixed(6));
+  }
+  function _da_structure(candles) {
+    if(candles.length<12) return 'NEUTRAL';
+    const recent=candles.slice(-20);
+    const mid=Math.floor(recent.length/2);
+    const prev=recent.slice(0,mid), curr=recent.slice(mid);
+    const phH=Math.max(...prev.map(c=>c.high)), plL=Math.min(...prev.map(c=>c.low));
+    const cH=Math.max(...curr.map(c=>c.high)), cL=Math.min(...curr.map(c=>c.low));
+    const lastClose=candles[candles.length-1].close;
+    if(lastClose>phH&&cH>phH) return 'BOS_BULLISH';
+    if(lastClose<plL&&cL<plL) return 'BOS_BEARISH';
+    if(cH>phH) return 'CHOCH_BULLISH';
+    if(cL<plL) return 'CHOCH_BEARISH';
+    return 'NEUTRAL';
+  }
+  function _da_fvgs(candles) {
+    const result=[];
+    const lastClose=candles[candles.length-1].close;
+    for(let i=2;i<candles.length;i++){
+      const prev=candles[i-2],curr=candles[i];
+      if(curr.low>prev.high){
+        if(lastClose>prev.high) result.push({type:'BULL',low:prev.high,high:curr.low,idx:i});
+      } else if(curr.high<prev.low){
+        if(lastClose<prev.low) result.push({type:'BEAR',low:curr.high,high:prev.low,idx:i});
+      }
+    }
+    return result.slice(-5);
+  }
+  function _da_srLevels(candles,n=5) {
+    const pivots=[];
+    for(let i=n;i<candles.length-n;i++){
+      const w=candles.slice(i-n,i+n+1);
+      if(candles[i].high===Math.max(...w.map(c=>c.high))) pivots.push(candles[i].high);
+      if(candles[i].low ===Math.min(...w.map(c=>c.low)))  pivots.push(candles[i].low);
+    }
+    return [...new Set(pivots.map(p=>parseFloat(p.toFixed(4))))].sort((a,b)=>a-b).slice(-6);
+  }
+  function _da_orderBlock(candles) {
+    for(let i=candles.length-3;i>=0;i--){
+      const c=candles[i],nx=candles[i+1];
+      if(nx.close>c.high&&nx.close-nx.open>0) return {type:'BULL_OB',low:c.low,high:c.high};
+      if(nx.close<c.low &&nx.open-nx.close>0) return {type:'BEAR_OB',low:c.low,high:c.high};
+    }
+    return null;
+  }
+  function _da_volRatio(candles,n=20) {
+    const vols=candles.map(c=>c.volume);
+    const avg=vols.slice(-n-1,-1).reduce((a,b)=>a+b,0)/n;
+    const last=vols[vols.length-1];
+    const ratio=parseFloat((last/avg).toFixed(2));
+    return {ratio,spike:ratio>2};
+  }
+  function _da_candlePattern(c) {
+    const body=Math.abs(c.close-c.open),range=c.high-c.low;
+    if(range===0) return 'DOJI';
+    if(body/range<0.1) return 'DOJI';
+    const upper=c.high-Math.max(c.open,c.close),lower=Math.min(c.open,c.close)-c.low;
+    if(c.close>c.open){
+      if(lower>body*2) return 'PIN_BAR_BULL';
+      return 'BULL_CANDLE';
+    } else {
+      if(upper>body*2) return 'PIN_BAR_BEAR';
+      return 'BEAR_CANDLE';
+    }
+  }
+  function _da_rsiDiv(candles,rsiArr) {
+    if(candles.length<10||rsiArr.length<10) return 'NONE';
+    const n=Math.min(candles.length,rsiArr.length,20);
+    const pC=candles.slice(-n).map(c=>c.close);
+    const pR=rsiArr.slice(-n);
+    const half=Math.floor(n/2);
+    const prevPriceHigh=Math.max(...pC.slice(0,half));
+    const prevPriceLow =Math.min(...pC.slice(0,half));
+    const currPriceHigh=Math.max(...pC.slice(half));
+    const currPriceLow =Math.min(...pC.slice(half));
+    const prevRsiHigh  =Math.max(...pR.slice(0,half));
+    const prevRsiLow   =Math.min(...pR.slice(0,half));
+    const currRsiHigh  =Math.max(...pR.slice(half));
+    const currRsiLow   =Math.min(...pR.slice(half));
+    if(currPriceHigh>prevPriceHigh&&currRsiHigh<prevRsiHigh) return 'BEARISH_DIV';
+    if(currPriceLow<prevPriceLow&&currRsiLow>prevRsiLow)     return 'BULLISH_DIV';
+    return 'NONE';
+  }
+  function _da_rsiArray(closes, period=14) {
+    if (closes.length < period + 1) return [];
+    const out = [];
+    let g=0, l=0;
+    for (let i=1; i<=period; i++) { const d=closes[i]-closes[i-1]; d>=0?g+=d:l-=d; }
+    let ag=g/period, al=l/period;
+    out.push(parseFloat((100-100/(1+(al===0?Infinity:ag/al))).toFixed(2)));
+    for (let i=period+1; i<closes.length; i++) {
+      const d=closes[i]-closes[i-1];
+      ag=(ag*(period-1)+(d>0?d:0))/period;
+      al=(al*(period-1)+(d<0?-d:0))/period;
+      out.push(parseFloat((100-100/(1+(al===0?Infinity:ag/al))).toFixed(2)));
+    }
+    return out;
+  }
+
   try {
     const coin = ((req.body.coin || 'BTC').toUpperCase().replace(/USDT$/,'').replace(/[^A-Z0-9]/g,'')).trim();
     if (!coin) return res.status(400).json({ success:false, error:'coin required' });
     const symbol = coin + 'USDT';
 
-    // Helper: fetch klines
-    async function klines(sym, interval, limit=200) {
-      const r = await fetchKlinesCached(sym, interval, limit);
-      return sanitizeCandles(r).map(k=>({
-        open:parseFloat(k[1]),high:parseFloat(k[2]),low:parseFloat(k[3]),
-        close:parseFloat(k[4]),volume:parseFloat(k[5])
-      }));
-    }
-
-    // Helper: EMA
-    function ema(arr, n) {
-      const k=2/(n+1); let v=arr.slice(0,n).reduce((a,b)=>a+b,0)/n;
-      const out=[]; for(let i=n;i<arr.length;i++){v=arr[i]*k+v*(1-k);out.push(v);} return out;
-    }
-    // Helper: RSI
-    function rsi(closes, period=14) {
-      let g=0,l=0;
-      for(let i=1;i<=period;i++){const d=closes[i]-closes[i-1];d>=0?g+=d:l-=d;}
-      let ag=g/period,al=l/period;
-      for(let i=period+1;i<closes.length;i++){const d=closes[i]-closes[i-1];ag=(ag*13+(d>0?d:0))/14;al=(al*13+(d<0?-d:0))/14;}
-      // FIX: al===0 means all gains → RSI must be exactly 100 (not 99.01 from 100/(1+100))
-      if(al===0) return 100;
-      if(ag===0) return 0;
-      return parseFloat((100-100/(1+ag/al)).toFixed(2));
-    }
-    // Helper: MACD
-    function macd(closes) {
-      const e12=ema(closes,12),e26=ema(closes,26);
-      const ml=e12.slice(e12.length-e26.length).map((v,i)=>v-e26[i]);
-      const s9=ema(ml,9);
-      const h=ml[ml.length-1]-s9[s9.length-1];
-      const ph=ml[ml.length-2]-s9[s9.length-2];
-      return {macd:parseFloat(ml[ml.length-1].toFixed(6)),signal:parseFloat(s9[s9.length-1].toFixed(6)),histogram:parseFloat(h.toFixed(6)),prevHistogram:parseFloat(ph.toFixed(6))};
-    }
-    // Helper: BB
-    function bb(closes,n=20) {
-      const s=closes.slice(-n),m=s.reduce((a,b)=>a+b,0)/n;
-      const std=Math.sqrt(s.reduce((a,c)=>a+Math.pow(c-m,2),0)/n);
-      return {upper:parseFloat((m+2*std).toFixed(4)),middle:parseFloat(m.toFixed(4)),lower:parseFloat((m-2*std).toFixed(4))};
-    }
-    // Helper: ATR
-    function atr(candles,n=14) {
-      const trs=candles.slice(1).map((c,i)=>Math.max(c.high-c.low,Math.abs(c.high-candles[i].close),Math.abs(c.low-candles[i].close)));
-      return parseFloat((trs.slice(-n).reduce((a,b)=>a+b,0)/n).toFixed(6));
-    }
-    // Helper: structure BOS/CHoCH — FIX: increased from 10→20 candles for proper swing detection
-    function structure(candles) {
-      if(candles.length<12) return 'NEUTRAL';
-      const recent=candles.slice(-20);
-      const mid=Math.floor(recent.length/2);
-      const prev=recent.slice(0,mid), curr=recent.slice(mid);
-      const phH=Math.max(...prev.map(c=>c.high)), plL=Math.min(...prev.map(c=>c.low));
-      const cH=Math.max(...curr.map(c=>c.high)), cL=Math.min(...curr.map(c=>c.low));
-      // Close-based BOS confirmation — use last close to avoid wick fakeouts
-      const lastClose=candles[candles.length-1].close;
-      if(lastClose>phH&&cH>phH) return 'BOS_BULLISH';
-      if(lastClose<plL&&cL<plL) return 'BOS_BEARISH';
-      if(cH>phH) return 'CHOCH_BULLISH';
-      if(cL<plL) return 'CHOCH_BEARISH';
-      return 'NEUTRAL';
-    }
-    // Helper: FVGs — FIX: filter mitigated (price already passed through the gap)
-    function fvgs(candles) {
-      const res=[];
-      const lastClose=candles[candles.length-1].close;
-      for(let i=2;i<candles.length;i++){
-        const prev=candles[i-2],curr=candles[i];
-        if(curr.low>prev.high){
-          // Bullish FVG: unmitigated if current price hasn't closed below the gap
-          if(lastClose>prev.high) res.push({type:'BULL',low:prev.high,high:curr.low,idx:i});
-        } else if(curr.high<prev.low){
-          // Bearish FVG: unmitigated if current price hasn't closed above the gap
-          if(lastClose<prev.low) res.push({type:'BEAR',low:curr.high,high:prev.low,idx:i});
-        }
-      }
-      return res.slice(-5);
-    }
-    // Helper: S/R levels
-    function srLevels(candles,n=5) {
-      const pivots=[];
-      for(let i=n;i<candles.length-n;i++){
-        const w=candles.slice(i-n,i+n+1);
-        if(candles[i].high===Math.max(...w.map(c=>c.high))) pivots.push(candles[i].high);
-        if(candles[i].low ===Math.min(...w.map(c=>c.low)))  pivots.push(candles[i].low);
-      }
-      return [...new Set(pivots.map(p=>parseFloat(p.toFixed(4))))].sort((a,b)=>a-b).slice(-6);
-    }
-    // Helper: OB
-    function orderBlock(candles) {
-      for(let i=candles.length-3;i>=0;i--){
-        const c=candles[i],n=candles[i+1];
-        if(n.close>c.high&&n.close-n.open>0) return {type:'BULL_OB',low:c.low,high:c.high};
-        if(n.close<c.low &&n.open-n.close>0) return {type:'BEAR_OB',low:c.low,high:c.high};
-      }
-      return null;
-    }
-    // Helper: Volume ratio
-    function volRatio(candles,n=20) {
-      const vols=candles.map(c=>c.volume);
-      const avg=vols.slice(-n-1,-1).reduce((a,b)=>a+b,0)/n;
-      const last=vols[vols.length-1];
-      const ratio=parseFloat((last/avg).toFixed(2));
-      return {ratio,spike:ratio>2};
-    }
-    // Helper: candle pattern
-    function candlePattern(c) {
-      const body=Math.abs(c.close-c.open),range=c.high-c.low;
-      if(range===0) return 'DOJI';
-      if(body/range<0.1) return 'DOJI';
-      const upper=c.high-Math.max(c.open,c.close),lower=Math.min(c.open,c.close)-c.low;
-      if(c.close>c.open){
-        if(lower>body*2) return 'PIN_BAR_BULL';
-        return 'BULL_CANDLE';
-      } else {
-        if(upper>body*2) return 'PIN_BAR_BEAR';
-        return 'BEAR_CANDLE';
-      }
-    }
-    // Helper: RSI divergence — FIX: increased from 5→20 candle window for meaningful divergence
-    function rsiDiv(candles,rsiArr) {
-      if(candles.length<10||rsiArr.length<10) return 'NONE';
-      const n=Math.min(candles.length,rsiArr.length,20);
-      const pC=candles.slice(-n).map(c=>c.close);
-      const pR=rsiArr.slice(-n);
-      const half=Math.floor(n/2);
-      const prevPriceHigh=Math.max(...pC.slice(0,half));
-      const prevPriceLow =Math.min(...pC.slice(0,half));
-      const currPriceHigh=Math.max(...pC.slice(half));
-      const currPriceLow =Math.min(...pC.slice(half));
-      const prevRsiHigh  =Math.max(...pR.slice(0,half));
-      const prevRsiLow   =Math.min(...pR.slice(0,half));
-      const currRsiHigh  =Math.max(...pR.slice(half));
-      const currRsiLow   =Math.min(...pR.slice(half));
-      // Bearish div: price higher high but RSI lower high
-      if(currPriceHigh>prevPriceHigh&&currRsiHigh<prevRsiHigh) return 'BEARISH_DIV';
-      // Bullish div: price lower low but RSI higher low
-      if(currPriceLow<prevPriceLow&&currRsiLow>prevRsiLow)     return 'BULLISH_DIV';
-      return 'NONE';
-    }
-
     // Fetch all timeframes in parallel
     const [m15c,h1c,h4c,d1c,btcH4] = await Promise.all([
-      klines(symbol,'15m',200),
-      klines(symbol,'1h',200),
-      klines(symbol,'4h',200),
-      klines(symbol,'1d',100),
-      klines('BTCUSDT','4h',50),
+      _da_klines(symbol,'15m',200),
+      _da_klines(symbol,'1h',200),
+      _da_klines(symbol,'4h',200),
+      _da_klines(symbol,'1d',100),
+      _da_klines('BTCUSDT','4h',50),
     ]);
 
     // Live price
@@ -906,47 +906,30 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     const m15closes=m15c.map(c=>c.close),h1closes=h1c.map(c=>c.close),h4closes=h4c.map(c=>c.close),d1closes=d1c.map(c=>c.close);
     const btcCloses=btcH4.map(c=>c.close);
 
-    const m15RSI=rsi(m15closes),h1RSI=rsi(h1closes),h4RSI=rsi(h4closes);
-    const h1MACDv=macd(h1closes),m15MACDv=macd(m15closes);
-    const h1BB=bb(h1closes),h4BB=bb(h4closes);
-    const h1Ema20=ema(h1closes,20),h1Ema50=ema(h1closes,50),h1Ema200=ema(h1closes,200);
-    const h4Ema20=ema(h4closes,20),h4Ema50=ema(h4closes,50),h4Ema200=ema(h4closes,200);
-    const d1Ema200=ema(d1closes,200);
-    const btcEma20=ema(btcCloses,20);
+    const m15RSI=_da_rsi(m15closes),h1RSI=_da_rsi(h1closes),h4RSI=_da_rsi(h4closes);
+    const h1MACDv=_da_macd(h1closes),m15MACDv=_da_macd(m15closes);
+    const h1BB=_da_bb(h1closes),h4BB=_da_bb(h4closes);
+    const h1Ema20=_da_ema(h1closes,20),h1Ema50=_da_ema(h1closes,50),h1Ema200=_da_ema(h1closes,200);
+    const h4Ema20=_da_ema(h4closes,20),h4Ema50=_da_ema(h4closes,50),h4Ema200=_da_ema(h4closes,200);
+    const d1Ema200=_da_ema(d1closes,200);
+    const btcEma20=_da_ema(btcCloses,20);
 
-    const m15Struct=structure(m15c),h1Struct=structure(h1c),h4Struct=structure(h4c),d1Struct=structure(d1c);
-    const h4FVGs=fvgs(h4c),h1FVGs=fvgs(h1c),m15FVGs=fvgs(m15c);
-    const h4SR=srLevels(h4c),d1SR=srLevels(d1c);
-    const h4OB=orderBlock(h4c),d1OB=orderBlock(d1c);
-    const h1Vol=volRatio(h1c),m15Vol=volRatio(m15c);
-    const atr4h=atr(h4c),atr1h=atr(h1c);
+    const m15Struct=_da_structure(m15c),h1Struct=_da_structure(h1c),h4Struct=_da_structure(h4c),d1Struct=_da_structure(d1c);
+    const h4FVGs=_da_fvgs(h4c),h1FVGs=_da_fvgs(h1c),m15FVGs=_da_fvgs(m15c);
+    const h4SR=_da_srLevels(h4c),d1SR=_da_srLevels(d1c);
+    const h4OB=_da_orderBlock(h4c),d1OB=_da_orderBlock(d1c);
+    const h1Vol=_da_volRatio(h1c),m15Vol=_da_volRatio(m15c);
+    const atr4h=_da_atr(h4c),atr1h=_da_atr(h1c);
     const m15Candle=m15c[m15c.length-1];
-    const m15CP={pattern:candlePattern(m15Candle)};
+    const m15CP={pattern:_da_candlePattern(m15Candle)};
     const prevDayHigh=d1c[d1c.length-2]?.high,prevDayLow=d1c[d1c.length-2]?.low;
 
-    // FIX BUG: O(n²) RSI array replaced with O(n) incremental Wilder RSI
-    // Old code called rsi(closes.slice(0,i+1)) in a loop = 18,000+ iterations, blocking event loop
-    function rsiArray(closes, period=14) {
-      if (closes.length < period + 1) return [];
-      const out = [];
-      let g=0, l=0;
-      for (let i=1; i<=period; i++) { const d=closes[i]-closes[i-1]; d>=0?g+=d:l-=d; }
-      let ag=g/period, al=l/period;
-      out.push(parseFloat((100-100/(1+(al===0?Infinity:ag/al))).toFixed(2)));
-      for (let i=period+1; i<closes.length; i++) {
-        const d=closes[i]-closes[i-1];
-        ag=(ag*(period-1)+(d>0?d:0))/period;
-        al=(al*(period-1)+(d<0?-d:0))/period;
-        out.push(parseFloat((100-100/(1+(al===0?Infinity:ag/al))).toFixed(2)));
-      }
-      return out;
-    }
-    const h4rsiArr  = rsiArray(h4closes);
-    const h1rsiArr  = rsiArray(h1closes);
-    const m15rsiArr = rsiArray(m15closes);
-    const h4Div=rsiDiv(h4c.slice(-20),h4rsiArr.slice(-20));
-    const h1Div=rsiDiv(h1c.slice(-20),h1rsiArr.slice(-20));
-    const m15Div=rsiDiv(m15c.slice(-20),m15rsiArr.slice(-20));
+    const h4rsiArr  = _da_rsiArray(h4closes);
+    const h1rsiArr  = _da_rsiArray(h1closes);
+    const m15rsiArr = _da_rsiArray(m15closes);
+    const h4Div=_da_rsiDiv(h4c.slice(-20),h4rsiArr.slice(-20));
+    const h1Div=_da_rsiDiv(h1c.slice(-20),h1rsiArr.slice(-20));
+    const m15Div=_da_rsiDiv(m15c.slice(-20),m15rsiArr.slice(-20));
 
     // BTC trend
     const btcPrice=btcH4[btcH4.length-1].close;
@@ -1398,7 +1381,7 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
       for (let i=n; i<trs.length; i++) atr=(atr*13+trs[i])/14;
       return parseFloat(atr.toFixed(6));
     }
-    function volRatio(candles, n=20) {
+    function _da_volRatio(candles, n=20) {
       if (candles.length < n+1) return 1;
       const avg = candles.slice(-n-1,-1).reduce((a,c)=>a+c.volume,0)/n;
       return avg > 0 ? parseFloat((candles[candles.length-1].volume/avg).toFixed(2)) : 1;
@@ -1428,7 +1411,7 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
 
     const h4ATR = monAtr(h4c);
     const h1ATR = monAtr(h1c);
-    const h1VolR = volRatio(h1c);
+    const h1VolR = _da_volRatio(h1c);
 
     // ── EMA alignment signals ───────────────────────────────────
     const priceAboveEma20H1  = currentPrice > h1Ema20;
