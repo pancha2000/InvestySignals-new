@@ -263,7 +263,7 @@
             const cred = await createUserWithEmailAndPassword(auth, email, pw);
             await updateProfile(cred.user, { displayName: `${first} ${last}` });
             okBox.style.display = 'block';
-            setTimeout(() => { window.location.href = 'dashboard.html'; }, 1200);
+            setTimeout(() => { showWaModal(); }, 1200);
         } catch(e) {
             errBox.textContent = e.code === 'auth/email-already-in-use' ? 'This email is already registered.' : 'Registration failed. Please try again.';
             errBox.style.display = 'block';
@@ -281,12 +281,60 @@
                 return;
             }
             const cred = await signInWithPopup(auth, provider);
-            window.location.href = 'dashboard.html';
+            showWaModal();
         } catch(e) {
             document.getElementById('errorBox').textContent = 'Google sign-up failed.';
             document.getElementById('errorBox').style.display = 'block';
         }
     };
 </script>
+
+    <!-- WhatsApp Channel Modal -->
+    <div id="waModal" style="display:none;position:fixed;inset:0;z-index:9999;align-items:center;justify-content:center;background:rgba(0,0,0,0.75);backdrop-filter:blur(6px);">
+        <div style="background:var(--bg2);border:1px solid rgba(37,211,102,0.3);border-radius:20px;padding:40px 36px;max-width:420px;width:90%;text-align:center;position:relative;box-shadow:0 0 60px rgba(37,211,102,0.15);">
+            <!-- Green glow orb -->
+            <div style="position:absolute;inset:0;border-radius:20px;background:radial-gradient(ellipse at top,rgba(37,211,102,0.07) 0%,transparent 70%);pointer-events:none;"></div>
+            <!-- WhatsApp icon -->
+            <div style="width:72px;height:72px;background:linear-gradient(135deg,#25D366,#128C7E);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-size:2rem;box-shadow:0 8px 30px rgba(37,211,102,0.35);">
+                <svg width="38" height="38" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.122.554 4.118 1.528 5.855L.057 23.57a.75.75 0 00.918.919l5.818-1.525A11.95 11.95 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.75a9.697 9.697 0 01-4.951-1.356l-.355-.211-3.655.958.975-3.563-.231-.366A9.714 9.714 0 012.25 12C2.25 6.615 6.615 2.25 12 2.25S21.75 6.615 21.75 12 17.385 21.75 12 21.75z"/></svg>
+            </div>
+            <h2 style="font-family:'Space Grotesk',sans-serif;font-size:1.5rem;margin-bottom:10px;color:var(--text);">Join Our WhatsApp Channel!</h2>
+            <p style="color:var(--text-muted);font-size:0.95rem;line-height:1.6;margin-bottom:8px;">Welcome to InvestySignals! 🎉</p>
+            <p style="color:var(--text-muted);font-size:0.9rem;line-height:1.6;margin-bottom:28px;">
+                Get <strong style="color:var(--text);">real-time crypto signals</strong>, market alerts, and exclusive updates directly on WhatsApp. Join <strong style="color:#25D366;">Crypto Lanka</strong> — our official channel.
+            </p>
+            <a href="https://whatsapp.com/channel/0029Vb6j0Yo9WtC4zWG33n3C" target="_blank" rel="noopener"
+               style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:16px;background:linear-gradient(135deg,#25D366,#128C7E);color:white;border-radius:12px;font-weight:700;font-size:1rem;text-decoration:none;box-shadow:0 4px 20px rgba(37,211,102,0.3);transition:all 0.2s;margin-bottom:14px;"
+               onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 28px rgba(37,211,102,0.4)'"
+               onmouseout="this.style.transform='';this.style.boxShadow='0 4px 20px rgba(37,211,102,0.3)'"
+               id="waJoinBtn">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.122.554 4.118 1.528 5.855L.057 23.57a.75.75 0 00.918.919l5.818-1.525A11.95 11.95 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.75a9.697 9.697 0 01-4.951-1.356l-.355-.211-3.655.958.975-3.563-.231-.366A9.714 9.714 0 012.25 12C2.25 6.615 6.615 2.25 12 2.25S21.75 6.615 21.75 12 17.385 21.75 12 21.75z"/></svg>
+                Follow Crypto Lanka on WhatsApp
+            </a>
+            <button onclick="closeWaModal()" style="background:none;border:none;color:var(--text-muted);font-size:0.875rem;cursor:pointer;padding:8px 16px;transition:color 0.2s;" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text-muted)'">
+                Maybe later — Go to Dashboard →
+            </button>
+        </div>
+    </div>
+
+    <script>
+        function showWaModal() {
+            const modal = document.getElementById('waModal');
+            modal.style.display = 'flex';
+            // Close on backdrop click
+            modal.addEventListener('click', function(e) {
+                if (e.target === modal) closeWaModal();
+            });
+        }
+        function closeWaModal() {
+            document.getElementById('waModal').style.display = 'none';
+            window.location.href = 'dashboard.html';
+        }
+        // Auto-close after joining (when tab comes back into focus)
+        document.getElementById('waJoinBtn') && document.getElementById('waJoinBtn').addEventListener('click', function() {
+            setTimeout(closeWaModal, 3000);
+        });
+    </script>
+
 </body>
 </html>
