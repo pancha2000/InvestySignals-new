@@ -1573,6 +1573,10 @@ function ptSetOrderType(type) {
     if (lw) lw.style.display = type==='LIMIT' ? 'none' : '';
 }
 
+async function initPaperTrade() {
+    await Promise.all([ptLoadBalance(), ptLoadTrades()]);
+}
+
 async function ptLoadBalance() {
     try {
         const tok = await getToken();
