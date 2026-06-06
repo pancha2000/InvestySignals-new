@@ -1202,23 +1202,28 @@ function buildPaperTradePanel(data) {
     const level5Dir       = data?.analysis?.level5?.direction || '';
     const isNeutral       = !overallBias || overallBias === 'NEUTRAL';
 
-    // When NEUTRAL — show Watch Zone panel (no trading yet, just monitor)
-    if (isNeutral) {
+    // FIX: NEUTRAL bias does NOT block a LIMIT entry.
+    // overallBias=NEUTRAL means "don't enter at current market price" —
+    // but a LIMIT order waits for the zone, so direction from level5 is always valid.
+    // Only show Watch Zone if there is truly NO direction at all.
+    const dir = isNeutral ? level5Dir : overallBias;
+    if (!dir || dir === 'NEUTRAL') {
         return buildWatchZonePanel(data);
     }
 
-    // Clear directional trade
-    const dir    = overallBias; // always LONG or SHORT here
     const isLong = dir === 'LONG';
     const raw    = data?.rawData || {};
 
-    // Lock order type from analysis — user cannot override
-    // CONFIRMED entry → MARKET (price already at entry zone)
-    // WAIT/AVOID/other → LIMIT (wait for price to come to zone)
-    const lockedType = entryConclusion === 'CONFIRMED' ? 'MARKET' : 'LIMIT';
-    const lockLabel  = lockedType === 'MARKET'
-        ? '🔒 MARKET — Entry confirmed now'
-        : '🔒 LIMIT — Wait for price zone';
+    // Order type logic:
+    // NEUTRAL bias       → always LIMIT (low confluence = never market entry, wait for zone)
+    // CONFIRMED + strong → MARKET (price is AT the zone right now)
+    // WAIT/AVOID/other   → LIMIT (price not at zone yet)
+    const lockedType = (!isNeutral && entryConclusion === 'CONFIRMED') ? 'MARKET' : 'LIMIT';
+    const lockLabel  = isNeutral
+        ? '⚠️ Low Confluence — LIMIT only (wait for zone)'
+        : lockedType === 'MARKET'
+            ? '🔒 MARKET — Entry confirmed now'
+            : '🔒 LIMIT — Wait for price zone';
 
     const entryDef = isLong
         ? (raw.entryLow  || raw.entryHigh || '').toString()
@@ -1755,17 +1760,23 @@ async function initPaperTrade() {
 
     const a           = ptCurrentData?.analysis;
     const overallBias = a?.overallBias || 'NEUTRAL';
+    const level5Dir   = a?.level5?.direction || '';
     const isNeutral   = !overallBias || overallBias === 'NEUTRAL';
 
-    // Watch Zone mode — no order type buttons to configure
-    if (isNeutral) return;
+    // FIX: NEUTRAL bias does NOT block a LIMIT entry.
+    // Use level5.direction when overallBias is NEUTRAL.
+    // Only skip if there is truly NO direction at all.
+    const dir = isNeutral ? level5Dir : overallBias;
+    if (!dir || dir === 'NEUTRAL') return;
 
-    // Directional trade — lock order type from analysis, no manual override
+    // NEUTRAL bias => always LIMIT (low confluence, wait for zone, never market)
+    // CONFIRMED + strong bias => MARKET (price is at the zone right now)
+    // everything else => LIMIT
     const entryConclusion = a?.level4?.entryConclusion || '';
-    const lockedType = entryConclusion === 'CONFIRMED' ? 'MARKET' : 'LIMIT';
+    const lockedType = (!isNeutral && entryConclusion === 'CONFIRMED') ? 'MARKET' : 'LIMIT';
     ptSetOrderType(lockedType);
 
-    // Disable the non-active order type button to prevent override
+    // Disable the non-active order type button
     const btnMkt = document.getElementById('ptBtnMkt');
     const btnLmt = document.getElementById('ptBtnLmt');
     if (lockedType === 'MARKET') {
@@ -1785,17 +1796,21 @@ async function initPaperTrade() {
     // Info message
     const msgEl = document.getElementById('ptMsg');
     if (msgEl) {
-        const label = entryConclusion === 'CONFIRMED'
+        const dirLabel = dir === 'LONG' ? 'LONG' : 'SHORT';
+        const label = isNeutral
+            ? '⚠️ Low Confluence — LIMIT ' + dirLabel + ' only. Wait for price to reach zone.'
+            : entryConclusion === 'CONFIRMED'
             ? '✅ Entry CONFIRMED — enter at market price now'
             : entryConclusion === 'WAIT'
             ? '⏳ Entry WAIT — price approaching zone, LIMIT order placed'
             : entryConclusion === 'AVOID'
             ? '🚫 Entry AVOID — risky conditions, limit set as safeguard'
             : '⏳ LIMIT order — wait for price to reach entry zone';
-        const color = entryConclusion === 'CONFIRMED' ? 'var(--green)'
+        const color = isNeutral ? 'var(--gold)'
+                    : entryConclusion === 'CONFIRMED' ? 'var(--green)'
                     : entryConclusion === 'AVOID'     ? 'var(--red)'
                     : 'var(--gold)';
-        msgEl.innerHTML = `<span style="color:${color};font-size:0.72rem;">${label}</span>`;
+        msgEl.innerHTML = '<span style="color:' + color + ';font-size:0.72rem;">' + label + '</span>';
     }
 }
 

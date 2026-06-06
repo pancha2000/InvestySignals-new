@@ -1232,10 +1232,17 @@ Respond with ONLY this JSON (no markdown, no explanation):
       analysis.summary = (analysis.summary || '') + ' (Score below threshold — watch zone only, no entry now.)';
       // level5.direction stays LONG/SHORT — it is the WATCH direction, not a trade signal
     }
-    // Ensure level5.direction is never NEUTRAL — fallback if AI still returns it
+    // Ensure level5.direction is never NEUTRAL — always LONG or SHORT
+    // level5.direction = the LIMIT order direction (always directional, even when overallBias=NEUTRAL)
     if (analysis.level5 && (!analysis.level5.direction || analysis.level5.direction === 'NEUTRAL')) {
-      const fallback = (analysis.overallBias === 'LONG' || analysis.overallBias === 'SHORT')
-        ? analysis.overallBias : 'LONG';
+      // Use overallBias if directional, else derive from market structure
+      let fallback = (analysis.overallBias === 'LONG' || analysis.overallBias === 'SHORT')
+        ? analysis.overallBias
+        : (d1Struct === 'BOS_BULLISH' || d1Struct === 'CHOCH_BULLISH') ? 'LONG'
+        : (d1Struct === 'BOS_BEARISH' || d1Struct === 'CHOCH_BEARISH') ? 'SHORT'
+        : (h4Struct === 'BOS_BULLISH' || h4Struct === 'CHOCH_BULLISH') ? 'LONG'
+        : (h4Struct === 'BOS_BEARISH' || h4Struct === 'CHOCH_BEARISH') ? 'SHORT'
+        : 'LONG';
       analysis.level5.direction = fallback;
     }
 
