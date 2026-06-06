@@ -2156,3 +2156,66 @@ app.post('/api/admin/ai-settings/test', verifyAdmin, async (req, res) => {
     res.json({ success: true, message: `✅ API key works! Model "${modelToTest}" responded: "${reply.slice(0,50)}"` });
   } catch(e) { res.json({ success: false, error: 'Connection error: ' + e.message }); }
 });
+
+// ── HTTP Server + WebSocket ───────────────────────────────────
+const PORT   = process.env.PORT || 3000;
+const server = require('http').createServer(app);
+const { WebSocketServer } = require('ws');
+const wss = new WebSocketServer({ server });
+
+// Client tracking
+const clients = new Map(); // uid -> Set of ws connections
+
+function broadcastToAll(data) {
+  const msg = JSON.stringify(data);
+  wss.clients.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN) ws.send(msg);
+  });
+}
+
+function broadcastToUser(uid, data) {
+  const msg = JSON.stringify(data);
+  const userClients = clients.get(uid);
+  if (!userClients) return;
+  userClients.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN) ws.send(msg);
+  });
+}
+
+wss.on('connection', async (ws, req) => {
+  let uid = null;
+  console.log('Auth WS. Total:', wss.clients.size);
+
+  ws.on('message', async (raw) => {
+    try {
+      const msg = JSON.parse(raw);
+      if (msg.type === 'auth' && msg.token) {
+        try {
+          const decoded = await admin.auth().verifyIdToken(msg.token);
+          uid = decoded.uid;
+          if (!clients.has(uid)) clients.set(uid, new Set());
+          clients.get(uid).add(ws);
+          ws.send(JSON.stringify({ type: 'auth_ok', uid }));
+        } catch (e) {
+          ws.send(JSON.stringify({ type: 'auth_error', error: e.message }));
+        }
+      }
+    } catch (_) {}
+  });
+
+  ws.on('close', () => {
+    console.log('WS disc. Total:', wss.clients.size);
+    if (uid && clients.has(uid)) {
+      clients.get(uid).delete(ws);
+      if (clients.get(uid).size === 0) clients.delete(uid);
+    }
+  });
+
+  ws.on('error', () => {
+    console.log('Unauth WS. Total:', wss.clients.size);
+  });
+});
+
+server.listen(PORT, () => {
+  console.log(`🚀  Server running on port ${PORT}`);
+});
