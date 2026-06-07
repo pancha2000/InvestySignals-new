@@ -2255,6 +2255,92 @@ wss.on('connection', async (ws, req) => {
   });
 });
 
+// ── Auto TP/SL Check Engine (re-added) ───────────────────────────────────
+async function runTPSLCheck() {
+  try {
+    const openTrades = await PT.find({
+      status: { $in: ['OPEN', 'TP1_HIT', 'PENDING_LONG', 'PENDING_SHORT'] }
+    });
+    if (!openTrades.length) return;
+
+    for (const trade of openTrades) {
+      try {
+        const symbol = normalizePair(trade.pair || trade.symbol);
+        if (!symbol) continue;
+        const price = await getLivePrice(symbol);
+        if (!price) continue;
+
+        const isLong = trade.direction === 'LONG';
+        const entry = trade.entryPrice || trade.entry;
+        const size = trade.remainingSize || trade.size || trade.amount || 0;
+        const lev = trade.leverage || 1;
+        const notional = trade.notional || (size * lev);
+
+        // Fill pending limit orders
+        if (trade.status === 'PENDING_LONG' && price <= trade.triggerPrice) {
+          await PT.findByIdAndUpdate(trade._id, { status: 'OPEN', fillTime: new Date() });
+          continue;
+        }
+        if (trade.status === 'PENDING_SHORT' && price >= trade.triggerPrice) {
+          await PT.findByIdAndUpdate(trade._id, { status: 'OPEN', fillTime: new Date() });
+          continue;
+        }
+
+        if (!['OPEN','TP1_HIT'].includes(trade.status)) continue;
+
+        const sl = trade.currentSl || trade.sl;
+        const tp1 = trade.tp1;
+        const tp2 = trade.tp2;
+
+        // TP1 partial close
+        if (trade.status === 'OPEN' && tp1 && (isLong ? price >= tp1 : price <= tp1)) {
+          const tp1Pnl = isLong ? (tp1 - entry) / entry * notional * 0.5 : (entry - tp1) / entry * notional * 0.5;
+          await PT.findByIdAndUpdate(trade._id, {
+            status: 'TP1_HIT',
+            tp1HitPrice: tp1,
+            tp1Pnl,
+            currentSl: entry,
+            remainingSize: size * 0.5,
+          });
+          // Refund 50% margin + TP1 profit
+          const refund = size * 0.5 + tp1Pnl;
+          await PB.findOneAndUpdate({ uid: trade.uid }, { $inc: { balance: refund } }, { upsert: true });
+          continue;
+        }
+
+        // TP2 full close
+        if (tp2 && (isLong ? price >= tp2 : price <= tp2)) {
+          const pnl = isLong ? (price - entry) / entry * notional : (entry - price) / entry * notional;
+          await PT.findByIdAndUpdate(trade._id, { status: 'CLOSED', closePrice: price, closedAt: new Date(), pnl });
+          await PB.findOneAndUpdate({ uid: trade.uid }, { $inc: { balance: size + pnl } }, { upsert: true });
+          continue;
+        }
+
+        // SL hit
+        if (sl && (isLong ? price <= sl : price >= sl)) {
+          const pnl = isLong ? (price - entry) / entry * notional : (entry - price) / entry * notional;
+          await PT.findByIdAndUpdate(trade._id, { status: 'CLOSED', closePrice: price, closedAt: new Date(), pnl });
+          await PB.findOneAndUpdate({ uid: trade.uid }, { $inc: { balance: size + pnl } }, { upsert: true });
+          continue;
+        }
+
+        // Trailing SL for TP1_HIT trades
+        if (trade.status === 'TP1_HIT') {
+          const trailOffset = Math.abs(trade.tp1 - entry) * 0.5;
+          const newTrailSL = isLong ? Math.max(entry, price - trailOffset) : Math.min(entry, price + trailOffset);
+          if (newTrailSL !== trade.currentSl) {
+            await PT.findByIdAndUpdate(trade._id, { currentSl: newTrailSL });
+          }
+        }
+      } catch(e) { console.error('TPSLCheck trade error:', e.message); }
+    }
+  } catch(e) { console.error('runTPSLCheck error:', e.message); }
+}
+
+// Start engine every 30 seconds
+setInterval(runTPSLCheck, 30000);
+console.log('⚡ Auto TP/SL engine restarted');
+
 server.listen(PORT, () => {
   console.log(`🚀  Server running on port ${PORT}`);
 });

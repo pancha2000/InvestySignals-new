@@ -985,14 +985,22 @@ function checkTpSl() {
       else if (price>=t.sl)  hit='SL';
     }
 
-    if(hit==='TP1'){
-      /* ── TP1 hit → partial close 50%, move SL to entry ───── */
-      const tp1Pnl = calcPnl(dir, t.entryPrice, t.tp1||price, t.size||t.amount, t.leverage, 0.5);
-      const trailOffset=Math.abs(t.tp1-t.entryPrice)*0.5;
-      const _p4={status:'TP1_HIT',tp1HitPrice:price,tp1HitTime:new Date().toISOString(),tp1Pnl,currentSl:t.entryPrice,trailOffset};
-      trades[i]={...t,..._p4};
-      _changedPatches.push({id:t.id,patch:_p4});
-      changed=true;
+   if(hit==='TP1'){
+  const tp1Pnl = calcPnl(dir, t.entryPrice, t.tp1||price, t.size||t.amount, t.leverage, 0.5);
+  const trailOffset=Math.abs(t.tp1-t.entryPrice)*0.5;
+  const _p4={status:'TP1_HIT',tp1HitPrice:price,tp1HitTime:new Date().toISOString(),tp1Pnl,currentSl:t.entryPrice,trailOffset};
+  trades[i]={...t,..._p4};
+  _changedPatches.push({id:t.id,patch:_p4});
+  changed=true;
+  
+  // ── Balance එකට TP1 ලාභය + 50% margin එකතු කරන්න ──
+  const refundAmount = (t.size * 0.5) + tp1Pnl;   // t.size = margin amount
+  const newBalance = getBalance() + refundAmount;
+  await saveBalance(newBalance);   // server/local storage එකට save කරනවා
+  // UI update කරන්න
+  updateStats();   // stats strip refresh
+  renderTradeList(); // open trades list refresh (if needed)
+}
     } else if(hit==='TP2'){
       // Went straight to TP2 without hitting TP1 first (unusual but possible)
       const pnl = calcPnl(dir, t.entryPrice, price, t.size||t.amount, t.leverage, 1);

@@ -18,9 +18,9 @@ const PaperTradeSchema = new mongoose.Schema({
   // FIX BUG 1: Added 'PENDING' to enum so LIMIT orders don't fail validation
   status: {
     type: String,
-    enum: ['PENDING','OPEN','TP1_HIT','TP2_HIT','TP3_HIT','SL_HIT','CLOSED','CANCELLED'],
+    enum: ['PENDING','PENDING_LONG','PENDING_SHORT','OPEN','TP1_HIT','TP2_HIT','TP3_HIT','SL_HIT','CLOSED','CANCELLED'],
     default: 'OPEN'
-  },
+},
   pnl:       { type: Number, default: 0 },
   pnlPct:    { type: Number, default: 0 },
   openedAt:  { type: Date, default: Date.now },
