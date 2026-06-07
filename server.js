@@ -794,8 +794,9 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     }));
   }
   function _da_ema(arr, n) {
+    if (arr.length < n) return arr.length ? [arr[arr.length-1]] : [];
     const k=2/(n+1); let v=arr.slice(0,n).reduce((a,b)=>a+b,0)/n;
-    const out=[]; for(let i=n;i<arr.length;i++){v=arr[i]*k+v*(1-k);out.push(v);} return out;
+    const out=[v]; for(let i=n;i<arr.length;i++){v=arr[i]*k+v*(1-k);out.push(v);} return out;
   }
   function _da_rsi(closes, period=14) {
     let g=0,l=0;
@@ -820,11 +821,14 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     return {upper:parseFloat((m+2*std).toFixed(4)),middle:parseFloat(m.toFixed(4)),lower:parseFloat((m-2*std).toFixed(4))};
   }
   function _da_atr(candles,n=14) {
+    if (candles.length < n+1) return 0;
     const trs=candles.slice(1).map((c,i)=>Math.max(c.high-c.low,Math.abs(c.high-candles[i].close),Math.abs(c.low-candles[i].close)));
-    return parseFloat((trs.slice(-n).reduce((a,b)=>a+b,0)/n).toFixed(6));
+    let atr=trs.slice(0,n).reduce((a,b)=>a+b,0)/n;
+    for(let i=n;i<trs.length;i++) atr=(atr*(n-1)+trs[i])/n;
+    return parseFloat(atr.toFixed(6));
   }
   function _da_structure(candles) {
-    if(candles.length<12) return 'NEUTRAL';
+    if(candles.length<20) return 'NEUTRAL';
     const recent=candles.slice(-20);
     const mid=Math.floor(recent.length/2);
     const prev=recent.slice(0,mid), curr=recent.slice(mid);
@@ -839,31 +843,47 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
   }
   function _da_fvgs(candles) {
     const result=[];
-    const lastClose=candles[candles.length-1].close;
     for(let i=2;i<candles.length;i++){
       const prev=candles[i-2],curr=candles[i];
       if(curr.low>prev.high){
-        if(lastClose>prev.high) result.push({type:'BULL',low:prev.high,high:curr.low,idx:i});
+        // BULL FVG: gap [prev.high → curr.low]. Mitigated if any later candle's low enters the gap.
+        const mitigated=candles.slice(i+1).some(c=>c.low<curr.low);
+        if(!mitigated) result.push({type:'BULL',low:prev.high,high:curr.low,idx:i});
       } else if(curr.high<prev.low){
-        if(lastClose<prev.low) result.push({type:'BEAR',low:curr.high,high:prev.low,idx:i});
+        // BEAR FVG: gap [curr.high → prev.low]. Mitigated if any later candle's high enters the gap.
+        const mitigated=candles.slice(i+1).some(c=>c.high>curr.high);
+        if(!mitigated) result.push({type:'BEAR',low:curr.high,high:prev.low,idx:i});
       }
     }
     return result.slice(-5);
   }
   function _da_srLevels(candles,n=5) {
     const pivots=[];
+    const lastClose=candles[candles.length-1].close;
     for(let i=n;i<candles.length-n;i++){
       const w=candles.slice(i-n,i+n+1);
       if(candles[i].high===Math.max(...w.map(c=>c.high))) pivots.push(candles[i].high);
       if(candles[i].low ===Math.min(...w.map(c=>c.low)))  pivots.push(candles[i].low);
     }
-    return [...new Set(pivots.map(p=>parseFloat(p.toFixed(4))))].sort((a,b)=>a-b).slice(-6);
+    const unique=[...new Set(pivots.map(p=>parseFloat(p.toFixed(4))))].sort((a,b)=>a-b);
+    // Return 3 nearest support levels below + 3 nearest resistance levels above
+    const below=unique.filter(p=>p<=lastClose).slice(-3);
+    const above=unique.filter(p=>p>lastClose).slice(0,3);
+    return [...below,...above].sort((a,b)=>a-b);
   }
   function _da_orderBlock(candles) {
     for(let i=candles.length-3;i>=0;i--){
       const c=candles[i],nx=candles[i+1];
-      if(nx.close>c.high&&nx.close-nx.open>0) return {type:'BULL_OB',low:c.low,high:c.high};
-      if(nx.close<c.low &&nx.open-nx.close>0) return {type:'BEAR_OB',low:c.low,high:c.high};
+      if(nx.close>c.high&&nx.close-nx.open>0){
+        // BULL_OB: price must not have closed below OB low after formation
+        const mitigated=candles.slice(i+2).some(cand=>cand.close<c.low);
+        if(!mitigated) return {type:'BULL_OB',low:c.low,high:c.high};
+      }
+      if(nx.close<c.low&&nx.open-nx.close>0){
+        // BEAR_OB: price must not have closed above OB high after formation
+        const mitigated=candles.slice(i+2).some(cand=>cand.close>c.high);
+        if(!mitigated) return {type:'BEAR_OB',low:c.low,high:c.high};
+      }
     }
     return null;
   }
@@ -890,13 +910,14 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
   function _da_rsiDiv(candles,rsiArr) {
     if(candles.length<10||rsiArr.length<10) return 'NONE';
     const n=Math.min(candles.length,rsiArr.length,20);
-    const pC=candles.slice(-n).map(c=>c.close);
+    const pHigh=candles.slice(-n).map(c=>c.high);   // highs for bearish div
+    const pLow =candles.slice(-n).map(c=>c.low);    // lows for bullish div
     const pR=rsiArr.slice(-n);
     const half=Math.floor(n/2);
-    const prevPriceHigh=Math.max(...pC.slice(0,half));
-    const prevPriceLow =Math.min(...pC.slice(0,half));
-    const currPriceHigh=Math.max(...pC.slice(half));
-    const currPriceLow =Math.min(...pC.slice(half));
+    const prevPriceHigh=Math.max(...pHigh.slice(0,half));
+    const prevPriceLow =Math.min(...pLow.slice(0,half));
+    const currPriceHigh=Math.max(...pHigh.slice(half));
+    const currPriceLow =Math.min(...pLow.slice(half));
     const prevRsiHigh  =Math.max(...pR.slice(0,half));
     const prevRsiLow   =Math.min(...pR.slice(0,half));
     const currRsiHigh  =Math.max(...pR.slice(half));
@@ -1024,20 +1045,21 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     const range = swingHigh - swingLow;
     if (range === 0) return null;
     const lastClose = candles[candles.length - 1].close;
-    // Detect direction: is price above or below the midpoint?
+    // CORRECTED direction logic:
+    //   price > mid → uptrend retracing down → BULLISH_RETRACE (levels count DOWN from swing high)
+    //   price < mid → downtrend bouncing up  → BEARISH_RETRACE (levels count UP from swing low)
     const mid = swingLow + range * 0.5;
-    const direction = lastClose > mid ? 'BEARISH_RETRACE' : 'BULLISH_RETRACE';
-    // Calculate levels
+    const direction = lastClose > mid ? 'BULLISH_RETRACE' : 'BEARISH_RETRACE';
     const fmt = v => parseFloat(v.toFixed(4));
     return {
       direction,
       swingHigh: fmt(swingHigh),
       swingLow:  fmt(swingLow),
-      f236:  fmt(direction === 'BEARISH_RETRACE' ? swingHigh - range * 0.236 : swingLow + range * 0.236),
-      f382:  fmt(direction === 'BEARISH_RETRACE' ? swingHigh - range * 0.382 : swingLow + range * 0.382),
-      f500:  fmt(direction === 'BEARISH_RETRACE' ? swingHigh - range * 0.500 : swingLow + range * 0.500),
-      f618:  fmt(direction === 'BEARISH_RETRACE' ? swingHigh - range * 0.618 : swingLow + range * 0.618),
-      f786:  fmt(direction === 'BEARISH_RETRACE' ? swingHigh - range * 0.786 : swingLow + range * 0.786),
+      f236: fmt(direction === 'BULLISH_RETRACE' ? swingHigh - range * 0.236 : swingLow + range * 0.236),
+      f382: fmt(direction === 'BULLISH_RETRACE' ? swingHigh - range * 0.382 : swingLow + range * 0.382),
+      f500: fmt(direction === 'BULLISH_RETRACE' ? swingHigh - range * 0.500 : swingLow + range * 0.500),
+      f618: fmt(direction === 'BULLISH_RETRACE' ? swingHigh - range * 0.618 : swingLow + range * 0.618),
+      f786: fmt(direction === 'BULLISH_RETRACE' ? swingHigh - range * 0.786 : swingLow + range * 0.786),
     };
   }
 
@@ -1049,9 +1071,9 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     // Fetch all timeframes in parallel
     const [m15c,h1c,h4c,d1c,btcH4] = await Promise.all([
       _da_klines(symbol,'15m',200),
-      _da_klines(symbol,'1h',200),
+      _da_klines(symbol,'1h',300),
       _da_klines(symbol,'4h',200),
-      _da_klines(symbol,'1d',100),
+      _da_klines(symbol,'1d',250),
       _da_klines('BTCUSDT','4h',50),
     ]);
 
@@ -1134,7 +1156,9 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     // BTC trend
     const btcPrice=btcH4[btcH4.length-1].close;
     const btcEma20Last=btcEma20[btcEma20.length-1];
-    const btcTrend=btcPrice>btcEma20Last?'STRONG_BULL':'STRONG_BEAR';
+    const btcGapPct=Math.abs(btcPrice-btcEma20Last)/btcEma20Last*100;
+    const btcStrength=btcGapPct>1.5?'STRONG_':'';
+    const btcTrend=btcPrice>btcEma20Last?btcStrength+'BULL':btcStrength+'BEAR';
 
     // Funding rate (Binance futures)
     let fundingRate=null,fundingBias='NEUTRAL';
@@ -1565,9 +1589,9 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
 
     const [m15k, h1k, h4k, d1k] = await Promise.all([
       getKlines(normalizedPair, '15m', 100),
-      getKlines(normalizedPair, '1h',  100),
+      getKlines(normalizedPair, '1h',  250),
       getKlines(normalizedPair, '4h',  100),
-      getKlines(normalizedPair, '1d',   30),
+      getKlines(normalizedPair, '1d',  250),
     ]);
 
     // ── Shared indicator helpers ────────────────────────────────
@@ -1587,13 +1611,25 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
       return parseFloat(v.toFixed(6));
     }
     function monMacd(closes) {
-      if (closes.length < 27) return { signal: 'NEUTRAL', hist: 0 };
-      const k=2/(13+1); const k2=2/(26+1);
+      if (closes.length < 35) return { signal: 'NEUTRAL', hist: 0 };
+      // FIXED: EMA-12 uses k=2/(12+1), EMA-26 uses k=2/(26+1)
+      const k12=2/(12+1), k26=2/(26+1), k9=2/(9+1);
       let e12=closes.slice(0,12).reduce((a,b)=>a+b,0)/12;
       let e26=closes.slice(0,26).reduce((a,b)=>a+b,0)/26;
-      for (let i=12; i<closes.length; i++) e12=closes[i]*k+e12*(1-k);
-      for (let i=26; i<closes.length; i++) e26=closes[i]*k2+e26*(1-k2);
-      const hist = parseFloat((e12-e26).toFixed(6));
+      // Advance e12 to bar 25 so both EMAs start at the same bar
+      for (let i=12; i<26; i++) e12=closes[i]*k12+e12*(1-k12);
+      // Build MACD line array from bar 26 onward
+      const macdArr=[];
+      for (let i=26; i<closes.length; i++) {
+        e12=closes[i]*k12+e12*(1-k12);
+        e26=closes[i]*k26+e26*(1-k26);
+        macdArr.push(e12-e26);
+      }
+      if (macdArr.length < 9) return { signal: 'NEUTRAL', hist: 0 };
+      // Signal line = EMA9 of MACD line (true histogram = MACD − Signal)
+      let sig=macdArr.slice(0,9).reduce((a,b)=>a+b,0)/9;
+      for (let i=9; i<macdArr.length; i++) sig=macdArr[i]*k9+sig*(1-k9);
+      const hist=parseFloat((macdArr[macdArr.length-1]-sig).toFixed(6));
       return { signal: hist>0?'BULLISH':'BEARISH', hist };
     }
     function monStruct(candles) {
@@ -1635,7 +1671,9 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
 
     const h1Ema20  = monEma(h1cl, 20);
     const h1Ema50  = monEma(h1cl, 50);
-    const h1Ema200 = monEma(h1cl, Math.min(200, h1cl.length-1));
+    // EMA200: use full raw klines arrays (not sliced) so 200 bars are always available
+    const h1Ema200 = monEma(h1k.map(x=>x.close), 200);
+    const d1Ema200 = monEma(d1k.map(x=>x.close), 200);
     const h4Ema20  = monEma(h4cl, 20);
     const h4Ema50  = monEma(h4cl, 50);
 
@@ -1655,6 +1693,7 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
     const priceAboveEma20H1  = currentPrice > h1Ema20;
     const priceAboveEma50H1  = currentPrice > h1Ema50;
     const priceAboveEma200H1 = currentPrice > h1Ema200;
+    const priceAboveD1Ema200 = currentPrice > d1Ema200;
     const ema20AboveEma50H4  = h4Ema20 > h4Ema50;
 
     // ── Fibonacci from D1 swing ─────────────────────────────────
@@ -1756,8 +1795,8 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
 
     // ── EMA alignment summary ───────────────────────────────────
     const emaAlignment = isLong
-      ? { ok: priceAboveEma20H1 && priceAboveEma50H1, desc: (priceAboveEma20H1?'✅':'❌')+' EMA20  '+(priceAboveEma50H1?'✅':'❌')+' EMA50  '+(priceAboveEma200H1?'✅':'❌')+' EMA200' }
-      : { ok: !priceAboveEma20H1 && !priceAboveEma50H1, desc: (!priceAboveEma20H1?'✅':'❌')+' <EMA20  '+(!priceAboveEma50H1?'✅':'❌')+' <EMA50  '+(!priceAboveEma200H1?'✅':'❌')+' <EMA200' };
+      ? { ok: priceAboveEma20H1 && priceAboveEma50H1, desc: (priceAboveEma20H1?'✅':'❌')+' EMA20  '+(priceAboveEma50H1?'✅':'❌')+' EMA50  '+(priceAboveEma200H1?'✅':'❌')+' H1-EMA200  '+(priceAboveD1Ema200?'✅':'❌')+' D1-EMA200' }
+      : { ok: !priceAboveEma20H1 && !priceAboveEma50H1, desc: (!priceAboveEma20H1?'✅':'❌')+' <EMA20  '+(!priceAboveEma50H1?'✅':'❌')+' <EMA50  '+(!priceAboveEma200H1?'✅':'❌')+' <H1-EMA200  '+(!priceAboveD1Ema200?'✅':'❌')+' <D1-EMA200' };
 
     res.json({
       success: true,
@@ -1771,7 +1810,7 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
       indicators: {
         rsi:  { m15: m15RSI, h1: h1RSI, h4: h4RSI },
         macd: { h1: h1MACD.signal, h4: h4MACD.signal },
-        ema:  { h1_20: h1Ema20, h1_50: h1Ema50, h1_200: h1Ema200, h4_20: h4Ema20, h4_50: h4Ema50 },
+        ema:  { h1_20: h1Ema20, h1_50: h1Ema50, h1_200: h1Ema200, h4_20: h4Ema20, h4_50: h4Ema50, d1_200: d1Ema200 },
         struct: { m15: m15Struct, h1: h1Struct, h4: h4Struct, d1: d1Struct },
         atr: { h4: h4ATR, h1: h1ATR },
         volume: { h1Ratio: h1VolR },

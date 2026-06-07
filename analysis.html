@@ -997,7 +997,45 @@ function renderFullAnalysis(data, container) {
         return levels.map(l => `<span style="font-family:'JetBrains Mono',monospace;font-size:0.7rem;padding:2px 8px;border-radius:4px;margin:2px;display:inline-block;background:var(--surface);border:1px solid var(--border-soft);">$${parseFloat(l).toFixed(4)}</span>`).join('');
     }
 
+    // ── Advanced Indicator helpers (integrated into cards) ──
+    function adxIndRow(label, a) {
+        if (!a) return '';
+        const strengthClr = a.adx>35?'var(--green)':a.adx>25?'var(--gold)':'var(--text-dim)';
+        const trendType   = a.trend.includes('BULL')?'bull':a.trend.includes('BEAR')?'bear':'neut';
+        const trendLabel  = a.trend.replace('TRENDING_BULL','Trending ▲').replace('TRENDING_BEAR','Trending ▼').replace('RANGING','Ranging');
+        const pill = `<span class="level-badge ${trendType==='bull'?'badge-bull':trendType==='bear'?'badge-bear':'badge-neut'}">${trendLabel} · ${a.strength}</span>`;
+        return indRow(label, `ADX <span style="color:${strengthClr};font-weight:700;">${a.adx}</span>  +DI ${a.plusDI} / −DI ${a.minusDI}`, pill);
+    }
+    function multiObHtml(obs) {
+        if (!obs || !obs.length) return '<span style="color:var(--text-muted);font-size:0.72rem;">No unmitigated OBs</span>';
+        return obs.slice(0,3).map(ob => {
+            const col = ob.type==='BULL_OB'?'var(--green)':'var(--red)';
+            const bg  = ob.type==='BULL_OB'?'rgba(0,217,126,0.1)':'rgba(255,59,92,0.1)';
+            return `<span style="font-family:'JetBrains Mono',monospace;font-size:0.68rem;padding:2px 7px;border-radius:4px;margin:2px;display:inline-block;background:${bg};color:${col};">${ob.type.replace('_OB','')} $${ob.bodyLow}–$${ob.bodyHigh}</span>`;
+        }).join('');
+    }
+    function fibLevelsHtml(fib) {
+        if (!fib) return '<span style="color:var(--text-muted);font-size:0.72rem;">—</span>';
+        const dir    = fib.direction==='BULLISH_RETRACE'?'▲ Bullish Retrace':'▼ Bearish Retrace';
+        const dirClr = fib.direction==='BULLISH_RETRACE'?'var(--green)':'var(--red)';
+        return `<div style="font-size:0.7rem;padding:3px 0;">
+            <span style="color:${dirClr};font-weight:600;">${dir} · SwH $${fib.swingHigh} · SwL $${fib.swingLow}</span>
+            <div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:5px;">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:0.68rem;padding:2px 6px;border-radius:4px;background:var(--surface);border:1px solid var(--border-soft);">38.2% $${fib.f382}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:0.68rem;padding:2px 6px;border-radius:4px;background:var(--surface);border:1px solid var(--border-soft);">50.0% $${fib.f500}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:0.68rem;padding:2px 6px;border-radius:4px;background:rgba(0,217,126,0.12);border:1px solid var(--green);color:var(--green);font-weight:700;">61.8% $${fib.f618} ★</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:0.68rem;padding:2px 6px;border-radius:4px;background:var(--surface);border:1px solid var(--border-soft);">78.6% $${fib.f786}</span>
+            </div>
+        </div>`;
+    }
+    function oiPill(oi) {
+        if (!oi) return signalPill('N/A','neut');
+        const t = ['BULLISH_CONTINUATION','SHORT_SQUEEZE'].includes(oi.signal)?'bull':['BEARISH_CONTINUATION','LONG_LIQUIDATION'].includes(oi.signal)?'bear':'neut';
+        return signalPill(oi.signal.replace(/_/g,' '), t);
+    }
+
     const p = data.price || 0;
+    const adv = data?.adv || {};
 
     const snapshotHtml = `
     <div style="margin-bottom:12px;">
@@ -1012,6 +1050,7 @@ function renderFullAnalysis(data, container) {
                 ${indRow('BTC 1D Trend', r.btcTrend, signalPill(r.btcTrend?.includes('STRONG_BULL')?'Strong Bull':r.btcTrend?.includes('BULL')?'Bull':r.btcTrend?.includes('STRONG_BEAR')?'Strong Bear':'Bear', r.btcTrend?.includes('BULL')?'bull':'bear'))}
                 ${indRow('Funding Rate', r.fundingRate!=null?(r.fundingRate>0?'+':'')+r.fundingRate.toFixed(4)+'%':'—', signalPill(r.fundingBias==='LONGS_PAYING'?'Longs Paying':r.fundingBias==='SHORTS_PAYING'?'Shorts Paying':'Neutral', r.fundingBias==='LONGS_PAYING'?'bear':r.fundingBias==='SHORTS_PAYING'?'bull':'neut'))}
                 ${indRow('Structure (1D)', '', structSignal(r.d1Struct))}
+                ${adv.openInterest ? indRow('Open Interest', `OI ${adv.openInterest.trend} · Price ${adv.openInterest.priceDir}`, oiPill(adv.openInterest)) : ''}
             </div>
         </div>
 
@@ -1041,6 +1080,9 @@ function renderFullAnalysis(data, container) {
                 ${indRow('Structure (4H)', '', structSignal(r.h4Struct))}
                 ${indRow('Structure (1H)', '', structSignal(r.h1Struct))}
                 ${indRow('Structure (15m)','', structSignal(r.m15Struct))}
+                ${adxIndRow('ADX (1D)', adv.adx?.d1)}
+                ${adxIndRow('ADX (4H)', adv.adx?.h4)}
+                ${adxIndRow('ADX (1H)', adv.adx?.h1)}
             </div>
         </div>
 
@@ -1073,8 +1115,16 @@ function renderFullAnalysis(data, container) {
                 <div style="padding:4px 0 8px;">${fvgHtml(r.h1FVGs)}</div>
                 ${indRow('FVG Zones (15m)', '', '')}
                 <div style="padding:4px 0 8px;">${fvgHtml(r.m15FVGs)}</div>
-                ${indRow('Order Block (4H)', '', obHtml(r.h4OB))}
-                ${indRow('Order Block (1D)', '', obHtml(r.d1OB))}
+                ${indRow('Order Blocks (1D)', '', '')}
+                <div style="padding:2px 0 8px;">${multiObHtml(adv.orderBlocks?.d1)}</div>
+                ${indRow('Order Blocks (4H)', '', '')}
+                <div style="padding:2px 0 8px;">${multiObHtml(adv.orderBlocks?.h4)}</div>
+                ${indRow('Order Blocks (1H)', '', '')}
+                <div style="padding:2px 0 8px;">${multiObHtml(adv.orderBlocks?.h1)}</div>
+                ${indRow('Fibonacci (1D)', '', '')}
+                <div style="padding:2px 0 8px;">${fibLevelsHtml(adv.fibonacci?.d1)}</div>
+                ${indRow('Fibonacci (4H)', '', '')}
+                <div style="padding:2px 0 8px;">${fibLevelsHtml(adv.fibonacci?.h4)}</div>
                 ${indRow('Volume Spike (1H)', r.h1Vol?.ratio!=null?r.h1Vol.ratio+'x avg':'—', volSignal(r.h1Vol?.ratio, r.h1Vol?.spike))}
                 ${indRow('Volume Spike (15m)', r.m15Vol?.ratio!=null?r.m15Vol.ratio+'x avg':'—', volSignal(r.m15Vol?.ratio, r.m15Vol?.spike))}
                 ${indRow('Candle (15m)', r.m15Candle?.pattern?(r.m15Candle.pattern.replace(/_/g,' ')):'—', signalPill(r.m15Candle?.pattern?.includes('BULL')||r.m15Candle?.pattern?.includes('ENGULF')||r.m15Candle?.pattern?.includes('PIN_BAR_BULL')?'🟢 Bullish':r.m15Candle?.pattern?.includes('BEAR')?'🔴 Bearish':'Neutral', r.m15Candle?.pattern?.includes('BULL')?'bull':r.m15Candle?.pattern?.includes('BEAR')?'bear':'neut'))}
@@ -1177,8 +1227,6 @@ function renderFullAnalysis(data, container) {
         ${a.level5?.riskNote ? `<div style="margin-top:6px;font-size:0.72rem;color:var(--red);">⚠️ ${a.level5.riskNote}</div>` : ''}
     </div>` +
 
-    buildAdvancedPanel(data) +
-
     `<div id="ptPanelWrap"></div>` +
 
     `<div style="font-size:0.65rem;color:var(--text-dim);text-align:center;padding-top:4px;">
@@ -1194,59 +1242,6 @@ function renderFullAnalysis(data, container) {
 }
 
 
-
-// ══════════════════════════════════════════
-//  ADVANCED INDICATORS PANEL
-// ══════════════════════════════════════════
-function buildAdvancedPanel(data) {
-    const adv = data?.adv;
-    if (!adv) return '';
-    const h4ADX = adv.adx?.h4, d1ADX = adv.adx?.d1;
-    const h4OBs = adv.orderBlocks?.h4 || [], d1OBs = adv.orderBlocks?.d1 || [], h1OBs = adv.orderBlocks?.h1 || [];
-    const h4Fib = adv.fibonacci?.h4, d1Fib = adv.fibonacci?.d1;
-    const oi    = adv.openInterest;
-
-    const adxColor = h4ADX ? (h4ADX.adx > 35 ? 'var(--green)' : h4ADX.adx > 25 ? 'var(--gold)' : 'var(--text-dim)') : 'var(--text-dim)';
-    const oiColor  = oi?.signal === 'BULLISH_CONTINUATION' || oi?.signal === 'SHORT_SQUEEZE' ? 'var(--green)'
-                   : oi?.signal === 'BEARISH_CONTINUATION' || oi?.signal === 'LONG_LIQUIDATION' ? 'var(--red)' : 'var(--text-dim)';
-
-    const adxRow = (label, a) => !a ? '' :
-        `<div class="adv-row"><span class="adv-label">${label}</span>
-         <span class="adv-val" style="color:${a.adx>25?'var(--green)':'var(--text-dim)'}">ADX ${a.adx} · ${a.strength}</span>
-         <span class="adv-val">+DI ${a.plusDI} / -DI ${a.minusDI}</span>
-         <span class="adv-val" style="color:${a.trend.includes('BULL')?'var(--green)':a.trend.includes('BEAR')?'var(--red)':'var(--text-dim)'}">${a.trend}</span></div>`;
-
-    const obRows = (obs, label) => obs.length === 0 ? `<div class="adv-row"><span class="adv-label">${label}</span><span class="adv-val" style="color:var(--text-dim)">No unmitigated OBs</span></div>` :
-        obs.map(ob => `<div class="adv-row"><span class="adv-label">${label}</span>
-            <span class="adv-val" style="color:${ob.type==='BULL_OB'?'var(--green)':'var(--red)'}">${ob.type}</span>
-            <span class="adv-val">$${ob.bodyLow} – $${ob.bodyHigh}</span></div>`).join('');
-
-    const fibRows = (fib, label) => !fib ? '' :
-        `<div class="adv-row"><span class="adv-label">${label}</span>
-         <span class="adv-val">SwH $${fib.swingHigh} · SwL $${fib.swingLow}</span></div>
-         <div class="adv-row"><span class="adv-label">Fib 38.2%</span><span class="adv-val" style="color:var(--gold)">$${fib.f382}</span></div>
-         <div class="adv-row"><span class="adv-label">Fib 50%</span><span class="adv-val" style="color:var(--gold)">$${fib.f500}</span></div>
-         <div class="adv-row"><span class="adv-label">Fib 61.8%</span><span class="adv-val" style="color:var(--green)">$${fib.f618}</span>
-         <span class="adv-val" style="font-size:0.65rem;color:var(--text-dim)">★ Golden Pocket</span></div>`;
-
-    return `<div class="adv-panel">
-        <div class="adv-header">📐 Advanced Indicators</div>
-        <div class="adv-section-title">ADX — Trend Strength</div>
-        ${adxRow('D1 ADX', d1ADX)}
-        ${adxRow('4H ADX', h4ADX)}
-        <div class="adv-section-title">Order Blocks — Unmitigated</div>
-        ${obRows(d1OBs, 'D1 OB')}
-        ${obRows(h4OBs, '4H OB')}
-        ${obRows(h1OBs, '1H OB')}
-        <div class="adv-section-title">Fibonacci Retracement</div>
-        ${fibRows(d1Fib, 'D1 Range')}
-        ${fibRows(h4Fib, '4H Range')}
-        <div class="adv-section-title">Open Interest</div>
-        ${oi ? `<div class="adv-row"><span class="adv-label">OI Signal</span>
-            <span class="adv-val" style="color:${oiColor}">${oi.signal}</span>
-            <span class="adv-val">Trend: ${oi.trend}</span></div>` : '<div class="adv-row"><span class="adv-label">OI</span><span class="adv-val" style="color:var(--text-dim)">N/A</span></div>'}
-    </div>`;
-}
 
 // ══════════════════════════════════════════
 //  PAPER TRADE SYSTEM
