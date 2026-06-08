@@ -626,19 +626,21 @@ app.patch('/api/paper/trade/:id/close', ptAuth, async (req, res) => {
 
     const closePrice  = parseFloat(req.body.closePrice) || 0;
     const entryPrice  = tradeBeforeClose.entryPrice || tradeBeforeClose.entry || 0;
-    const tradeSize   = tradeBeforeClose.size || tradeBeforeClose.amount || 0;
+    // FIX: use remainingSize (not size) — for TP1_HIT trades only 50% of position remains open
+    const tradeSize   = tradeBeforeClose.remainingSize || tradeBeforeClose.size || tradeBeforeClose.amount || 0;
     const leverage    = tradeBeforeClose.leverage || 1;
     const isLong      = tradeBeforeClose.direction === 'LONG';
 
     let pnl = parseFloat(req.body.pnl || req.body.totalPnl || 0);
     if (!pnl && closePrice && entryPrice && tradeSize) {
-      const notional = tradeBeforeClose.notional || (tradeSize * leverage);
+      // FIX: always derive notional from current remaining size (stored notional = original full position)
+      const notional = tradeSize * leverage;
       pnl = isLong
         ? (closePrice - entryPrice) / entryPrice * notional
         : (entryPrice - closePrice) / entryPrice * notional;
       pnl = parseFloat(pnl.toFixed(4));
     }
-    const notionalForRoe = tradeBeforeClose.notional || (tradeSize * leverage);
+    const notionalForRoe = tradeSize * leverage;
     const roe = notionalForRoe
       ? parseFloat((pnl / (notionalForRoe / leverage) * 100).toFixed(2))
       : 0;
@@ -648,9 +650,8 @@ app.patch('/api/paper/trade/:id/close', ptAuth, async (req, res) => {
     const trade = await PT.findOneAndUpdate(filter, { $set: patch }, { new: true });
     if (!trade) return res.status(404).json({ success:false, error:'Trade not found' });
 
-    // Refund margin + pnl to balance
-    const size = trade.size || trade.amount || 0;
-    if (size > 0) await PB.updateOne({ uid: req.uid }, { $inc: { balance: size + pnl } }, { upsert: true });
+    // FIX: refund remaining margin (remainingSize), not original full size
+    if (tradeSize > 0) await PB.updateOne({ uid: req.uid }, { $inc: { balance: tradeSize + pnl } }, { upsert: true });
     res.json({ success:true, trade, pnl, roe });
   } catch(e) { res.status(500).json({ success:false, error:e.message }); }
 });
@@ -935,12 +936,13 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     let g=0, l=0;
     for (let i=1; i<=period; i++) { const d=closes[i]-closes[i-1]; d>=0?g+=d:l-=d; }
     let ag=g/period, al=l/period;
-    out.push(parseFloat((100-100/(1+(al===0?Infinity:ag/al))).toFixed(2)));
+    // Edge case: if both gains and losses are 0 (no price movement), RSI = 50 (neutral)
+    out.push(ag===0&&al===0 ? 50 : parseFloat((100-100/(1+(al===0?Infinity:ag/al))).toFixed(2)));
     for (let i=period+1; i<closes.length; i++) {
       const d=closes[i]-closes[i-1];
       ag=(ag*(period-1)+(d>0?d:0))/period;
       al=(al*(period-1)+(d<0?-d:0))/period;
-      out.push(parseFloat((100-100/(1+(al===0?Infinity:ag/al))).toFixed(2)));
+      out.push(ag===0&&al===0 ? 50 : parseFloat((100-100/(1+(al===0?Infinity:ag/al))).toFixed(2)));
     }
     return out;
   }
@@ -1604,7 +1606,11 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
       let g=0, l=0;
       for (let i=1; i<=period; i++) { const d=closes[i]-closes[i-1]; d>=0?g+=d:l-=d; }
       let ag=g/period, al=l/period;
-      for (let i=period+1; i<closes.length; i++) { const d=closes[i]-closes[i-1]; ag=(ag*13+(d>0?d:0))/14; al=(al*13+(d<0?-d:0))/14; }
+      for (let i=period+1; i<closes.length; i++) {
+        const d=closes[i]-closes[i-1];
+        ag=(ag*(period-1)+(d>0?d:0))/period;
+        al=(al*(period-1)+(d<0?-d:0))/period;
+      }
       if (al===0) return 100; if (ag===0) return 0;
       return parseFloat((100-100/(1+ag/al)).toFixed(1));
     }
