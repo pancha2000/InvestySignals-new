@@ -227,6 +227,10 @@ app.use((req, res, next) => {
 // Serve HTML/CSS/JS files from project root
 app.use(express.static(path.join(__dirname)));
 
+// Explicitly serve SEO files so they're never blocked by other routes
+app.get('/robots.txt', (req, res) => res.sendFile(path.join(__dirname, 'robots.txt')));
+app.get('/sitemap.xml', (req, res) => { res.setHeader('Content-Type','application/xml'); res.sendFile(path.join(__dirname, 'sitemap.xml')); });
+
 // ── Auth ──────────────────────────────────────────────────────
 async function ensureAdminPromotion(uid, emailFromToken) {
   try {

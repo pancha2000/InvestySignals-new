@@ -228,7 +228,8 @@
         .warning-box { font-size:0.78rem; color:var(--red); line-height:1.5; background:rgba(255,59,92,0.07); border:1px solid rgba(255,59,92,0.2); border-radius:var(--radius-xs); padding:10px 12px; margin-bottom:10px; }
 
         @media(max-width:600px) {
-            .page-wrap { padding:80px 14px 60px; }
+            /* Extra bottom padding so last elements clear the mobile browser bottom bar */
+            .page-wrap { padding:80px 14px calc(120px + env(safe-area-inset-bottom, 24px)); }
             .scan-table-head,.scan-row { grid-template-columns:1fr 68px 90px 72px 40px; padding-left:14px; padding-right:14px; gap:4px; }
             .score-filters { padding:0 14px 12px; }
             .scanner-header { padding:16px 14px 14px; }
@@ -271,6 +272,7 @@
         .pt-order-btn.active.short-active { color: var(--red); background: rgba(255,59,92,0.1); }
         .pt-order-btn.pt-btn-locked, .pt-order-btn:disabled {
             opacity: 0.35; cursor: not-allowed; pointer-events: none;
+        }
 
 /* ── Advanced Indicators Panel ── */
 .adv-panel{background:var(--bg-card);border:1px solid rgba(245,200,66,.15);border-radius:var(--radius);padding:14px 16px;margin:10px 0;font-size:.8rem;}
@@ -343,8 +345,9 @@
 
         /* Balance request modal */
         .pt-modal-overlay {
+            display: none; /* hidden by default; JS sets display:flex when opened */
             position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 9000;
-            display: flex; align-items: center; justify-content: center; padding: 20px;
+            align-items: center; justify-content: center; padding: 20px;
         }
         .pt-modal {
             background: var(--bg2); border: 1px solid var(--border-soft);
@@ -684,7 +687,13 @@ function openCoinPanel(coin, priceStr) {
     wrap.innerHTML = '';
     const panel = document.getElementById('coinReadyPanel');
     panel.classList.add('show');
-    setTimeout(() => panel.scrollIntoView({ behavior:'smooth', block:'nearest' }), 80);
+    // On mobile: hide scan results so the analysis panel has room and bottom elements are reachable
+    if (window.innerWidth <= 768) {
+        const els = ['scanResultsList','scanTableHead','scanProgress'];
+        els.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+        document.querySelectorAll('.score-filters').forEach(el => el.style.display = 'none');
+    }
+    setTimeout(() => panel.scrollIntoView({ behavior:'smooth', block:'start' }), 80);
 }
 
 /* ── Close coin panel ── */
@@ -693,7 +702,21 @@ window.closeCoinPanel = function() {
     document.getElementById('aiResultWrap').classList.remove('show');
     document.getElementById('aiResultWrap').innerHTML = '';
     activeCoin = null;
+    // Restore scan results when panel closes
+    const els = ['scanResultsList','scanTableHead','scanProgress'];
+    els.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = ''; });
+    document.querySelectorAll('.score-filters').forEach(el => el.style.display = '');
     if (scanResults.length) renderScanTable();
+};
+
+/* ── Toggle level-card expand/collapse ── */
+window.toggleLC = function(id) {
+    const body = document.getElementById(id);
+    if (!body) return;
+    const isOpen = body.classList.toggle('open');
+    // flip arrow if one exists next to this card
+    const arr = document.getElementById('arr_' + id);
+    if (arr) arr.textContent = isOpen ? '▾' : '▸';
 };
 
 /* ══ RUN FULL ANALYSIS ══ */
