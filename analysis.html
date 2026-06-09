@@ -201,6 +201,10 @@
         .level-card-head {
             display:flex; align-items:center; justify-content:space-between;
             padding:10px 14px; cursor:pointer;
+            min-height:44px;            /* iOS minimum tap target */
+            touch-action:manipulation;  /* no delay, no double-tap zoom */
+            -webkit-tap-highlight-color:rgba(245,200,66,0.08);
+            user-select:none;
         }
         .level-card-head:hover { background:var(--surface2); }
         .level-title { font-weight:700; font-size:0.82rem; display:flex; align-items:center; gap:7px; }
@@ -714,7 +718,8 @@ window.toggleLC = function(id) {
     const body = document.getElementById(id);
     if (!body) return;
     const isOpen = body.classList.toggle('open');
-    // flip arrow if one exists next to this card
+    const head = body.previousElementSibling;
+    if (head) head.setAttribute('aria-expanded', isOpen);
     const arr = document.getElementById('arr_' + id);
     if (arr) arr.textContent = isOpen ? '▾' : '▸';
 };
@@ -1159,18 +1164,19 @@ function renderFullAnalysis(data, container) {
     </div>`;
 
     // ── AI Level Cards ──
-    function levelCard(icon, title, badge, badgeClass, fields, open) {
+    function levelCard(icon, title, badge, badgeClass, fields, open=true) {
         const id   = 'lc_' + Math.random().toString(36).slice(2,7);
         const rows = fields.map(([lbl,val]) => `<div class="data-row"><span class="data-lbl">${lbl}</span><span class="data-val">${val||'—'}</span></div>`).join('');
+        const isOpen = open !== false; // default open
         return `<div class="level-card">
-            <div class="level-card-head" onclick="toggleLC('${id}')">
+            <div class="level-card-head" onclick="toggleLC('${id}')" role="button" aria-expanded="${isOpen}" style="cursor:pointer;-webkit-tap-highlight-color:rgba(0,0,0,0.1);">
                 <div class="level-title">${icon} <span>${title}</span></div>
                 <div style="display:flex;align-items:center;gap:6px;">
                     <span class="level-badge ${badgeClass}">${badge}</span>
-                    <span style="font-size:0.7rem;color:var(--text-dim);" id="arr_${id}">▼</span>
+                    <span style="font-size:0.7rem;color:var(--text-dim);" id="arr_${id}">${isOpen?'▾':'▸'}</span>
                 </div>
             </div>
-            <div class="level-card-body${open?' open':''}" id="${id}">${rows}</div>
+            <div class="level-card-body${isOpen?' open':''}" id="${id}">${rows}</div>
         </div>`;
     }
 
@@ -1181,7 +1187,7 @@ function renderFullAnalysis(data, container) {
         ['Funding Rate',   a.level1?.fundingSignal],
         ['Open Interest',  a.level1?.oiSignal],
         ['ADX Trend',      a.level1?.adxContext],
-    ], false) +
+    ], true) +
 
     levelCard('🏗️','HTF Structure (Daily + 4H)',a.level2?.structureConclusion||'—',biasClass(a.level2?.structureConclusion),[
         ['Daily BOS/CHoCH',    a.level2?.dailyStructure],
@@ -1193,7 +1199,7 @@ function renderFullAnalysis(data, container) {
         ['Order Block',        a.level2?.orderBlock],
         ['FVG Zones',          a.level2?.fvgZones],
         ['Fibonacci Levels',   a.level2?.fibLevels],
-    ], false) +
+    ], true) +
 
     levelCard('⚡','Momentum (1H)',a.level3?.momentumConclusion||'—',biasClass(a.level3?.momentumConclusion),[
         ['1H BOS/CHoCH',   a.level3?.h1Structure],
@@ -1203,7 +1209,7 @@ function renderFullAnalysis(data, container) {
         ['MACD (1H)',      a.level3?.macdSignal],
         ['Bollinger (1H)', a.level3?.bollingerSignal],
         ['Volume',         a.level3?.volumeSignal],
-    ], false) +
+    ], true) +
 
     levelCard('🎯','Entry Timing (15m)',a.level4?.entryConclusion||'—',biasClass(a.level4?.entryConclusion),[
         ['15m Structure',  a.level4?.m15Structure],
@@ -1214,7 +1220,7 @@ function renderFullAnalysis(data, container) {
         ['Volume Confirm', a.level4?.volumeConfirm],
         ['FVG Entry',      a.level4?.fvgEntry],
         ['Session',        a.level4?.sessionNote],
-    ], false) +
+    ], true) +
 
     `<div class="trade-setup-box">
         <div style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--gold);font-family:'JetBrains Mono',monospace;margin-bottom:10px;">💰 Trade Setup</div>
