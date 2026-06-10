@@ -202,7 +202,7 @@ fi
 
 ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
-nginx -t && systemctl reload nginx
+nginx -t && systemctl restart nginx
 ok "Nginx configured"
 
 # ── SSL ──────────────────────────────────────────────────────────
