@@ -43,7 +43,6 @@ const mongoose   = require('mongoose');
 const cors       = require('cors');
 const helmet     = require('helmet');
 const rateLimit  = require('express-rate-limit');
-const compression = require('compression');
 const path       = require('path');
 const admin      = require('firebase-admin');
 
@@ -187,7 +186,6 @@ const CONFLUENCE_THRESHOLD = 5; // score/10 — below this = NEUTRAL (5/10 now p
 // ── Express ───────────────────────────────────────────────────
 const app = express();
 app.set('trust proxy', 1);
-app.use(compression()); // gzip all responses — reduces HTML/CSS/JS size ~70%
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
 const allowedOrigin = process.env.ALLOWED_ORIGIN;
 // BUG FIX: CORS — www. + non-www + mobile app requests all allowed
