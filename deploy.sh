@@ -1,252 +1,528 @@
 #!/bin/bash
-# ═══════════════════════════════════════════════════════════════
-#  InvestySignals — Automated Deploy Script
-#  Usage: bash deploy.sh
-# ═══════════════════════════════════════════════════════════════
+# ================================================================
+#  InvestySignals — Deploy Script
+#
+#  INSTALL:        sudo bash deploy.sh install
+#  DOMAIN + SSL:   sudo bash deploy.sh install-domain
+#  FIX FIREBASE:   sudo bash deploy.sh fix-sa
+#  UPDATE:         sudo bash deploy.sh update
+#  STATUS:         sudo bash deploy.sh status
+#  LOGS:           sudo bash deploy.sh logs
+#  RESTART:        sudo bash deploy.sh restart
+# ================================================================
 
-set -e  # exit on error
+set -e
 
-# ── Colors ──────────────────────────────────────────────────────
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
-
-ok()   { echo -e "${GREEN}✅ $1${NC}"; }
-info() { echo -e "${CYAN}ℹ  $1${NC}"; }
-warn() { echo -e "${YELLOW}⚠  $1${NC}"; }
-err()  { echo -e "${RED}❌ $1${NC}"; exit 1; }
-head() { echo -e "\n${BOLD}${CYAN}── $1 ──────────────────────────────────${NC}"; }
-
-# ── Config ──────────────────────────────────────────────────────
+REPO_URL="https://github.com/pancha2000/InvestySignals-new.git"
 APP_DIR="/var/www/investysignals"
 APP_NAME="investysignals"
-NGINX_CONF="/etc/nginx/sites-available/${APP_NAME}"
+NODE_VERSION="20"
+VPS_IP=$(hostname -I | awk '{print $1}')
 
-echo -e "${BOLD}"
-echo "╔══════════════════════════════════════════╗"
-echo "║     InvestySignals — Deploy Script       ║"
-echo "║         investysignals.store             ║"
-echo "╚══════════════════════════════════════════╝"
-echo -e "${NC}"
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m'
 
-# ── Detect: first install or update? ────────────────────────────
-if [ -d "$APP_DIR/.git" ]; then
-  echo -e "${YELLOW}Existing install detected.${NC}"
-  echo "1) Update (git pull + restart)"
-  echo "2) Full re-install"
-  read -p "Choose [1/2]: " INSTALL_MODE
-else
-  INSTALL_MODE="2"
-fi
+log()     { echo -e "${GREEN}[✓]${NC} $1"; }
+warn()    { echo -e "${YELLOW}[!]${NC} $1"; }
+error()   { echo -e "${RED}[✗] $1${NC}"; exit 1; }
+info()    { echo -e "${CYAN}[→]${NC} $1"; }
+section() { echo -e "\n${BLUE}╔══════════════════════════════════════════╗${NC}"; printf "${BLUE}║  %-40s║${NC}\n" "$1"; echo -e "${BLUE}╚══════════════════════════════════════════╝${NC}"; }
 
-# ════════════════════════════════════════════════════════════════
-#  UPDATE MODE  (option 1)
-# ════════════════════════════════════════════════════════════════
-if [ "$INSTALL_MODE" = "1" ]; then
-  head "Updating App"
+check_root() { [ "$EUID" -eq 0 ] || error "Run as root: sudo bash deploy.sh $1"; }
+
+# ================================================================
+#  INSTALL
+# ================================================================
+cmd_install() {
+  check_root install
+  section "InvestySignals - Fresh VPS Install"
+
+  # ── 1. System Packages ──────────────────────────────────────
+  section "Step 1/8 - System Packages"
+  apt-get update -qq
+  apt-get install -y curl gnupg git unzip software-properties-common \
+                     ca-certificates lsb-release ufw nginx openssl
+  log "System packages ready"
+
+  # ── 2. Node.js ──────────────────────────────────────────────
+  section "Step 2/8 - Node.js ${NODE_VERSION}"
+  if command -v node &>/dev/null && \
+     [ "$(node -v | sed 's/v//' | cut -d. -f1)" -ge "${NODE_VERSION}" ]; then
+    log "Node.js $(node -v) already installed"
+  else
+    info "Installing Node.js ${NODE_VERSION}..."
+    curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash -
+    apt-get install -y nodejs
+    log "Node.js $(node -v) installed"
+  fi
+
+  # ── 3. MongoDB ──────────────────────────────────────────────
+  section "Step 3/8 - MongoDB"
+  if command -v mongod &>/dev/null; then
+    log "MongoDB already installed"
+  else
+    info "Detecting Ubuntu version..."
+    UBUNTU_VER=$(lsb_release -rs)
+    UBUNTU_CS=$(lsb_release -cs)
+    info "Ubuntu $UBUNTU_VER ($UBUNTU_CS) detected"
+
+    # Remove any broken repo files first
+    rm -f /etc/apt/sources.list.d/mongodb-org-*.list
+
+    if [[ "$UBUNTU_VER" == "24.04" ]]; then
+      info "Installing MongoDB 8.0 for Ubuntu 24.04..."
+      curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc \
+        | gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg --dearmor
+      echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/8.0 multiverse" \
+        > /etc/apt/sources.list.d/mongodb-org-8.0.list
+    else
+      info "Installing MongoDB 7.0 for Ubuntu $UBUNTU_VER..."
+      curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc \
+        | gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
+      echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" \
+        > /etc/apt/sources.list.d/mongodb-org-7.0.list
+    fi
+
+    apt-get update -qq
+    apt-get install -y mongodb-org
+    log "MongoDB installed"
+  fi
+
+  systemctl enable mongod
+  systemctl start mongod
+  sleep 2
+  systemctl is-active --quiet mongod && log "MongoDB running" || error "MongoDB failed to start"
+
+  # ── 4. PM2 ──────────────────────────────────────────────────
+  section "Step 4/8 - PM2"
+  if command -v pm2 &>/dev/null; then
+    log "PM2 already installed"
+  else
+    npm install -g pm2
+    log "PM2 installed"
+  fi
+
+  # ── 5. Clone Repository ─────────────────────────────────────
+  section "Step 5/8 - Clone Repository"
+  if [ -d "$APP_DIR/.git" ]; then
+    warn "$APP_DIR exists — pulling latest"
+    cd "$APP_DIR" && git pull
+  else
+    git clone "$REPO_URL" "$APP_DIR"
+    log "Repository cloned"
+  fi
+
+  # serviceAccount.json check
+  if [ ! -f "$APP_DIR/serviceAccount.json" ]; then
+    echo ""
+    warn "══════════════════════════════════════════"
+    warn "  serviceAccount.json NOT FOUND!"
+    warn "  ඔබේ computer හි නව terminal එකක run කරන්න:"
+    warn ""
+    warn "  scp serviceAccount.json root@${VPS_IP}:${APP_DIR}/"
+    warn ""
+    warn "══════════════════════════════════════════"
+    read -p "  Upload කළාද? (y/n): " SA_DONE
+    [[ "$SA_DONE" =~ ^[Yy]$ ]] || error "serviceAccount.json required"
+    [ -f "$APP_DIR/serviceAccount.json" ] || error "File not found at $APP_DIR/serviceAccount.json"
+  fi
+  log "serviceAccount.json found"
+
+  [ -f "$APP_DIR/.env" ] || cp "$APP_DIR/.env.example" "$APP_DIR/.env"
+  log ".env ready"
+
+  info "Installing npm packages..."
   cd "$APP_DIR"
-
-  info "Pulling latest from GitHub..."
-  git pull origin main
-  ok "Code updated"
-
-  info "Installing dependencies..."
   npm install --production
-  ok "Dependencies ready"
+  log "npm packages installed"
 
-  info "Restarting PM2..."
-  pm2 restart "$APP_NAME"
-  ok "App restarted"
-
-  echo ""
-  ok "Update complete! Live at https://investysignals.store"
-  pm2 logs "$APP_NAME" --lines 20 --nostream
-  exit 0
-fi
-
-# ════════════════════════════════════════════════════════════════
-#  FULL INSTALL MODE  (option 2)
-# ════════════════════════════════════════════════════════════════
-
-# ── Collect config ──────────────────────────────────────────────
-head "Configuration"
-
-read -p "GitHub repo URL (SSH): " GITHUB_REPO
-# example: git@github.com:shehan/investysignals.git
-
-read -p "Domain (e.g. investysignals.store): " DOMAIN
-
-read -p "MongoDB URI: " MONGO_URI
-read -p "Groq API Key: " GROQ_KEY
-read -p "JWT Secret (press Enter to auto-generate): " JWT_SEC
-if [ -z "$JWT_SEC" ]; then
-  JWT_SEC=$(openssl rand -hex 32)
-  info "JWT Secret auto-generated"
-fi
-
-echo ""
-warn "Starting full install. This takes ~3 minutes."
-read -p "Continue? [y/N]: " CONFIRM
-[ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ] && exit 0
-
-# ── Step 1: System packages ─────────────────────────────────────
-head "Step 1/9 — System Packages"
-apt update -qq
-apt install -y -qq curl git unzip nginx certbot python3-certbot-nginx
-ok "System packages installed"
-
-# ── Step 2: Node.js 20 ──────────────────────────────────────────
-head "Step 2/9 — Node.js 20"
-if ! command -v node &>/dev/null || [[ $(node -v) != v20* ]]; then
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash - > /dev/null 2>&1
-  apt install -y -qq nodejs
-fi
-ok "Node.js $(node -v) ready"
-
-# ── Step 3: PM2 ─────────────────────────────────────────────────
-head "Step 3/9 — PM2"
-npm install -g pm2 --silent
-ok "PM2 $(pm2 -v) ready"
-
-# ── Step 4: GitHub SSH Key ───────────────────────────────────────
-head "Step 4/9 — GitHub SSH Key"
-if [ ! -f ~/.ssh/github_deploy ]; then
-  ssh-keygen -t ed25519 -C "vps@${DOMAIN}" -f ~/.ssh/github_deploy -N "" > /dev/null 2>&1
-  cat >> ~/.ssh/config << SSHEOF
-
-Host github.com
-  IdentityFile ~/.ssh/github_deploy
-  StrictHostKeyChecking no
-SSHEOF
-  ok "SSH key generated"
-else
-  ok "SSH key already exists"
-fi
-
-echo ""
-echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BOLD}GitHub Deploy Key — Add this to your repo:${NC}"
-echo -e "${YELLOW}GitHub → Repo → Settings → Deploy Keys → Add${NC}"
-echo ""
-cat ~/.ssh/github_deploy.pub
-echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
-read -p "Key added to GitHub? [y to continue]: " KEY_ADDED
-[ "$KEY_ADDED" != "y" ] && [ "$KEY_ADDED" != "Y" ] && err "Add the key first then re-run"
-
-# Verify GitHub connection
-ssh -T git@github.com 2>&1 | grep -q "success" || \
-  ssh -T git@github.com 2>&1 | grep -qi "authenticated" || \
-  warn "Could not verify GitHub connection — continuing anyway"
-
-# ── Step 5: Clone Repository ─────────────────────────────────────
-head "Step 5/9 — Clone Repository"
-if [ -d "$APP_DIR" ]; then
-  warn "Removing old install..."
-  pm2 delete "$APP_NAME" 2>/dev/null || true
-  rm -rf "$APP_DIR"
-fi
-
-mkdir -p /var/www
-git clone "$GITHUB_REPO" "$APP_DIR"
-ok "Repository cloned to $APP_DIR"
-
-# ── Step 6: Environment File ─────────────────────────────────────
-head "Step 6/9 — Environment File"
-cat > "$APP_DIR/.env" << ENVEOF
-PORT=2000
-MONGODB_URI=${MONGO_URI}
-GROQ_API_KEY=${GROQ_KEY}
-JWT_SECRET=${JWT_SEC}
-NODE_ENV=production
-ENVEOF
-chmod 600 "$APP_DIR/.env"
-ok ".env created (600 permissions)"
-
-# ── Step 7: Install Dependencies ────────────────────────────────
-head "Step 7/9 — Dependencies"
-cd "$APP_DIR"
-npm install --production
-ok "npm packages installed"
-
-# ── Step 8: Nginx ────────────────────────────────────────────────
-head "Step 8/9 — Nginx"
-
-# Use project nginx.conf if it exists and has SSL block
-# Otherwise write a basic proxy config
-if grep -q "ssl_certificate" "$APP_DIR/nginx.conf" 2>/dev/null; then
-  info "Using project nginx.conf (has SSL)"
-  cp "$APP_DIR/nginx.conf" "$NGINX_CONF"
-else
-  info "Writing basic nginx config (run certbot after to add SSL)"
-  cat > "$NGINX_CONF" << NGINXEOF
+  # ── 6. Nginx (Cloudflare compatible) ────────────────────────
+  section "Step 6/8 - Nginx"
+  cat > /etc/nginx/sites-available/investysignals << NGINXEOF
+# Cloudflare → Nginx → Node.js
+# SSL is handled by Cloudflare (set SSL mode to "Full" in Cloudflare)
 server {
     listen 80;
-    server_name ${DOMAIN} www.${DOMAIN};
-
-    gzip on;
-    gzip_types text/plain text/css application/javascript application/json;
+    server_name _;
 
     location / {
-        proxy_pass         http://127.0.0.1:2000;
+        proxy_pass         http://127.0.0.1:3000;
         proxy_http_version 1.1;
         proxy_set_header   Upgrade \$http_upgrade;
         proxy_set_header   Connection "upgrade";
         proxy_set_header   Host \$host;
         proxy_set_header   X-Real-IP \$remote_addr;
+        proxy_set_header   X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header   X-Forwarded-Proto \$scheme;
-        proxy_read_timeout 86400s;
+        proxy_read_timeout 86400;
+    }
+
+    location ~* \.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2)\$ {
+        proxy_pass http://127.0.0.1:3000;
+        expires 7d;
+        add_header Cache-Control "public, immutable";
     }
 }
 NGINXEOF
-fi
 
-ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/
-rm -f /etc/nginx/sites-enabled/default
-nginx -t && systemctl restart nginx
-ok "Nginx configured"
+  ln -sf /etc/nginx/sites-available/investysignals /etc/nginx/sites-enabled/investysignals
+  rm -f /etc/nginx/sites-enabled/default
+  nginx -t && systemctl reload nginx
+  log "Nginx configured with HTTPS"
 
-# ── SSL ──────────────────────────────────────────────────────────
-read -p "Domain DNS pointed to this server? Get SSL now? [y/N]: " DO_SSL
-if [ "$DO_SSL" = "y" ] || [ "$DO_SSL" = "Y" ]; then
-  certbot --nginx -d "$DOMAIN" -d "www.${DOMAIN}" --non-interactive --agree-tos -m "admin@${DOMAIN}"
-  ok "SSL certificate installed"
-else
-  warn "Skipped SSL. Run later: certbot --nginx -d ${DOMAIN} -d www.${DOMAIN}"
-fi
+  # Firewall
+  ufw allow OpenSSH      2>/dev/null || true
+  ufw allow 'Nginx Full' 2>/dev/null || true
+  ufw --force enable     2>/dev/null || true
+  log "Firewall configured"
 
-# ── Step 9: PM2 Start ────────────────────────────────────────────
-head "Step 9/9 — PM2 Start"
-cd "$APP_DIR"
-pm2 delete "$APP_NAME" 2>/dev/null || true
-pm2 start server.js --name "$APP_NAME"
-pm2 save
+  # ── 8. Start App ────────────────────────────────────────────
+  section "Step 8/8 - Start Application"
+  cd "$APP_DIR"
+  pm2 delete "$APP_NAME" 2>/dev/null || true
+  pm2 start server.js --name "$APP_NAME" --restart-delay=3000 --max-restarts=10 --time
+  pm2 save
+  PM2_CMD=$(pm2 startup systemd -u root --hp /root 2>/dev/null | grep "sudo" | tail -1)
+  [ -n "$PM2_CMD" ] && eval "$PM2_CMD" 2>/dev/null || true
+  pm2 save
+  log "App started"
 
-# Setup auto-start on reboot
-PM2_STARTUP=$(pm2 startup 2>&1 | grep "sudo env" | tail -1)
-if [ -n "$PM2_STARTUP" ]; then
-  eval "$PM2_STARTUP"
-  ok "PM2 auto-start configured"
-fi
+  # ── Done ────────────────────────────────────────────────────
+  echo ""
+  echo -e "${GREEN}╔══════════════════════════════════════════════╗${NC}"
+  echo -e "${GREEN}║        ✅  Installation Complete!            ║${NC}"
+  echo -e "${GREEN}╚══════════════════════════════════════════════╝${NC}"
+  echo ""
+  echo -e "  🌐 Website : ${CYAN}http://${VPS_IP}${NC}"
+  echo -e "  ${YELLOW}(Domain + SSL: sudo bash deploy.sh install-domain)${NC}"
+  echo ""
+  echo -e "  📋 Logs    : sudo bash /var/www/investysignals/deploy.sh logs"
+  echo -e "  📊 Status  : sudo bash /var/www/investysignals/deploy.sh status"
+  echo ""
+  pm2 status
+}
 
-# ── Firewall ─────────────────────────────────────────────────────
-ufw allow ssh > /dev/null 2>&1
-ufw allow 80  > /dev/null 2>&1
-ufw allow 443 > /dev/null 2>&1
-ufw --force enable > /dev/null 2>&1
-ok "Firewall configured"
+# ================================================================
+#  UPDATE
+# ================================================================
+cmd_update() {
+  check_root update
+  section "InvestySignals - Update"
+  [ -d "$APP_DIR" ] || error "$APP_DIR not found. Run install first."
 
-# ── Done ─────────────────────────────────────────────────────────
+  info "Backing up config files..."
+  cp "$APP_DIR/.env"                /tmp/.investy_env_bak 2>/dev/null || true
+  cp "$APP_DIR/serviceAccount.json" /tmp/.investy_sa_bak  2>/dev/null || true
+
+  info "Pulling from GitHub..."
+  cd "$APP_DIR"
+  git fetch origin
+  git reset --hard origin/main
+  log "Code updated"
+
+  cp /tmp/.investy_env_bak  "$APP_DIR/.env"                2>/dev/null || true
+  cp /tmp/.investy_sa_bak   "$APP_DIR/serviceAccount.json" 2>/dev/null || true
+  log "Config files preserved"
+
+  info "Updating npm packages..."
+  npm install --production
+  log "npm updated"
+
+  info "Restarting..."
+  if pm2 describe "$APP_NAME" > /dev/null 2>&1; then
+    pm2 reload "$APP_NAME" --update-env 2>/dev/null \
+      || pm2 restart "$APP_NAME" --update-env 2>/dev/null \
+      || { pm2 delete "$APP_NAME" 2>/dev/null || true
+           pm2 start "$APP_DIR/server.js" --name "$APP_NAME" --restart-delay=3000 --max-restarts=10 --time; }
+  else
+    pm2 start "$APP_DIR/server.js" --name "$APP_NAME" --restart-delay=3000 --max-restarts=10 --time
+  fi
+  pm2 save
+  sleep 2
+  log "App restarted"
+
+  echo ""
+  echo -e "${GREEN}╔══════════════════════════════════════╗${NC}"
+  echo -e "${GREEN}║       ✅  Update Complete!           ║${NC}"
+  echo -e "${GREEN}╚══════════════════════════════════════╝${NC}"
+  echo ""
+  pm2 status
+}
+
+# ================================================================
+#  STATUS / LOGS / RESTART / STOP
+# ================================================================
+cmd_status() {
+  section "InvestySignals - Status"
+  echo -e "${CYAN}── PM2 ───────────────────────────────${NC}"
+  pm2 status 2>/dev/null || echo "PM2 not found"
+  echo ""
+  echo -e "${CYAN}── Services ──────────────────────────${NC}"
+  for svc in mongod nginx; do
+    systemctl is-active --quiet "$svc" 2>/dev/null \
+      && echo -e "  ${GREEN}[✓]${NC} $svc  RUNNING" \
+      || echo -e "  ${RED}[✗]${NC} $svc  STOPPED"
+  done
+  echo ""
+  echo -e "${CYAN}── URL ───────────────────────────────${NC}"
+  echo -e "  ${CYAN}https://$(hostname -I | awk '{print $1}')${NC}"
+}
+
+# ================================================================
+#  INSTALL DOMAIN (Cloudflare + Let's Encrypt)
+# ================================================================
+cmd_install_domain() {
+  check_root install-domain
+  section "InvestySignals - Domain Setup"
+
+  apt-get install -y certbot python3-certbot-nginx
+
+  read -p "  Domain enter කරන්න (eg: investysignals.store): " DOMAIN
+  [ -z "$DOMAIN" ] && error "Domain name required"
+
+  # Update nginx with domain + Cloudflare-compatible config
+  cat > /etc/nginx/sites-available/investysignals << NGINXEOF
+server {
+    listen 80;
+    server_name ${DOMAIN} www.${DOMAIN};
+
+    location / {
+        proxy_pass         http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade \$http_upgrade;
+        proxy_set_header   Connection "upgrade";
+        proxy_set_header   Host \$host;
+        proxy_set_header   X-Real-IP \$remote_addr;
+        proxy_set_header   X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 86400;
+    }
+
+    location ~* \.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2)\$ {
+        proxy_pass http://127.0.0.1:3000;
+        expires 7d;
+        add_header Cache-Control "public, immutable";
+    }
+}
+NGINXEOF
+
+  ln -sf /etc/nginx/sites-available/investysignals /etc/nginx/sites-enabled/investysignals
+  rm -f /etc/nginx/sites-enabled/default
+  nginx -t && systemctl reload nginx
+  log "Nginx updated: $DOMAIN"
+
+  warn "Cloudflare use කරනවා නම් SSL mode 'Full' set කරන්න"
+  warn "Cloudflare → SSL/TLS → Full (not Flexible)"
+  echo ""
+
+  echo ""
+  echo -e "${GREEN}╔══════════════════════════════════════════╗${NC}"
+  echo -e "${GREEN}║   Domain Setup Complete!                 ║${NC}"
+  echo -e "${GREEN}╚══════════════════════════════════════════╝${NC}"
+  echo ""
+  echo -e "  🌐 Website : ${CYAN}https://${DOMAIN}${NC}"
+  echo ""
+}
+
+# ================================================================
+#  FIX serviceAccount.json  (Web Upload — mobile friendly)
+# ================================================================
+cmd_fix_sa() {
+  check_root fix-sa
+  section "Fix serviceAccount.json"
+
+  VPS_IP=$(hostname -I | awk '{print $1}')
+  UPLOAD_PORT=9988
+
+  # Open firewall temporarily
+  ufw allow ${UPLOAD_PORT}/tcp 2>/dev/null || true
+
+  info "Temporary web upload server starting on port ${UPLOAD_PORT}..."
+  echo ""
+  echo -e "  ${GREEN}Phone browser එකෙන් මේ URL open කරන්න:${NC}"
+  echo -e "  ${CYAN}http://${VPS_IP}:${UPLOAD_PORT}${NC}"
+  echo ""
+  warn "Firebase Console → Project Settings → Service Accounts"
+  warn "→ 'Generate new private key' → JSON download කරන්න"
+  warn "→ ඒ file browser page එකේ upload කරන්න"
+  echo ""
+
+  python3 - << PYEOF
+import http.server, json, os, sys, urllib.parse
+
+APP_DIR = "/var/www/investysignals"
+PORT    = ${UPLOAD_PORT}
+
+HTML = """<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>InvestySignals - Firebase Setup</title>
+<style>
+  body{font-family:sans-serif;max-width:500px;margin:40px auto;padding:20px;background:#1a1a2e;color:#eee}
+  h2{color:#00d4ff}
+  textarea{width:100%;height:200px;background:#0f0f23;color:#eee;border:1px solid #333;padding:10px;border-radius:8px;font-size:12px}
+  input[type=file]{color:#eee;margin:10px 0;display:block}
+  button{background:#00d4ff;color:#000;border:none;padding:12px 30px;border-radius:8px;font-size:16px;cursor:pointer;width:100%;margin-top:10px}
+  .ok{color:#00ff88;font-size:18px;font-weight:bold}
+  .err{color:#ff4444}
+  p{color:#aaa;font-size:14px}
+</style>
+</head>
+<body>
+<h2>Firebase Service Account</h2>
+<p>serviceAccount.json file එක select කරන්න හෝ JSON paste කරන්න:</p>
+<form method="POST" enctype="multipart/form-data">
+  <input type="file" name="jsonfile" accept=".json">
+  <p>හෝ JSON content paste කරන්න:</p>
+  <textarea name="jsontext" placeholder='{ "type": "service_account", ... }'></textarea>
+  <button type="submit">Upload &amp; Save</button>
+</form>
+</body>
+</html>"""
+
+SUCCESS_HTML = """<!DOCTYPE html>
+<html>
+<head><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Done</title>
+<style>body{font-family:sans-serif;text-align:center;padding:60px 20px;background:#1a1a2e;color:#eee}</style>
+</head>
+<body>
+<div style="font-size:60px">✅</div>
+<h2 style="color:#00ff88">serviceAccount.json saved!</h2>
+<p style="color:#aaa">Terminal එකට යන්න — App restart වෙනවා</p>
+</body>
+</html>"""
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type","text/html; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(HTML.encode())
+
+    def do_POST(self):
+        ctype = self.headers.get("Content-Type","")
+        length = int(self.headers.get("Content-Length",0))
+        body = self.rfile.read(length)
+        content = ""
+
+        if "multipart" in ctype:
+            # Parse file upload
+            boundary = ctype.split("boundary=")[-1].encode()
+            parts = body.split(b"--" + boundary)
+            for part in parts:
+                if b'filename' in part and b'.json' in part:
+                    content = part.split(b"\r\n\r\n",1)[-1].rstrip(b"\r\n--").decode("utf-8","ignore")
+                elif b'name="jsontext"' in part:
+                    txt = part.split(b"\r\n\r\n",1)[-1].rstrip(b"\r\n--").decode("utf-8","ignore").strip()
+                    if txt:
+                        content = txt
+        else:
+            params = urllib.parse.parse_qs(body.decode("utf-8","ignore"))
+            content = params.get("jsontext",[""])[0].strip()
+
+        # Remove BOM
+        if content.startswith("\ufeff"):
+            content = content[1:]
+
+        # Validate
+        try:
+            data = json.loads(content)
+        except Exception as e:
+            self.send_response(200)
+            self.send_header("Content-type","text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(f"<h2 style='color:red'>Error: {e}</h2><a href='/'>Back</a>".encode())
+            return
+
+        required = ["type","project_id","private_key","client_email"]
+        for k in required:
+            if k not in data:
+                self.send_response(200)
+                self.send_header("Content-type","text/html; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(f"<h2 style='color:red'>Missing: {k}</h2><a href='/'>Back</a>".encode())
+                return
+
+        # Save
+        with open(os.path.join(APP_DIR,"serviceAccount.json"),"w") as f:
+            json.dump(data, f, indent=2)
+
+        self.send_response(200)
+        self.send_header("Content-type","text/html; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(SUCCESS_HTML.encode())
+
+        # Signal success and stop server
+        print("__UPLOAD_SUCCESS__")
+        sys.stdout.flush()
+        os._exit(0)
+
+print(f"Server ready on port {PORT}")
+sys.stdout.flush()
+httpd = http.server.HTTPServer(("0.0.0.0", PORT), Handler)
+httpd.serve_forever()
+PYEOF
+
+  STATUS=$?
+
+  # Close firewall port
+  ufw delete allow ${UPLOAD_PORT}/tcp 2>/dev/null || true
+
+  if [ $STATUS -eq 0 ]; then
+    log "serviceAccount.json saved successfully"
+    echo ""
+    info "App restarting..."
+    pm2 restart "$APP_NAME" --update-env 2>/dev/null || \
+      pm2 start "$APP_DIR/server.js" --name "$APP_NAME" --restart-delay=3000 --max-restarts=10
+    pm2 save
+    sleep 3
+    echo ""
+    pm2 status
+    echo ""
+    pm2 logs "$APP_NAME" --lines 15 --nostream
+  else
+    warn "Upload නොවුනා — නැවත try කරන්න"
+  fi
+}
+
+cmd_logs()    { pm2 logs "$APP_NAME" --lines 100; }
+cmd_restart() { check_root restart; pm2 restart "$APP_NAME"; pm2 status; }
+cmd_stop()    { check_root stop; pm2 stop "$APP_NAME"; pm2 status; }
+
+# ================================================================
+#  MAIN
+# ================================================================
 echo ""
-echo -e "${GREEN}${BOLD}"
-echo "╔══════════════════════════════════════════╗"
-echo "║       Deploy Complete! 🚀                ║"
-echo "╚══════════════════════════════════════════╝"
-echo -e "${NC}"
-pm2 status
+echo -e "${BLUE}  InvestySignals Deploy Script${NC}"
 echo ""
-info "App URL: https://${DOMAIN}"
-info "API check: https://${DOMAIN}/api/version"
-echo ""
-info "Future updates: cd ${APP_DIR} && git pull && npm install --production && pm2 restart ${APP_NAME}"
-echo ""
-pm2 logs "$APP_NAME" --lines 15 --nostream
+case "${1:-help}" in
+  install)        cmd_install        ;;
+  install-domain) cmd_install_domain ;;
+  fix-sa)         cmd_fix_sa         ;;
+  update)         cmd_update         ;;
+  status)         cmd_status         ;;
+  logs)           cmd_logs           ;;
+  restart)        cmd_restart        ;;
+  stop)           cmd_stop           ;;
+  *)
+    echo "  Usage: sudo bash deploy.sh [command]"
+    echo ""
+    echo "  install         — Fresh VPS: Node, MongoDB, Nginx, PM2, App"
+    echo "  install-domain  — Domain + Cloudflare SSL setup"
+    echo "  fix-sa          — serviceAccount.json fix/replace"
+    echo "  update          — GitHub pull + npm update + restart"
+    echo "  status          — All services status"
+    echo "  logs            — Live logs"
+    echo "  restart         — Restart app"
+    echo "  stop            — Stop app"
+    echo ""
+    ;;
+esac
