@@ -66,8 +66,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-b);line-heigh
   .dash-sidebar{transform:translateX(-100%);top:0;height:100vh;}
   .dash-sidebar.open{transform:translateX(0);}
 }
-.dash-main{margin-left:var(--sidebar-w);flex:1;padding:24px 28px;display:none;}
-@media(max-width:768px){.dash-main{margin-left:0;padding:14px 12px 80px;}}
+.dash-main{margin-left:0;flex:1;padding:88px 28px 40px;display:none;}
+@media(max-width:768px){.dash-main{margin-left:0;padding:80px 12px 40px;}}
 
 /* Page header */
 .pg-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;flex-wrap:wrap;gap:12px;}
@@ -279,32 +279,43 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-b);line-heigh
 </div>
 
 
-<div class="mob-overlay" id="mobOverlay" onclick="closeMobSidebar()"></div>
+<div id="navBackdrop" class="nav-backdrop"></div>
 
-<div class="dash-wrap">
-  <aside class="dash-sidebar" id="dashSidebar">
-    <div class="ds-brand">
-      <div class="ds-logo">INVESTY<span>SIGNALS</span></div>
-      <div class="live-dot" style="margin-left:auto"></div>
+<nav class="auth-nav">
+    <div class="auth-nav-left">
+        <button class="auth-hamburger" id="authHamburger">☰</button>
+        <a href="index.html" class="logo" style="font-size:0.9rem;">
+            <div class="logo-icon" style="width:26px;height:26px;font-size:0.85rem;">◈</div>
+            <span>INVESTY<span class="logo-accent">SIGNALS</span></span>
+        </a>
+        <span class="page-title">PAPER TRADES</span>
     </div>
-    <div class="ds-user">
-      <div class="ds-avatar" id="userAvatar">?</div>
-      <div style="min-width:0">
-        <div class="ds-uname" id="userName">Loading…</div>
-        <div class="ds-uemail" id="userEmail">—</div>
-      </div>
-    </div>
-    <nav class="ds-nav">
-      <a href="dashboard.html"><span class="ni">📊</span> Dashboard</a>
-      <a href="live-signals.html" class="active"><span class="ni">📝</span> Paper Trades <span class="ds-badge green">LIVE</span></a>
-      <a href="analysis.html"><span class="ni">🧠</span> Analysis</a>
-      <a href="profile.html"><span class="ni">👤</span> Profile</a>
-      <a href="admin.html" id="adminSidebarLink" style="display:none;color:#f0b429;"><span class="ni">⚡</span> Admin Panel</a>
+    <nav class="auth-nav-menu" id="authNavMenu">
+        <a href="dashboard.html" class="auth-nav-link">📊 Dashboard</a>
+        <a href="live-signals.html" class="auth-nav-link active">📝 Paper Trades</a>
+        <a href="analysis.html" class="auth-nav-link">🧠 Analysis</a>
+        <a href="profile.html" class="auth-nav-link">👤 Profile</a>
+        <a href="admin.html" id="adminNavLink" class="auth-nav-link" style="display:none;color:#f0b429;">⚡ Admin Panel</a>
+        <div class="nav-divider"></div>
+        <a class="auth-nav-link" style="color:var(--red,#ff4d4f);cursor:pointer;" id="sidebarLogout">🔓 Log Out</a>
     </nav>
-    <div class="ds-footer">
-      <button class="btn-signout" onclick="handleSignOut()">🚪 Sign Out</button>
+    <div class="auth-nav-right">
+        <span class="badge badge-green" style="display:flex;align-items:center;gap:5px;"><span class="live-dot" style="width:6px;height:6px;"></span>Live</span>
+        <div class="user-chip-wrap" id="userChipWrap">
+            <div class="user-chip" id="userChipBtn" style="cursor:pointer;">
+                <div class="user-avatar" id="userAvatar">U</div>
+                <span class="user-name" id="userName">User</span>
+                <span style="font-size:0.65rem;color:var(--text-muted);margin-left:2px;">▾</span>
+            </div>
+            <div class="user-dropdown" id="userDropdown">
+                <a href="profile.html" class="ud-item">👤 Profile</a>
+                <a href="admin.html" id="adminDropBtn" class="ud-item" style="display:none;color:#f0b429;">⚡ Admin Panel</a>
+                <div style="height:1px;background:var(--border-soft);margin:4px 0;"></div>
+                <a class="ud-item ud-danger" id="dropdownLogout">🔓 Log Out</a>
+            </div>
+        </div>
     </div>
-  </aside>
+</nav>
 
   <main class="dash-main" id="dashMain">
     <div class="pg-head">
@@ -415,8 +426,10 @@ onAuthStateChanged(auth, async (user) => {
         if(_sj.status.suspended){document.body.innerHTML='<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#070b14;flex-direction:column;gap:20px;font-family:Outfit,sans-serif;text-align:center;padding:24px"><div style="font-size:3rem">🚫</div><div style="font-family:Rajdhani,sans-serif;font-size:1.8rem;font-weight:700;color:#ff3d5a">Account Suspended</div><div style="color:#64748b;font-size:.9rem;max-width:400px;margin-top:8px">'+(_sj.status.suspendReason||'Your account has been suspended.')+'</div></div>';return;}
         const _fl = _sj.status.flags || {};
         if(_sj.status.role === 'admin') {
-          const _al = document.getElementById('adminSidebarLink');
-          if(_al) _al.style.display = 'flex';
+          ['adminNavLink','adminDropBtn'].forEach(id => {
+            const el = document.getElementById(id);
+            if(el) el.style.display = 'flex';
+          });
         }
         if(_fl.feature_live_signals === false){document.body.innerHTML='<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#070b14;flex-direction:column;gap:16px;font-family:Outfit,sans-serif;text-align:center;padding:24px"><div style="font-size:3rem">🚫</div><div style="font-family:Rajdhani,sans-serif;font-size:1.8rem;font-weight:700;color:#ff3d5a">Feature Unavailable</div><div style="color:#64748b;font-size:.95rem;max-width:400px;margin-top:8px">The Live Signals feature has been disabled by the administrator.</div></div>';return;}
         if(_fl.gate_signals_login && !_uid){document.body.innerHTML='<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#070b14;flex-direction:column;gap:16px;font-family:Outfit,sans-serif;text-align:center;padding:24px"><div style="font-size:3rem">🔒</div><div style="font-family:Rajdhani,sans-serif;font-size:1.8rem;font-weight:700;color:#e2e8f0">Login Required</div><div style="color:#64748b;font-size:.95rem;max-width:400px;margin-top:8px">Please log in to access this feature.</div><a href=\'login.html\' style=\'margin-top:12px;padding:10px 24px;background:#00d4ff;color:#070b14;border-radius:8px;text-decoration:none;font-weight:700\'>Login</a></div>';return;}
@@ -1308,5 +1321,40 @@ function monDoClose() {
   promptClose(_monTradeId);
 }
 
+
+    /* ── Nav JS (dashboard-style) ── */
+    (function() {
+        const _ham      = document.getElementById('authHamburger');
+        const _menu     = document.getElementById('authNavMenu');
+        const _backdrop = document.getElementById('navBackdrop');
+        function closeNav() {
+            _menu && _menu.classList.remove('open');
+            _backdrop && _backdrop.classList.remove('open');
+        }
+        if (_ham && _menu) {
+            _ham.addEventListener('click', () => {
+                const open = _menu.classList.toggle('open');
+                _backdrop && _backdrop.classList.toggle('open', open);
+            });
+        }
+        _backdrop && _backdrop.addEventListener('click', closeNav);
+        const _slogout = document.getElementById('sidebarLogout');
+        if (_slogout) _slogout.addEventListener('click', async () => {
+            closeNav();
+            if (typeof window.handleSignOut === 'function') await window.handleSignOut();
+            else window.location.href = 'index.html';
+        });
+        const _chip  = document.getElementById('userChipBtn');
+        const _ddrop = document.getElementById('userDropdown');
+        if (_chip && _ddrop) {
+            _chip.addEventListener('click', (e) => { e.stopPropagation(); _ddrop.classList.toggle('open'); });
+            document.addEventListener('click', () => _ddrop.classList.remove('open'));
+        }
+        const _dlogout = document.getElementById('dropdownLogout');
+        if (_dlogout) _dlogout.addEventListener('click', async () => {
+            if (typeof window.handleSignOut === 'function') await window.handleSignOut();
+            else window.location.href = 'index.html';
+        });
+    })();
 </script>
 </html>
