@@ -226,8 +226,6 @@ app.use((req, res, next) => {
   if (BLOCKED_STATIC.includes(file)) return res.status(403).json({ success: false, error: 'Forbidden' });
   next();
 });
-// Redirect /index.html → / (fixes canonical URL mismatch in SEO)
-app.get('/index.html', (req, res) => res.redirect(301, '/'));
 // Serve HTML/CSS/JS files from project root
 app.use(express.static(path.join(__dirname)));
 
