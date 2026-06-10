@@ -43,6 +43,7 @@ const mongoose   = require('mongoose');
 const cors       = require('cors');
 const helmet     = require('helmet');
 const rateLimit  = require('express-rate-limit');
+const compression = require('compression');
 const path       = require('path');
 const admin      = require('firebase-admin');
 
@@ -186,6 +187,7 @@ const CONFLUENCE_THRESHOLD = 5; // score/10 — below this = NEUTRAL (5/10 now p
 // ── Express ───────────────────────────────────────────────────
 const app = express();
 app.set('trust proxy', 1);
+app.use(compression()); // gzip all responses — reduces HTML/CSS/JS size ~70%
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
 const allowedOrigin = process.env.ALLOWED_ORIGIN;
 // BUG FIX: CORS — www. + non-www + mobile app requests all allowed
@@ -224,6 +226,8 @@ app.use((req, res, next) => {
   if (BLOCKED_STATIC.includes(file)) return res.status(403).json({ success: false, error: 'Forbidden' });
   next();
 });
+// Redirect /index.html → / (fixes canonical URL mismatch in SEO)
+app.get('/index.html', (req, res) => res.redirect(301, '/'));
 // Serve HTML/CSS/JS files from project root
 app.use(express.static(path.join(__dirname)));
 
