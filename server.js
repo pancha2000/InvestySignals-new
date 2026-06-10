@@ -227,10 +227,6 @@ app.use((req, res, next) => {
 // Serve HTML/CSS/JS files from project root
 app.use(express.static(path.join(__dirname)));
 
-// Explicitly serve SEO files so they're never blocked by other routes
-app.get('/robots.txt', (req, res) => res.sendFile(path.join(__dirname, 'robots.txt')));
-app.get('/sitemap.xml', (req, res) => { res.setHeader('Content-Type','application/xml'); res.sendFile(path.join(__dirname, 'sitemap.xml')); });
-
 // ── Auth ──────────────────────────────────────────────────────
 async function ensureAdminPromotion(uid, emailFromToken) {
   try {
@@ -630,21 +626,19 @@ app.patch('/api/paper/trade/:id/close', ptAuth, async (req, res) => {
 
     const closePrice  = parseFloat(req.body.closePrice) || 0;
     const entryPrice  = tradeBeforeClose.entryPrice || tradeBeforeClose.entry || 0;
-    // FIX: use remainingSize (not size) — for TP1_HIT trades only 50% of position remains open
-    const tradeSize   = tradeBeforeClose.remainingSize || tradeBeforeClose.size || tradeBeforeClose.amount || 0;
+    const tradeSize   = tradeBeforeClose.size || tradeBeforeClose.amount || 0;
     const leverage    = tradeBeforeClose.leverage || 1;
     const isLong      = tradeBeforeClose.direction === 'LONG';
 
     let pnl = parseFloat(req.body.pnl || req.body.totalPnl || 0);
     if (!pnl && closePrice && entryPrice && tradeSize) {
-      // FIX: always derive notional from current remaining size (stored notional = original full position)
-      const notional = tradeSize * leverage;
+      const notional = tradeBeforeClose.notional || (tradeSize * leverage);
       pnl = isLong
         ? (closePrice - entryPrice) / entryPrice * notional
         : (entryPrice - closePrice) / entryPrice * notional;
       pnl = parseFloat(pnl.toFixed(4));
     }
-    const notionalForRoe = tradeSize * leverage;
+    const notionalForRoe = tradeBeforeClose.notional || (tradeSize * leverage);
     const roe = notionalForRoe
       ? parseFloat((pnl / (notionalForRoe / leverage) * 100).toFixed(2))
       : 0;
@@ -654,8 +648,9 @@ app.patch('/api/paper/trade/:id/close', ptAuth, async (req, res) => {
     const trade = await PT.findOneAndUpdate(filter, { $set: patch }, { new: true });
     if (!trade) return res.status(404).json({ success:false, error:'Trade not found' });
 
-    // FIX: refund remaining margin (remainingSize), not original full size
-    if (tradeSize > 0) await PB.updateOne({ uid: req.uid }, { $inc: { balance: tradeSize + pnl } }, { upsert: true });
+    // Refund margin + pnl to balance
+    const size = trade.size || trade.amount || 0;
+    if (size > 0) await PB.updateOne({ uid: req.uid }, { $inc: { balance: size + pnl } }, { upsert: true });
     res.json({ success:true, trade, pnl, roe });
   } catch(e) { res.status(500).json({ success:false, error:e.message }); }
 });
@@ -804,11 +799,10 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     const out=[v]; for(let i=n;i<arr.length;i++){v=arr[i]*k+v*(1-k);out.push(v);} return out;
   }
   function _da_rsi(closes, period=14) {
-    if(closes.length < period+2) return 50;
     let g=0,l=0;
     for(let i=1;i<=period;i++){const d=closes[i]-closes[i-1];d>=0?g+=d:l-=d;}
     let ag=g/period,al=l/period;
-    for(let i=period+1;i<closes.length;i++){const d=closes[i]-closes[i-1];ag=(ag*(period-1)+(d>0?d:0))/period;al=(al*(period-1)+(d<0?-d:0))/period;}
+    for(let i=period+1;i<closes.length;i++){const d=closes[i]-closes[i-1];ag=(ag*13+(d>0?d:0))/14;al=(al*13+(d<0?-d:0))/14;}
     if(al===0) return 100;
     if(ag===0) return 0;
     return parseFloat((100-100/(1+ag/al)).toFixed(2));
@@ -894,10 +888,8 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     return null;
   }
   function _da_volRatio(candles,n=20) {
-    if(candles.length<n+1) return {ratio:1,spike:false};
     const vols=candles.map(c=>c.volume);
     const avg=vols.slice(-n-1,-1).reduce((a,b)=>a+b,0)/n;
-    if(avg===0) return {ratio:1,spike:false};
     const last=vols[vols.length-1];
     const ratio=parseFloat((last/avg).toFixed(2));
     return {ratio,spike:ratio>2};
@@ -940,13 +932,12 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     let g=0, l=0;
     for (let i=1; i<=period; i++) { const d=closes[i]-closes[i-1]; d>=0?g+=d:l-=d; }
     let ag=g/period, al=l/period;
-    // Edge case: if both gains and losses are 0 (no price movement), RSI = 50 (neutral)
-    out.push(ag===0&&al===0 ? 50 : parseFloat((100-100/(1+(al===0?Infinity:ag/al))).toFixed(2)));
+    out.push(parseFloat((100-100/(1+(al===0?Infinity:ag/al))).toFixed(2)));
     for (let i=period+1; i<closes.length; i++) {
       const d=closes[i]-closes[i-1];
       ag=(ag*(period-1)+(d>0?d:0))/period;
       al=(al*(period-1)+(d<0?-d:0))/period;
-      out.push(ag===0&&al===0 ? 50 : parseFloat((100-100/(1+(al===0?Infinity:ag/al))).toFixed(2)));
+      out.push(parseFloat((100-100/(1+(al===0?Infinity:ag/al))).toFixed(2)));
     }
     return out;
   }
@@ -974,7 +965,7 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
       minusDM.push(lowDiff > 0 && lowDiff > highDiff ? lowDiff : 0);
     }
 
-    // Wilder's smoothed SUM (not average) — used for DM/TR where ratio cancels the period scaling
+    // Wilder's smoothing (same as RSI)
     function wilderSmooth(arr, p) {
       let sum = arr.slice(0, p).reduce((a, b) => a + b, 0);
       const out = [sum];
@@ -999,8 +990,7 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     }
 
     const adxArr = wilderSmooth(dxArr, period);
-    // FIXED: wilderSmooth returns smoothed SUM ≈ period × mean(DX). Divide by period for true ADX (0-100).
-    const adxVal  = parseFloat((adxArr[adxArr.length - 1] / period).toFixed(2));
+    const adxVal  = parseFloat(adxArr[adxArr.length - 1].toFixed(2));
     const lastTR  = smoothTR[smoothTR.length - 1];
     const plusDIv = lastTR ? parseFloat((100 * smoothPDM[smoothPDM.length - 1] / lastTR).toFixed(2)) : 0;
     const minDIv  = lastTR ? parseFloat((100 * smoothMDM[smoothMDM.length - 1] / lastTR).toFixed(2)) : 0;
@@ -1610,11 +1600,7 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
       let g=0, l=0;
       for (let i=1; i<=period; i++) { const d=closes[i]-closes[i-1]; d>=0?g+=d:l-=d; }
       let ag=g/period, al=l/period;
-      for (let i=period+1; i<closes.length; i++) {
-        const d=closes[i]-closes[i-1];
-        ag=(ag*(period-1)+(d>0?d:0))/period;
-        al=(al*(period-1)+(d<0?-d:0))/period;
-      }
+      for (let i=period+1; i<closes.length; i++) { const d=closes[i]-closes[i-1]; ag=(ag*13+(d>0?d:0))/14; al=(al*13+(d<0?-d:0))/14; }
       if (al===0) return 100; if (ag===0) return 0;
       return parseFloat((100-100/(1+ag/al)).toFixed(1));
     }
@@ -1647,7 +1633,7 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
       return { signal: hist>0?'BULLISH':'BEARISH', hist };
     }
     function monStruct(candles) {
-      if (candles.length < 20) return 'RANGING';
+      if (candles.length < 12) return 'RANGING';
       const c = candles.slice(-20);
       const mid = Math.floor(c.length/2);
       const pHH = Math.max(...c.slice(0,mid).map(x=>x.high));
@@ -1666,7 +1652,7 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
       if (candles.length < n+1) return 0;
       const trs = candles.slice(1).map((c,i) => Math.max(c.high-c.low, Math.abs(c.high-candles[i].close), Math.abs(c.low-candles[i].close)));
       let atr = trs.slice(0,n).reduce((a,b)=>a+b,0)/n;
-      for (let i=n; i<trs.length; i++) atr=(atr*(n-1)+trs[i])/n;
+      for (let i=n; i<trs.length; i++) atr=(atr*13+trs[i])/14;
       return parseFloat(atr.toFixed(6));
     }
     function _da_volRatio(candles, n=20) {
@@ -2269,44 +2255,28 @@ wss.on('connection', async (ws, req) => {
   });
 });
 
-// ── Auto TP/SL Check Engine ──────────────────────────────────────────────────
-let _tpslRunning = false; // concurrency lock — prevents double-trigger if a cycle takes >30s
-
+// ── Auto TP/SL Check Engine (re-added) ───────────────────────────────────
 async function runTPSLCheck() {
-  if (_tpslRunning) return; // skip if previous cycle still running
-  _tpslRunning = true;
   try {
     const openTrades = await PT.find({
       status: { $in: ['OPEN', 'TP1_HIT', 'PENDING_LONG', 'PENDING_SHORT'] }
     });
     if (!openTrades.length) return;
 
-    // FIX: Batch-fetch all unique symbols first (avoids per-trade API calls hitting rate limits)
-    const uniqueSymbols = [...new Set(
-      openTrades.map(t => normalizePair(t.pair || t.symbol)).filter(Boolean)
-    )];
-    const priceMap = {};
-    await Promise.all(uniqueSymbols.map(async sym => {
-      try { const p = await getLivePrice(sym); if (p) priceMap[sym] = p; } catch(_) {}
-    }));
-
     for (const trade of openTrades) {
       try {
         const symbol = normalizePair(trade.pair || trade.symbol);
         if (!symbol) continue;
-        const price = priceMap[symbol];
+        const price = await getLivePrice(symbol);
         if (!price) continue;
 
         const isLong = trade.direction === 'LONG';
-        const entry  = trade.entryPrice || trade.entry;
+        const entry = trade.entryPrice || trade.entry;
+        const size = trade.remainingSize || trade.size || trade.amount || 0;
+        const lev = trade.leverage || 1;
+        const notional = trade.notional || (size * lev);
 
-        // FIX: Always derive notional from current remaining size (not stored original notional)
-        // trade.remainingSize is 50% after TP1 — using trade.notional here would give 2× PnL
-        const size     = trade.remainingSize || trade.size || trade.amount || 0;
-        const lev      = trade.leverage || 1;
-        const notional = size * lev; // ← always from current size
-
-        // ── Fill pending limit orders ─────────────────────────────
+        // Fill pending limit orders
         if (trade.status === 'PENDING_LONG' && price <= trade.triggerPrice) {
           await PT.findByIdAndUpdate(trade._id, { status: 'OPEN', fillTime: new Date() });
           continue;
@@ -2318,53 +2288,46 @@ async function runTPSLCheck() {
 
         if (!['OPEN','TP1_HIT'].includes(trade.status)) continue;
 
-        const sl  = trade.currentSl || trade.sl;
+        const sl = trade.currentSl || trade.sl;
         const tp1 = trade.tp1;
         const tp2 = trade.tp2;
 
-        // ── TP1 — partial close 50% ───────────────────────────────
+        // TP1 partial close
         if (trade.status === 'OPEN' && tp1 && (isLong ? price >= tp1 : price <= tp1)) {
-          // FIX: use tp1 as fill price (not live price) — avoids gap-through distortion
-          const tp1Pnl = isLong ? (tp1 - entry) / entry * notional * 0.5
-                                : (entry - tp1) / entry * notional * 0.5;
+          const tp1Pnl = isLong ? (tp1 - entry) / entry * notional * 0.5 : (entry - tp1) / entry * notional * 0.5;
           await PT.findByIdAndUpdate(trade._id, {
             status: 'TP1_HIT',
             tp1HitPrice: tp1,
             tp1Pnl,
-            currentSl: entry,          // move SL to break-even
-            remainingSize: size * 0.5, // 50% remains open
+            currentSl: entry,
+            remainingSize: size * 0.5,
           });
+          // Refund 50% margin + TP1 profit
           const refund = size * 0.5 + tp1Pnl;
           await PB.findOneAndUpdate({ uid: trade.uid }, { $inc: { balance: refund } }, { upsert: true });
           continue;
         }
 
-        // ── TP2 — full close of remaining position ────────────────
+        // TP2 full close
         if (tp2 && (isLong ? price >= tp2 : price <= tp2)) {
-          // FIX: use tp2 as fill price for PnL accuracy
-          const pnl = isLong ? (tp2 - entry) / entry * notional
-                             : (entry - tp2) / entry * notional;
-          await PT.findByIdAndUpdate(trade._id, { status: 'CLOSED', closePrice: tp2, closedAt: new Date(), pnl });
+          const pnl = isLong ? (price - entry) / entry * notional : (entry - price) / entry * notional;
+          await PT.findByIdAndUpdate(trade._id, { status: 'CLOSED', closePrice: price, closedAt: new Date(), pnl });
           await PB.findOneAndUpdate({ uid: trade.uid }, { $inc: { balance: size + pnl } }, { upsert: true });
           continue;
         }
 
-        // ── SL — close at stop level ──────────────────────────────
+        // SL hit
         if (sl && (isLong ? price <= sl : price >= sl)) {
-          // FIX: use sl as fill price (prevents gap-below SL from amplifying loss unrealistically)
-          const pnl = isLong ? (sl - entry) / entry * notional
-                             : (entry - sl) / entry * notional;
-          await PT.findByIdAndUpdate(trade._id, { status: 'CLOSED', closePrice: sl, closedAt: new Date(), pnl });
+          const pnl = isLong ? (price - entry) / entry * notional : (entry - price) / entry * notional;
+          await PT.findByIdAndUpdate(trade._id, { status: 'CLOSED', closePrice: price, closedAt: new Date(), pnl });
           await PB.findOneAndUpdate({ uid: trade.uid }, { $inc: { balance: size + pnl } }, { upsert: true });
           continue;
         }
 
-        // ── Trailing SL — only for TP1_HIT trades ────────────────
+        // Trailing SL for TP1_HIT trades
         if (trade.status === 'TP1_HIT') {
           const trailOffset = Math.abs(trade.tp1 - entry) * 0.5;
-          const newTrailSL  = isLong
-            ? Math.max(entry, price - trailOffset)  // trails up, never below BE
-            : Math.min(entry, price + trailOffset);  // trails down, never above BE
+          const newTrailSL = isLong ? Math.max(entry, price - trailOffset) : Math.min(entry, price + trailOffset);
           if (newTrailSL !== trade.currentSl) {
             await PT.findByIdAndUpdate(trade._id, { currentSl: newTrailSL });
           }
@@ -2372,12 +2335,11 @@ async function runTPSLCheck() {
       } catch(e) { console.error('TPSLCheck trade error:', e.message); }
     }
   } catch(e) { console.error('runTPSLCheck error:', e.message); }
-  finally { _tpslRunning = false; } // always release lock
 }
 
 // Start engine every 30 seconds
 setInterval(runTPSLCheck, 30000);
-console.log('⚡ Auto TP/SL engine started');
+console.log('⚡ Auto TP/SL engine restarted');
 
 server.listen(PORT, () => {
   console.log(`🚀  Server running on port ${PORT}`);

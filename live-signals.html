@@ -17,8 +17,8 @@
   --glow-green:0 0 20px rgba(34,211,165,.12);
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-html{scroll-behavior:smooth;overflow-x:clip;}
-body{background:var(--bg);color:var(--text);font-family:var(--font-b);line-height:1.6;overflow-x:visible;min-height:100vh;}
+html{scroll-behavior:smooth;}
+body{background:var(--bg);color:var(--text);font-family:var(--font-b);line-height:1.6;overflow-x:hidden;min-height:100vh;}
 ::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px;}
 
 #authGuard{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;}
@@ -112,7 +112,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-b);line-heigh
 .trade-card.closed-win{border-color:rgba(34,211,165,.15);}
 .trade-card.closed-loss{border-color:rgba(244,63,110,.15);}
 
-.tc-head{padding:12px 16px;display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;border-bottom:1px solid var(--border);}
+.tc-head{padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;border-bottom:1px solid var(--border);}
 .tc-left{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 .tc-pair{font-family:var(--font-h);font-size:1.12rem;font-weight:700;letter-spacing:.04em;}
 .tc-dir{font-family:var(--font-n);font-size:.67rem;font-weight:700;padding:3px 10px;border-radius:5px;letter-spacing:.07em;}
@@ -174,12 +174,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-b);line-heigh
 /* Footer */
 .tc-foot{padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
 .tc-meta-small{font-family:var(--font-n);font-size:.63rem;color:var(--muted);}
-.tc-actions{display:flex;gap:7px;flex-wrap:wrap;position:relative;z-index:5;flex-shrink:0;}
-.btn-tc-action{padding:9px 16px;background:rgba(244,63,110,.07);border:1px solid rgba(244,63,110,.22);color:var(--red);border-radius:7px;font-family:var(--font-b);font-size:.8rem;font-weight:600;cursor:pointer;transition:all .2s;min-height:44px;min-width:72px;position:relative;z-index:5;-webkit-tap-highlight-color:rgba(244,63,110,.2);touch-action:manipulation;user-select:none;}
+.tc-actions{display:flex;gap:7px;flex-wrap:wrap;}
+.btn-tc-action{padding:7px 14px;background:rgba(244,63,110,.07);border:1px solid rgba(244,63,110,.22);color:var(--red);border-radius:7px;font-family:var(--font-b);font-size:.8rem;font-weight:600;cursor:pointer;transition:all .2s;min-height:38px;}
 .btn-tc-action:hover{background:rgba(244,63,110,.15);}
 .btn-tc-action.cancel{background:rgba(100,116,139,.07);border-color:rgba(100,116,139,.22);color:var(--muted);}
 .btn-tc-action.cancel:hover{border-color:var(--red);color:var(--red);}
-.btn-tc-action.monitor{background:rgba(167,139,250,.07);border-color:rgba(167,139,250,.25);color:var(--purple);-webkit-tap-highlight-color:rgba(167,139,250,.2);}
+.btn-tc-action.monitor{background:rgba(167,139,250,.07);border-color:rgba(167,139,250,.25);color:var(--purple);}
 .btn-tc-action.monitor:hover{background:rgba(167,139,250,.14);box-shadow:0 0 10px rgba(167,139,250,.15);}
 
 /* BE notice */
@@ -190,13 +190,6 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-b);line-heigh
 .tc-tp1-row{padding:8px 16px;background:rgba(34,211,165,.03);border-top:1px solid rgba(34,211,165,.1);display:flex;justify-content:space-between;align-items:center;font-size:.78rem;flex-wrap:wrap;gap:6px;}
 .tp1-locked{color:var(--green);font-family:var(--font-n);font-weight:600;}
 .trailing-badge{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-n);font-size:.61rem;padding:2px 8px;border-radius:4px;background:rgba(167,139,250,.08);color:var(--purple);border:1px solid rgba(167,139,250,.18);}
-
-/* Mobile button fix */
-@media(max-width:480px){
-  .tc-head{flex-direction:column;align-items:flex-start;}
-  .tc-actions{width:100%;justify-content:flex-end;}
-  .btn-tc-action{flex:1;text-align:center;justify-content:center;min-height:44px;}
-}
 
 /* Empty state */
 .empty-pt{text-align:center;padding:64px 20px;}
@@ -717,7 +710,7 @@ function buildTradeCard(trade) {
           <span class="tc-status ${badgeCls}">${badgeLabel}</span>
         </div>
         <div style="display:flex;gap:8px">
-          <button class="btn-tc-action cancel" onclick="promptCancel('${trade.id}')">✕ Cancel</button>
+          <button class="btn-tc-action cancel" onclick="promptCancel(${trade.id})">✕ Cancel</button>
         </div>
       </div>
       <div class="pending-info">
@@ -770,9 +763,9 @@ function buildTradeCard(trade) {
           ${tp1hit?'<span class="trailing-badge">🔒 SL → Entry</span>':''}
           ${tp1hit?`<span class="partial-tag">50% closed @ TP1</span>`:''}
         </div>
-        <div class="tc-actions" style="margin-top:2px">
-          <button class="btn-tc-action monitor" onclick="openMonitor('${trade.id}')" type="button">📡 Monitor</button>
-          <button class="btn-tc-action" onclick="promptClose('${trade.id}')" type="button">⬛ Close</button>
+        <div class="tc-actions">
+          <button class="btn-tc-action monitor" onclick="openMonitor(${trade.id})">📡 Monitor</button>
+          <button class="btn-tc-action" onclick="promptClose(${trade.id})">⬛ Close</button>
         </div>
       </div>
       ${tp1hit?`<div class="be-notice">🛡️ <strong>Break-Even Protection Active</strong> — SL moved to entry ${fmtP(trade.entryPrice)}. If stopped here = <strong style="color:var(--green)">WIN</strong> (TP1 already banked). Trailing SL is active.</div>`:''}
@@ -999,9 +992,15 @@ function checkTpSl() {
   trades[i]={...t,..._p4};
   _changedPatches.push({id:t.id,patch:_p4});
   changed=true;
-  // FIX: fire-and-forget balance update (no await in non-async forEach)
-  const refundAmount = (t.size * 0.5) + tp1Pnl;
-  saveBalance(getBalance() + refundAmount);
+  
+  // ── Balance එකට TP1 ලාභය + 50% margin එකතු කරන්න ──
+  const refundAmount = (t.size * 0.5) + tp1Pnl;   // t.size = margin amount
+  const newBalance = getBalance() + refundAmount;
+  await saveBalance(newBalance);   // server/local storage එකට save කරනවා
+  // UI update කරන්න
+  updateStats();   // stats strip refresh
+  renderTradeList(); // open trades list refresh (if needed)
+}
     } else if(hit==='TP2'){
       // Went straight to TP2 without hitting TP1 first (unusual but possible)
       const pnl = calcPnl(dir, t.entryPrice, price, t.size||t.amount, t.leverage, 1);
