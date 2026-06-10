@@ -1072,9 +1072,9 @@ function renderFullAnalysis(data, container) {
         <div class="level-card" style="margin-bottom:8px;">
             <div class="level-card-head" onclick="toggleLC('snap_btc')">
                 <div class="level-title">📈 BTC + Market Context</div>
-                <div style="display:flex;gap:6px;">${signalPill(r.btcTrend?.includes('BULL')?'BTC Bull':'BTC Bear', r.btcTrend?.includes('BULL')?'bull':'bear')} <span id="arr_snap_btc" style="font-size:0.7rem;color:var(--text-dim);">▼</span></div>
+                <div style="display:flex;gap:6px;">${signalPill(r.btcTrend?.includes('BULL')?'BTC Bull':'BTC Bear', r.btcTrend?.includes('BULL')?'bull':'bear')} <span id="arr_snap_btc" style="font-size:0.7rem;color:var(--text-dim);">▸</span></div>
             </div>
-            <div class="level-card-body open" id="snap_btc">
+            <div class="level-card-body" id="snap_btc">
                 ${indRow('BTC 1D Trend', r.btcTrend, signalPill(r.btcTrend?.includes('STRONG_BULL')?'Strong Bull':r.btcTrend?.includes('BULL')?'Bull':r.btcTrend?.includes('STRONG_BEAR')?'Strong Bear':'Bear', r.btcTrend?.includes('BULL')?'bull':'bear'))}
                 ${indRow('Funding Rate', r.fundingRate!=null?(r.fundingRate>0?'+':'')+r.fundingRate.toFixed(4)+'%':'—', signalPill(r.fundingBias==='LONGS_PAYING'?'Longs Paying':r.fundingBias==='SHORTS_PAYING'?'Shorts Paying':'Neutral', r.fundingBias==='LONGS_PAYING'?'bear':r.fundingBias==='SHORTS_PAYING'?'bull':'neut'))}
                 ${indRow('Structure (1D)', '', structSignal(r.d1Struct))}
@@ -1085,9 +1085,9 @@ function renderFullAnalysis(data, container) {
         <div class="level-card" style="margin-bottom:8px;">
             <div class="level-card-head" onclick="toggleLC('snap_rsi')">
                 <div class="level-title">📉 RSI — All Timeframes</div>
-                <div style="display:flex;gap:6px;"><span id="arr_snap_rsi" style="font-size:0.7rem;color:var(--text-dim);">▼</span></div>
+                <div style="display:flex;gap:6px;"><span id="arr_snap_rsi" style="font-size:0.7rem;color:var(--text-dim);">▸</span></div>
             </div>
-            <div class="level-card-body open" id="snap_rsi">
+            <div class="level-card-body" id="snap_rsi">
                 ${indRow('RSI (15m)', r.m15RSI!=null?r.m15RSI.toFixed(1):'—', rsiSignal(r.m15RSI))}
                 ${indRow('RSI (1H)',  r.h1RSI!=null?r.h1RSI.toFixed(1):'—',  rsiSignal(r.h1RSI))}
                 ${indRow('RSI (4H)',  r.h4RSI!=null?r.h4RSI.toFixed(1):'—',  rsiSignal(r.h4RSI))}
@@ -1100,9 +1100,9 @@ function renderFullAnalysis(data, container) {
         <div class="level-card" style="margin-bottom:8px;">
             <div class="level-card-head" onclick="toggleLC('snap_macd')">
                 <div class="level-title">📈 MACD + Structure</div>
-                <div style="display:flex;gap:6px;"><span id="arr_snap_macd" style="font-size:0.7rem;color:var(--text-dim);">▼</span></div>
+                <div style="display:flex;gap:6px;"><span id="arr_snap_macd" style="font-size:0.7rem;color:var(--text-dim);">▸</span></div>
             </div>
-            <div class="level-card-body open" id="snap_macd">
+            <div class="level-card-body" id="snap_macd">
                 ${indRow('MACD (1H)', r.h1MACD?.histogram!=null?'Hist: '+(r.h1MACD.histogram>0?'+':'')+r.h1MACD.histogram.toFixed(4):'—', macdSignal(r.h1MACD?.histogram), r.h1MACD?.histogram!=null&&r.h1MACD?.prevHistogram!=null?(Math.abs(r.h1MACD.histogram)>Math.abs(r.h1MACD.prevHistogram)?'↑ Growing':'↓ Fading'):'')}
                 ${indRow('MACD (15m)', r.m15MACD?.histogram!=null?'Hist: '+(r.m15MACD.histogram>0?'+':'')+r.m15MACD.histogram.toFixed(4):'—', macdSignal(r.m15MACD?.histogram))}
                 ${indRow('Structure (4H)', '', structSignal(r.h4Struct))}
@@ -1117,9 +1117,9 @@ function renderFullAnalysis(data, container) {
         <div class="level-card" style="margin-bottom:8px;">
             <div class="level-card-head" onclick="toggleLC('snap_ema')">
                 <div class="level-title">📊 EMA Position</div>
-                <div style="display:flex;gap:6px;"><span id="arr_snap_ema" style="font-size:0.7rem;color:var(--text-dim);">▼</span></div>
+                <div style="display:flex;gap:6px;"><span id="arr_snap_ema" style="font-size:0.7rem;color:var(--text-dim);">▸</span></div>
             </div>
-            <div class="level-card-body open" id="snap_ema">
+            <div class="level-card-body" id="snap_ema">
                 ${indRow('EMA (1H)', `20: $${r.h1Ema20?.toFixed(4)||'—'} / 50: $${r.h1Ema50?.toFixed(4)||'—'}`, emaSignal(p, r.h1Ema20, r.h1Ema50, r.h1Ema200))}
                 ${indRow('EMA 200 (1H)', r.h1Ema200?'$'+r.h1Ema200.toFixed(4):'—', signalPill(p&&r.h1Ema200?(p>r.h1Ema200?'Above 200':'Below 200'):'—', p&&r.h1Ema200?(p>r.h1Ema200?'bull':'bear'):'neut'))}
                 ${indRow('EMA (4H)', `20: $${r.h4Ema20?.toFixed(4)||'—'} / 50: $${r.h4Ema50?.toFixed(4)||'—'}`, emaSignal(p, r.h4Ema20, r.h4Ema50, r.h4Ema200))}
@@ -1130,9 +1130,9 @@ function renderFullAnalysis(data, container) {
         <div class="level-card" style="margin-bottom:8px;">
             <div class="level-card-head" onclick="toggleLC('snap_zones')">
                 <div class="level-title">🗺️ Key Zones + Volume</div>
-                <div style="display:flex;gap:6px;"><span id="arr_snap_zones" style="font-size:0.7rem;color:var(--text-dim);">▼</span></div>
+                <div style="display:flex;gap:6px;"><span id="arr_snap_zones" style="font-size:0.7rem;color:var(--text-dim);">▸</span></div>
             </div>
-            <div class="level-card-body open" id="snap_zones">
+            <div class="level-card-body" id="snap_zones">
                 ${indRow('S/R Levels (4H)', '', '')}
                 <div style="padding:4px 0 8px;flex-wrap:wrap;display:flex;gap:4px;">${srHtml(r.h4SR)}</div>
                 ${indRow('S/R Levels (1D)', '', '')}
@@ -1164,7 +1164,7 @@ function renderFullAnalysis(data, container) {
     </div>`;
 
     // ── AI Level Cards ──
-    function levelCard(icon, title, badge, badgeClass, fields, open=true) {
+    function levelCard(icon, title, badge, badgeClass, fields, open=false) {
         const id   = 'lc_' + Math.random().toString(36).slice(2,7);
         const rows = fields.map(([lbl,val]) => `<div class="data-row"><span class="data-lbl">${lbl}</span><span class="data-val">${val||'—'}</span></div>`).join('');
         const isOpen = open !== false; // default open
@@ -1719,138 +1719,4 @@ async function ptSubmit() {
     }
     btn.disabled = false;
     const isLong = dir !== 'SHORT';
-    btn.textContent = isLong ? '📈 OPEN LONG — PAPER TRADE' : '📉 OPEN SHORT — PAPER TRADE';
-}
-
-async function ptCloseTrade(id, entryPrice) {
-    const tok = await getToken();
-    if (!tok) return;
-    // Get live price for close — try futures first, fall back to spot
-    // FIX: Normalize pair to USDT — "XLM" → "XLMUSDT"
-    const rawCoin = ptOpenTrades.find(t=>t._id===id)?.pair || '';
-    const coin = rawCoin.toUpperCase().endsWith('USDT') ? rawCoin.toUpperCase() : rawCoin.toUpperCase() + 'USDT';
-    let closePrice = entryPrice;
-    try {
-        const pr = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${coin}`);
-        const pd = await pr.json();
-        if (pd.price) closePrice = parseFloat(pd.price);
-    } catch(e) {}
-    // Spot fallback for non-futures coins (e.g. XLM, ALGO)
-    if (closePrice === entryPrice && coin) {
-        try {
-            const sr = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${coin}`);
-            const sd = await sr.json();
-            if (sd.price) closePrice = parseFloat(sd.price);
-        } catch(e) {}
-    }
-
-    if (!confirm(`Close trade at $${closePrice.toFixed(4)}?`)) return;
-    try {
-        const r = await fetch(`/api/paper/trade/${id}/close`, {
-            method: 'PATCH',
-            headers: { 'Content-Type':'application/json', Authorization:'Bearer '+tok },
-            body: JSON.stringify({ closePrice, status: 'CLOSED' })
-        });
-        const d = await r.json();
-        if (d.success) {
-            const pnl = d.pnl ?? d.trade?.pnl ?? 0;
-            ptShowMsg(`Closed. PnL: ${pnl >= 0 ? '+' : ''}$${parseFloat(pnl).toFixed(2)}`);
-            await ptLoadBalance();
-            await ptLoadTrades();
-        } else {
-            ptShowMsg(d.error || 'Close failed.', true);
-        }
-    } catch(e) { ptShowMsg('Network error.', true); }
-}
-
-async function ptShowBalModal() {
-    const m = document.getElementById('ptBalModal');
-    if (m) m.style.display = 'flex';
-    // Check if user has already set initial balance
-    try {
-        const tok = await getToken();
-        if (!tok) return;
-        const r = await fetch('/api/paper/balance', { headers: { Authorization: 'Bearer '+tok } });
-        const d = await r.json();
-        const ft = document.getElementById('ptFirstTimeSection');
-        const lbl = document.getElementById('ptAdminLabel');
-        if (ft) ft.style.display = d.hasSetInitialBalance ? 'none' : 'block';
-        if (lbl) lbl.textContent = d.hasSetInitialBalance
-            ? 'Balance reset කරන්න admin request කරන්න:'
-            : 'Otherwise, request an admin reset:';
-    } catch(e) { /* silent */ }
-}
-
-function ptHideBalModal() {
-    const m = document.getElementById('ptBalModal');
-    if (m) m.style.display = 'none';
-    const msg = document.getElementById('ptBalMsg');
-    if (msg) msg.innerHTML = '';
-}
-
-async function ptSetCustomBalance() {
-    const inp = document.getElementById('ptCustomBal');
-    const val = parseFloat(inp?.value);
-    if (isNaN(val) || val < 100 || val > 1000000) {
-        ptShowBalMsg('100 – 1,000,000 USDT range enter කරන්න.', true);
-        return;
-    }
-    const tok = await getToken();
-    if (!tok) return;
-    const btn = document.querySelector('#ptFirstTimeSection .pt-modal-actions button');
-    if (btn) { btn.disabled = true; btn.textContent = 'Setting...'; }
-    try {
-        const r = await fetch('/api/paper/balance/set', {
-            method: 'POST',
-            headers: { 'Content-Type':'application/json', Authorization:'Bearer '+tok },
-            body: JSON.stringify({ amount: val })
-        });
-        const d = await r.json();
-        if (d.success) {
-            ptShowBalMsg(`Balance set: $${parseFloat(d.balance).toFixed(2)}`);
-            const ft = document.getElementById('ptFirstTimeSection');
-            if (ft) ft.style.display = 'none';
-            await ptLoadBalance();
-        } else {
-            ptShowBalMsg(d.error || 'Balance set failed.', true);
-        }
-    } catch(e) { ptShowBalMsg('Network error.', true); }
-    if (btn) { btn.disabled = false; btn.textContent = '✅ Set Balance'; }
-}
-
-async function ptRequestReset() {
-    const amt    = parseFloat(document.getElementById('ptReqAmount')?.value);
-    const reason = (document.getElementById('ptReqReason')?.value || '').trim();
-    if (isNaN(amt) || amt < 100 || amt > 1000000) {
-        ptShowBalMsg('100 – 1,000,000 USDT range enter කරන්න.', true);
-        return;
-    }
-    const tok = await getToken();
-    if (!tok) return;
-    const btn = document.querySelector('#ptAdminSection .pt-modal-actions button');
-    if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
-    try {
-        const r = await fetch('/api/paper/balance/request', {
-            method: 'POST',
-            headers: { 'Content-Type':'application/json', Authorization:'Bearer '+tok },
-            body: JSON.stringify({ amount: amt, reason })
-        });
-        const d = await r.json();
-        if (d.success) {
-            ptShowBalMsg('Request sent! Admin will review shortly.');
-        } else {
-            ptShowBalMsg(d.error || 'Request failed.', true);
-        }
-    } catch(e) { ptShowBalMsg('Network error.', true); }
-    if (btn) { btn.disabled = false; btn.textContent = '📩 Request Admin Reset'; }
-}
-
-function ptShowBalMsg(msg, isErr = false) {
-    const el = document.getElementById('ptBalMsg');
-    if (!el) return;
-    el.className = 'pt-msg ' + (isErr ? 'err' : 'ok');
-    el.textContent = msg;
-}
-</script>
-</body>
-</html>
+    btn.tex
