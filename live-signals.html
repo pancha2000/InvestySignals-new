@@ -17,8 +17,8 @@
   --glow-green:0 0 20px rgba(34,211,165,.12);
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-html{scroll-behavior:smooth;}
-body{background:var(--bg);color:var(--text);font-family:var(--font-b);line-height:1.6;overflow-x:hidden;min-height:100vh;}
+html{scroll-behavior:smooth;overflow-x:clip;}
+body{background:var(--bg);color:var(--text);font-family:var(--font-b);line-height:1.6;overflow-x:visible;min-height:100vh;}
 ::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px;}
 
 #authGuard{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;}
@@ -710,7 +710,7 @@ function buildTradeCard(trade) {
           <span class="tc-status ${badgeCls}">${badgeLabel}</span>
         </div>
         <div style="display:flex;gap:8px">
-          <button class="btn-tc-action cancel" onclick="promptCancel(${trade.id})">✕ Cancel</button>
+          <button class="btn-tc-action cancel" onclick="promptCancel('${trade.id}')">✕ Cancel</button>
         </div>
       </div>
       <div class="pending-info">
@@ -764,8 +764,8 @@ function buildTradeCard(trade) {
           ${tp1hit?`<span class="partial-tag">50% closed @ TP1</span>`:''}
         </div>
         <div class="tc-actions">
-          <button class="btn-tc-action monitor" onclick="openMonitor(${trade.id})">📡 Monitor</button>
-          <button class="btn-tc-action" onclick="promptClose(${trade.id})">⬛ Close</button>
+          <button class="btn-tc-action monitor" onclick="openMonitor('${trade.id}')">📡 Monitor</button>
+          <button class="btn-tc-action" onclick="promptClose('${trade.id}')">⬛ Close</button>
         </div>
       </div>
       ${tp1hit?`<div class="be-notice">🛡️ <strong>Break-Even Protection Active</strong> — SL moved to entry ${fmtP(trade.entryPrice)}. If stopped here = <strong style="color:var(--green)">WIN</strong> (TP1 already banked). Trailing SL is active.</div>`:''}
@@ -992,15 +992,9 @@ function checkTpSl() {
   trades[i]={...t,..._p4};
   _changedPatches.push({id:t.id,patch:_p4});
   changed=true;
-  
-  // ── Balance එකට TP1 ලාභය + 50% margin එකතු කරන්න ──
-  const refundAmount = (t.size * 0.5) + tp1Pnl;   // t.size = margin amount
-  const newBalance = getBalance() + refundAmount;
-  await saveBalance(newBalance);   // server/local storage එකට save කරනවා
-  // UI update කරන්න
-  updateStats();   // stats strip refresh
-  renderTradeList(); // open trades list refresh (if needed)
-}
+  // FIX: fire-and-forget balance update (no await in non-async forEach)
+  const refundAmount = (t.size * 0.5) + tp1Pnl;
+  saveBalance(getBalance() + refundAmount);
     } else if(hit==='TP2'){
       // Went straight to TP2 without hitting TP1 first (unusual but possible)
       const pnl = calcPnl(dir, t.entryPrice, price, t.size||t.amount, t.leverage, 1);
