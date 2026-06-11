@@ -1545,41 +1545,6 @@ function buildWatchZonePanel(data) {
     <div id="ptTradesList"></div>
 </div>
 
-<!-- Balance modal (shared) -->
-<div class="pt-modal-overlay" id="ptBalModal" style="display:none;" onclick="if(event.target===this)ptHideBalModal()">
-    <div class="pt-modal">
-        <h3>⚙️ Paper Balance</h3>
-        <div id="ptFirstTimeSection">
-            <p style="font-size:0.8rem;color:var(--text-muted);">ඔබේ paper trading balance set කරන්න. <strong>එකවරක් විතරයි</strong> ඔබට directly set කරන්න පුළුවන්.</p>
-            <div class="pt-field" style="margin-bottom:10px;">
-                <label>Starting Balance (100 – 1,000,000 USDT)</label>
-                <input type="number" id="ptCustomBal" min="100" max="1000000" placeholder="e.g. 10000" style="width:100%;background:var(--surface);border:1px solid var(--border-soft);color:var(--text);padding:9px 12px;border-radius:var(--radius-xs);font-family:'JetBrains Mono',monospace;font-size:0.85rem;outline:none;box-sizing:border-box;">
-            </div>
-            <div class="pt-modal-actions">
-                <button onclick="ptSetCustomBalance()" style="background:rgba(0,217,126,0.12);border:1px solid rgba(0,217,126,0.3);color:var(--green);">✅ Set Balance</button>
-            </div>
-            <hr style="border-color:var(--border-soft);margin:14px 0 10px;">
-        </div>
-        <div id="ptAdminSection">
-            <p style="font-size:0.8rem;color:var(--text-muted);" id="ptAdminLabel">Balance reset කරන්න admin request කරන්න:</p>
-            <div class="pt-field" style="margin-bottom:8px;">
-                <label>Amount (USDT)</label>
-                <input type="number" id="ptReqAmount" min="100" max="1000000" placeholder="e.g. 10000" style="width:100%;background:var(--surface);border:1px solid var(--border-soft);color:var(--text);padding:9px 12px;border-radius:var(--radius-xs);font-family:'JetBrains Mono',monospace;font-size:0.85rem;outline:none;box-sizing:border-box;">
-            </div>
-            <div class="pt-field" style="margin-bottom:10px;">
-                <label>Reason <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
-                <input type="text" id="ptReqReason" placeholder="e.g. strategy test" style="width:100%;background:var(--surface);border:1px solid var(--border-soft);color:var(--text);padding:9px 12px;border-radius:var(--radius-xs);font-family:'JetBrains Mono',monospace;font-size:0.82rem;outline:none;box-sizing:border-box;">
-            </div>
-            <div class="pt-modal-actions">
-                <button onclick="ptRequestReset()" style="background:var(--surface);border:1px solid var(--border-soft);color:var(--text-muted);">📩 Request Admin Reset</button>
-            </div>
-        </div>
-        <div id="ptBalMsg"></div>
-        <div class="pt-modal-actions" style="margin-top:6px;">
-            <button onclick="ptHideBalModal()" style="background:transparent;border:1px solid var(--border-soft);color:var(--text-muted);">Close</button>
-        </div>
-    </div>
-</div>
     `;
 }
 
@@ -1719,4 +1684,74 @@ async function ptSubmit() {
     }
     btn.disabled = false;
     const isLong = dir !== 'SHORT';
-    btn.tex
+    btn.textContent = isLong ? '📈 OPEN LONG — PAPER TRADE' : '📉 OPEN SHORT — PAPER TRADE';
+}
+
+async function ptCloseTrade(id, entryPrice) {
+    const tok = await getToken();
+    if (!tok) return;
+    // Get live price for close — try futures first, fall back to spot
+    // FIX: Normalize pair to USDT — "XLM" → "XLMUSDT"
+    const rawCoin = ptOpenTrades.find(t=>t._id===id)?.pair || '';
+    const coin = rawCoin.toUpperCase().endsWith('USDT') ? rawCoin.toUpperCase() : rawCoin.toUpperCase() + 'USDT';
+    let closePrice = entryPrice;
+    try {
+        const pr = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${coin}`);
+        const pd = await pr.json();
+        if (pd.price) closePrice = parseFloat(pd.price);
+    } catch(e) {}
+    // Spot fallback for non-futures coins (e.g. XLM, ALGO)
+    if (closePrice === entryPrice && coin) {
+        try {
+            const sr = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${coin}`);
+            const sd = await sr.json();
+            if (sd.price) closePrice = parseFloat(sd.price);
+        } catch(e) {}
+    }
+
+    if (!confirm(`Close trade at $${closePrice.toFixed(4)}?`)) return;
+    try {
+        const r = await fetch(`/api/paper/trade/${id}/close`, {
+            method: 'PATCH',
+            headers: { 'Content-Type':'application/json', Authorization:'Bearer '+tok },
+            body: JSON.stringify({ closePrice, status: 'CLOSED' })
+        });
+        const d = await r.json();
+        if (d.success) {
+            const pnl = d.pnl ?? d.trade?.pnl ?? 0;
+            ptShowMsg(`Closed. PnL: ${pnl >= 0 ? '+' : ''}$${parseFloat(pnl).toFixed(2)}`);
+            await ptLoadBalance();
+            await ptLoadTrades();
+        } else {
+            ptShowMsg(d.error || 'Close failed.', true);
+        }
+    } catch(e) { ptShowMsg('Network error.', true); }
+}
+
+async function ptShowBalModal() {
+    const m = document.getElementById('ptBalModal');
+    if (m) m.style.display = 'flex';
+    // Check if user has already set initial balance
+    try {
+        const tok = await getToken();
+        if (!tok) return;
+        const r = await fetch('/api/paper/balance', { headers: { Authorization: 'Bearer '+tok } });
+        const d = await r.json();
+        const ft = document.getElementById('ptFirstTimeSection');
+        const lbl = document.getElementById('ptAdminLabel');
+        if (ft) ft.style.display = d.hasSetInitialBalance ? 'none' : 'block';
+        if (lbl) lbl.textContent = d.hasSetInitialBalance
+            ? 'Balance reset කරන්න admin request කරන්න:'
+            : 'Otherwise, request an admin reset:';
+    } catch(e) { /* silent */ }
+}
+
+function ptHideBalModal() {
+    const m = document.getElementById('ptBalModal');
+    if (m) m.style.display = 'none';
+    const msg = document.getElementById('ptBalMsg');
+    if (msg) msg.innerHTML = '';
+}
+
+async function ptSetCustomBalance() {
+    const inp = document.getElementById('ptCustomBal'
