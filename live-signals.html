@@ -442,12 +442,11 @@ onAuthStateChanged(auth, async (user) => {
   // Refresh token every 50 min
   setInterval(async () => { try { window._idToken = await user.getIdToken(true); } catch(_){} }, 50*60*1000);
   document.getElementById('dashMain').style.display = 'block';
-  if (window.innerWidth <= 768) document.getElementById('mobBtn').style.display = 'flex';
   const name     = user.displayName || user.email?.split('@')[0] || 'Trader';
   const initials = name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2) || 'U';
   document.getElementById('userAvatar').textContent = initials;
   document.getElementById('userName').textContent   = name;
-  document.getElementById('userEmail').textContent  = user.email || '';
+  const _ue = document.getElementById('userEmail'); if(_ue) _ue.textContent = user.email || '';
   initPage();
 });
 window.handleSignOut = async function() { await signOut(auth); window.location.href = 'index.html'; };
@@ -664,7 +663,7 @@ function switchTab(tab) {
 }
 
 /* ── Init ───────────────────────────────────────────────────── */
-async function initPage() {
+async async function initPage() {
   // Load trades and balance from server (migrates localStorage if needed)
   await loadServerData();
   renderAll();
