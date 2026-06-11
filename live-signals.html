@@ -442,11 +442,12 @@ onAuthStateChanged(auth, async (user) => {
   // Refresh token every 50 min
   setInterval(async () => { try { window._idToken = await user.getIdToken(true); } catch(_){} }, 50*60*1000);
   document.getElementById('dashMain').style.display = 'block';
+  const _mobBtn = document.getElementById('mobBtn'); if (_mobBtn && window.innerWidth <= 768) _mobBtn.style.display = 'flex';
   const name     = user.displayName || user.email?.split('@')[0] || 'Trader';
   const initials = name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2) || 'U';
   document.getElementById('userAvatar').textContent = initials;
   document.getElementById('userName').textContent   = name;
-  const _ue = document.getElementById('userEmail'); if(_ue) _ue.textContent = user.email || '';
+  const _emailEl = document.getElementById('userEmail'); if (_emailEl) _emailEl.textContent = user.email || '';
   initPage();
 });
 window.handleSignOut = async function() { await signOut(auth); window.location.href = 'index.html'; };
@@ -663,7 +664,7 @@ function switchTab(tab) {
 }
 
 /* ── Init ───────────────────────────────────────────────────── */
-async async function initPage() {
+async function initPage() {
   // Load trades and balance from server (migrates localStorage if needed)
   await loadServerData();
   renderAll();
@@ -1120,8 +1121,8 @@ function updateTicker(coins){
   });
 }
 
-function openMobSidebar(){document.getElementById('dashSidebar').classList.add('open');document.getElementById('mobOverlay').classList.add('show');}
-function closeMobSidebar(){document.getElementById('dashSidebar').classList.remove('open');document.getElementById('mobOverlay').classList.remove('show');}
+function openMobSidebar(){const s=document.getElementById('dashSidebar');const o=document.getElementById('mobOverlay');if(s)s.classList.add('open');if(o)o.classList.add('show');}
+function closeMobSidebar(){const s=document.getElementById('dashSidebar');const o=document.getElementById('mobOverlay');if(s)s.classList.remove('open');if(o)o.classList.remove('show');}
 </script>
 
 <script>
