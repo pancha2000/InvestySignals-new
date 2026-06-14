@@ -53,11 +53,22 @@ const Settings     = require('./models/Settings');
 const Announcement = require('./models/Announcement');
 const Report          = require('./models/Report');
 const BalanceRequest  = require('./models/BalanceRequest');
+const Event           = require('./models/Event');
 
 // ── Firebase ─────────────────────────────────────────────────
 try {
-  const serviceAccount = require('./serviceAccount.json');
-  admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+  let credential;
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    // Vercel: credentials from environment variable (raw JSON or base64)
+    const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    const jsonStr = raw.trim().startsWith('{') ? raw : Buffer.from(raw, 'base64').toString('utf-8');
+    credential = admin.credential.cert(JSON.parse(jsonStr));
+  } else {
+    // VPS / local: credentials from file
+    const serviceAccount = require('./serviceAccount.json');
+    credential = admin.credential.cert(serviceAccount);
+  }
+  admin.initializeApp({ credential });
   console.log('✅ Firebase Admin initialized');
 } catch (err) {
   console.error('❌ Firebase Admin init failed:', err.message);
@@ -65,9 +76,15 @@ try {
 }
 
 // ── MongoDB ───────────────────────────────────────────────────
-mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/investysignals')
+mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/investysignals', {
+  maxPoolSize: process.env.VERCEL ? 1 : 10,
+  bufferCommands: false,
+})
   .then(async () => { console.log('✅ MongoDB connected'); await loadSettingsFromDB(); })
-  .catch(err => { console.error('❌ MongoDB error:', err.message); process.exit(1); });
+  .catch(err => {
+    console.error('❌ MongoDB error:', err.message);
+    if (!process.env.VERCEL) process.exit(1);
+  });
 
 const ADMIN_EMAILS = ['cdilrukshi52@gmail.com'];
 
@@ -2209,13 +2226,17 @@ app.post('/api/admin/ai-settings/test', verifyAdmin, async (req, res) => {
 // ── HTTP Server + WebSocket ───────────────────────────────────
 const PORT   = process.env.PORT || 3000;
 const server = require('http').createServer(app);
-const { WebSocketServer } = require('ws');
-const wss = new WebSocketServer({ server });
 
 // Client tracking
 const clients = new Map(); // uid -> Set of ws connections
+let wss = null;
 
 function broadcastToAll(data) {
+  if (!wss) {
+    // Vercel: persist event to MongoDB → clients poll /api/events
+    try { Event.create({ data, uid: null }).catch(() => {}); } catch (_) {}
+    return;
+  }
   const msg = JSON.stringify(data);
   wss.clients.forEach(ws => {
     if (ws.readyState === WebSocket.OPEN) ws.send(msg);
@@ -2223,6 +2244,10 @@ function broadcastToAll(data) {
 }
 
 function broadcastToUser(uid, data) {
+  if (!wss) {
+    try { Event.create({ data, uid }).catch(() => {}); } catch (_) {}
+    return;
+  }
   const msg = JSON.stringify(data);
   const userClients = clients.get(uid);
   if (!userClients) return;
@@ -2231,39 +2256,45 @@ function broadcastToUser(uid, data) {
   });
 }
 
-wss.on('connection', async (ws, req) => {
-  let uid = null;
-  console.log('Auth WS. Total:', wss.clients.size);
+// WebSocket server — only on VPS (Vercel serverless does not support persistent WS)
+if (!process.env.VERCEL) {
+  const { WebSocketServer } = require('ws');
+  wss = new WebSocketServer({ server });
 
-  ws.on('message', async (raw) => {
-    try {
-      const msg = JSON.parse(raw);
-      if (msg.type === 'auth' && msg.token) {
-        try {
-          const decoded = await admin.auth().verifyIdToken(msg.token);
-          uid = decoded.uid;
-          if (!clients.has(uid)) clients.set(uid, new Set());
-          clients.get(uid).add(ws);
-          ws.send(JSON.stringify({ type: 'auth_ok', uid }));
-        } catch (e) {
-          ws.send(JSON.stringify({ type: 'auth_error', error: e.message }));
+  wss.on('connection', async (ws, req) => {
+    let uid = null;
+    console.log('Auth WS. Total:', wss.clients.size);
+
+    ws.on('message', async (raw) => {
+      try {
+        const msg = JSON.parse(raw);
+        if (msg.type === 'auth' && msg.token) {
+          try {
+            const decoded = await admin.auth().verifyIdToken(msg.token);
+            uid = decoded.uid;
+            if (!clients.has(uid)) clients.set(uid, new Set());
+            clients.get(uid).add(ws);
+            ws.send(JSON.stringify({ type: 'auth_ok', uid }));
+          } catch (e) {
+            ws.send(JSON.stringify({ type: 'auth_error', error: e.message }));
+          }
         }
+      } catch (_) {}
+    });
+
+    ws.on('close', () => {
+      console.log('WS disc. Total:', wss.clients.size);
+      if (uid && clients.has(uid)) {
+        clients.get(uid).delete(ws);
+        if (clients.get(uid).size === 0) clients.delete(uid);
       }
-    } catch (_) {}
-  });
+    });
 
-  ws.on('close', () => {
-    console.log('WS disc. Total:', wss.clients.size);
-    if (uid && clients.has(uid)) {
-      clients.get(uid).delete(ws);
-      if (clients.get(uid).size === 0) clients.delete(uid);
-    }
+    ws.on('error', () => {
+      console.log('Unauth WS. Total:', wss.clients.size);
+    });
   });
-
-  ws.on('error', () => {
-    console.log('Unauth WS. Total:', wss.clients.size);
-  });
-});
+}
 
 // ── Auto TP/SL Check Engine ──────────────────────────────────────────────────
 let _tpslRunning = false; // concurrency lock — prevents double-trigger if a cycle takes >30s
@@ -2371,10 +2402,75 @@ async function runTPSLCheck() {
   finally { _tpslRunning = false; } // always release lock
 }
 
-// Start engine every 30 seconds
-setInterval(runTPSLCheck, 30000);
-console.log('⚡ Auto TP/SL engine started');
+// ── Polling endpoints (WebSocket polyfill for Vercel) ────────
 
-server.listen(PORT, () => {
-  console.log(`🚀  Server running on port ${PORT}`);
+// Ticker symbols for live prices
+const TICKER_SYMS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT'];
+let _tickerCache = { data: null, ts: 0 };
+
+// GET /api/market/prices — live prices (used by ws-polyfill.js every 5s)
+app.get('/api/market/prices', async (req, res) => {
+  try {
+    if (_tickerCache.data && Date.now() - _tickerCache.ts < 5000) {
+      return res.json(_tickerCache.data);
+    }
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 6000);
+    const r = await fetch('https://api.binance.com/api/v3/ticker/24hr', { signal: ctrl.signal });
+    if (!r.ok) throw new Error('Binance error');
+    const all = await r.json();
+    const ticker = all
+      .filter(c => TICKER_SYMS.includes(c.symbol))
+      .map(c => ({ symbol: c.symbol, price: parseFloat(c.lastPrice), change: parseFloat(c.priceChangePercent) }));
+    const response = { type: 'market_update', ticker };
+    _tickerCache = { data: response, ts: Date.now() };
+    res.json(response);
+  } catch (e) {
+    res.json({ type: 'market_update', ticker: [] });
+  }
 });
+
+// GET /api/events — event queue for ws-polyfill.js (replaces WebSocket push)
+// Optional auth: no token = public events only; with token = public + user events
+app.get('/api/events', async (req, res) => {
+  try {
+    const since = req.query.since ? new Date(parseInt(req.query.since)) : new Date(Date.now() - 10000);
+    let uid = null;
+    const token = (req.headers.authorization || '').replace('Bearer ', '');
+    if (token) {
+      try { const d = await admin.auth().verifyIdToken(token); uid = d.uid; } catch (_) {}
+    }
+    const query = { ts: { $gt: since }, $or: [{ uid: null }, ...(uid ? [{ uid }] : [])] };
+    const events = await Event.find(query).sort({ ts: 1 }).limit(100).lean();
+    res.json({ events: events.map(e => e.data), ts: Date.now() });
+  } catch (e) {
+    res.json({ events: [], ts: Date.now() });
+  }
+});
+
+// ── Cron endpoint — triggered by Vercel Cron or any external scheduler ──
+app.post('/api/cron/tpsl-check', async (req, res) => {
+  const secret = req.headers['x-cron-secret'];
+  if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    await runTPSLCheck();
+    res.json({ success: true, ts: new Date() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+if (!process.env.VERCEL) {
+  // VPS: run background engine + start HTTP server
+  setInterval(runTPSLCheck, 30000);
+  console.log('⚡ Auto TP/SL engine started');
+
+  server.listen(PORT, () => {
+    console.log(`🚀  Server running on port ${PORT}`);
+  });
+}
+
+// Export Express app for Vercel serverless
+module.exports = app;
