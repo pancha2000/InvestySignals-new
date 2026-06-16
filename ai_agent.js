@@ -95,7 +95,7 @@ Specific invalidation factors.
 
 ## SIGNALS JSON (REQUIRED — parsed by frontend):
 <signals>
-{
+{{
   "direction": "LONG",
   "grade": "A",
   "confluenceScore": 7,
@@ -111,7 +111,7 @@ Specific invalidation factors.
   "riskPerTrade": "1-2%",
   "summary": "Max 2-sentence thesis.",
   "keyRisk": "Primary invalidation factor."
-}
+}}
 </signals>`;
 
 // ============================================================
