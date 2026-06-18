@@ -1,7 +1,7 @@
 {
   "name": "investysignals-backend",
-  "version": "1.0.0",
-  "description": "InvestySignals Crypto Trading Platform Backend",
+  "version": "2.0.0",
+  "description": "InvestySignals — Crypto Trading Platform + Hybrid Autonomous AI Agent (Quant Analyst Copilot)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -20,7 +20,12 @@
     "firebase-admin": "^12.2.0",
     "helmet": "^7.1.0",
     "mongoose": "^8.4.1",
-    "ws": "^8.17.0"
+    "ws": "^8.17.0",
+
+    "@langchain/core": "^1.1.0",
+    "@langchain/groq": "^1.2.0",
+    "zod": "^3.24.1",
+    "fast-xml-parser": "^4.5.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.3"

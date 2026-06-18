@@ -55,6 +55,13 @@ const Report          = require('./models/Report');
 const BalanceRequest  = require('./models/BalanceRequest');
 const Event           = require('./models/Event');
 
+// ── NEW: Hybrid Autonomous AI Agent (Quant Analyst Copilot) ──
+// All LangChain/Groq orchestration lives in ai_agent.js; this file only
+// wires HTTP routes to it. market_tools.js (the migrated indicator engine)
+// is required *inside* ai_agent.js, not here, so server.js never needs to
+// know about LangChain internals.
+const aiAgent = require('./ai_agent');
+
 // ── Firebase ─────────────────────────────────────────────────
 try {
   let credential;
@@ -233,7 +240,7 @@ const adminLimiter = rateLimit({ windowMs: 15*60*1000, max: 1000, standardHeader
 app.use('/api/admin/', adminLimiter);
 app.use('/api/', apiLimiter);
 
-const BLOCKED_STATIC = ['.env','serviceAccount.json','package.json','.gitignore','deploy.sh','server.js','node_modules'];
+const BLOCKED_STATIC = ['.env','serviceAccount.json','package.json','.gitignore','deploy.sh','server.js','node_modules','market_tools.js','ai_agent.js'];
 
 // Block sensitive files before static serving
 app.use((req, res, next) => {
@@ -243,6 +250,65 @@ app.use((req, res, next) => {
 });
 // Serve HTML/CSS/JS files from project root
 app.use(express.static(path.join(__dirname)));
+
+// ════════════════════════════════════════════════════════════════════
+//  NEW — Hybrid Autonomous AI Agent routes (Trade Copilot + Global Chat)
+//  Everything AI-related streams over SSE. Both routes require a logged
+//  -in user (verifyToken, defined below — hoisted, safe to use here) so
+//  an anonymous bot can never hammer the Groq quota for free. A tighter,
+//  dedicated rate limit sits on top of the existing global apiLimiter
+//  specifically to protect the (paid, per-token) Groq API from abuse.
+// ════════════════════════════════════════════════════════════════════
+const aiChatLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: parseInt(process.env.AI_CHAT_RATE_LIMIT_MAX || '12', 10), // 12 messages / minute / IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'You are sending messages too quickly — please slow down a little.' },
+});
+
+/** Shared resolver so both AI routes always use the SAME Groq credentials
+ *  and model the admin already configured for the rest of the app
+ *  (Settings → groq_api_key/groq_model/groq_temperature), exactly mirroring
+ *  how /api/deep-analysis resolves its own Groq config. */
+function resolveAgentConfig() {
+  return {
+    apiKey: globalSettings.groq_api_key || process.env.GROQ_API_KEY,
+    modelName: globalSettings.groq_model,
+    temperature: globalSettings.groq_temperature,
+  };
+}
+
+// 1) TRADE COPILOT — side-panel chat scoped to one already-generated report
+app.post('/api/agent/trade-chat', verifyToken, aiChatLimiter, async (req, res) => {
+  const { message, history, reportContext } = req.body || {};
+  await aiAgent.handleAgentChat({
+    res,
+    mode: 'trade_copilot',
+    history,
+    userMessage: message,
+    reportContext,
+    ...resolveAgentConfig(),
+  });
+});
+
+// 2) GLOBAL AI CHAT — the open "Crypto ChatGPT" page, no report context
+app.post('/api/agent/ask', verifyToken, aiChatLimiter, async (req, res) => {
+  const { message, history } = req.body || {};
+  await aiAgent.handleAgentChat({
+    res,
+    mode: 'global_chat',
+    history,
+    userMessage: message,
+    reportContext: null,
+    ...resolveAgentConfig(),
+  });
+});
+
+// 3) Clean URL for the new Global AI Chat page (the file itself is also
+//    reachable at /ask-ai.html via the static middleware above, but the
+//    product spec asked for a clean /ask-ai path).
+app.get('/ask-ai', (req, res) => res.sendFile(path.join(__dirname, 'ask-ai.html')));
 
 // ── Auth ──────────────────────────────────────────────────────
 async function ensureAdminPromotion(uid, emailFromToken) {

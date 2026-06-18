@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
     <title>Analysis Engine | InvestySignals</title>
     <link rel="stylesheet" href="style.css">
+    <!-- NEW: Trade Copilot — markdown rendering + sanitizer for AI chat answers -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.5/purify.min.js"></script>
     <style>
         .page-wrap { padding: 88px 24px 80px; max-width: 1000px; margin: 0 auto; width: 100%; }
         @keyframes fadeSlide { from{opacity:0;transform:translateY(10px);} to{opacity:1;transform:translateY(0);} }
@@ -381,6 +384,7 @@
         <a href="dashboard.html" class="auth-nav-link">📊 Dashboard</a>
         <a href="analysis.html" class="auth-nav-link active">🧠 Analysis</a>
         <a href="live-signals.html" class="auth-nav-link">📝 Paper Trades</a>
+        <a href="ask-ai.html" class="auth-nav-link">🤖 Ask AI</a>
         <a href="profile.html" class="auth-nav-link">👤 Profile</a>
         <a href="admin.html" id="adminNavLink" class="auth-nav-link" style="display:none;color:#f0b429;">⚡ Admin Panel</a>
         <div class="nav-divider"></div>
@@ -1265,6 +1269,13 @@ function renderFullAnalysis(data, container) {
     const ptWrap = document.getElementById('ptPanelWrap');
     if (ptWrap) ptWrap.innerHTML = buildPaperTradePanel(data);
     initPaperTrade();
+
+    // NEW: Trade Copilot — stash this exact report so the side-panel AI
+    // chat can answer "why is my SL here" grounded in this data, and
+    // reveal the floating chat button now that a report actually exists.
+    window.__lastReportData = data;
+    const tcFab = document.getElementById('tradeCopilotFab');
+    if (tcFab) tcFab.style.display = 'flex';
 }
 
 
@@ -1848,6 +1859,73 @@ function ptShowBalMsg(msg, isErr = false) {
     el.className = 'pt-msg ' + (isErr ? 'err' : 'ok');
     el.textContent = msg;
 }
+</script>
+
+<!-- ══════════════════════════════════════════════════════════════
+     NEW: Trade Copilot — floating button + slide-in AI chat panel.
+     Lives outside #aiResultWrap on purpose so it survives every
+     re-render of the report (renderFullAnalysis only ever touches
+     its own container, never this).
+     ══════════════════════════════════════════════════════════════ -->
+<style>
+.tc-fab{position:fixed;bottom:24px;right:22px;z-index:9000;display:none;align-items:center;gap:8px;
+    padding:13px 18px;border-radius:30px;border:1px solid rgba(240,180,41,0.45);
+    background:linear-gradient(135deg,#1a1a22,#13131a);color:var(--gold);font-weight:700;font-size:0.85rem;
+    cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,0.4),0 0 0 1px rgba(240,180,41,0.08);
+    font-family:'Space Grotesk',sans-serif;transition:transform 0.15s,box-shadow 0.15s;}
+.tc-fab:hover{transform:translateY(-2px);box-shadow:0 10px 28px rgba(0,0,0,0.45),0 0 18px rgba(240,180,41,0.25);}
+.tc-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9100;opacity:0;pointer-events:none;transition:opacity 0.2s;}
+.tc-backdrop.open{opacity:1;pointer-events:auto;}
+.tc-panel{position:fixed;top:0;right:0;height:100%;width:420px;max-width:100vw;background:var(--bg2);
+    border-left:1px solid var(--border-soft);z-index:9200;display:flex;flex-direction:column;
+    transform:translateX(100%);transition:transform 0.25s ease;box-shadow:-8px 0 30px rgba(0,0,0,0.35);}
+.tc-panel.open{transform:translateX(0);}
+.tc-panel-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;
+    border-bottom:1px solid var(--border-soft);flex-shrink:0;}
+.tc-panel-head h3{font-size:0.95rem;margin:0;display:flex;align-items:center;gap:7px;}
+.tc-panel-close{background:none;border:none;color:var(--text-muted);font-size:1.3rem;cursor:pointer;line-height:1;padding:4px;}
+.tc-panel-close:hover{color:var(--text);}
+.tc-panel-body{flex:1;min-height:0;}
+@media (max-width:640px){ .tc-panel{width:100vw;} .tc-fab{right:16px;bottom:16px;padding:12px 16px;font-size:0.8rem;} }
+</style>
+
+<button class="tc-fab" id="tradeCopilotFab" type="button" onclick="window.openTradeCopilot()">💬 Chat about this Trade</button>
+<div class="tc-backdrop" id="tradeCopilotBackdrop" onclick="window.closeTradeCopilot()"></div>
+<div class="tc-panel" id="tradeCopilotPanel">
+    <div class="tc-panel-head">
+        <h3>💬 Trade Copilot</h3>
+        <button class="tc-panel-close" onclick="window.closeTradeCopilot()" aria-label="Close">✕</button>
+    </div>
+    <div class="tc-panel-body" id="tradeCopilotBody"><!-- AIChat.mount() renders here --></div>
+</div>
+
+<script src="ai-chat-widget.js"></script>
+<script>
+// Re-mounts the chat fresh each time the panel opens, so it is always
+// grounded in window.__lastReportData — the MOST RECENT report, even if
+// the user has since run a new analysis on a different coin.
+function ensureTradeCopilotMounted() {
+    const body = document.getElementById('tradeCopilotBody');
+    if (!body || !window.AIChat) return;
+    window.AIChat.mount(body, {
+        endpoint: '/api/agent/trade-chat',
+        getToken: () => (window._authUser ? window._authUser.getIdToken() : Promise.resolve(null)),
+        getReportContext: () => window.__lastReportData || null,
+        welcomeText: "Ask me anything about this trade — why the entry/SL/TP sit where they do, confluence, or fresh news risk.",
+        placeholder: 'Ask about this trade…',
+        suggestions: ['Why is my SL here?', 'Any news risk?', 'How strong is this setup?'],
+    });
+}
+window.openTradeCopilot = function () {
+    ensureTradeCopilotMounted();
+    document.getElementById('tradeCopilotPanel').classList.add('open');
+    document.getElementById('tradeCopilotBackdrop').classList.add('open');
+};
+window.closeTradeCopilot = function () {
+    document.getElementById('tradeCopilotPanel').classList.remove('open');
+    document.getElementById('tradeCopilotBackdrop').classList.remove('open');
+};
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.closeTradeCopilot(); });
 </script>
 </body>
 </html>

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>Ask AI | InvestySignals</title>
+    <meta name="description" content="Ask the InvestySignals AI Quant Analyst anything about the crypto market — live prices, technicals, market structure, and news, all in one chat.">
+    <link rel="stylesheet" href="style.css">
+    <!-- Markdown rendering for beautiful AI answers + sanitizer so AI/markdown output can never inject unsafe HTML -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.5/purify.min.js"></script>
+    <style>
+        .askai-wrap{padding:88px 24px 24px;max-width:880px;margin:0 auto;width:100%;height:100vh;box-sizing:border-box;display:flex;flex-direction:column;}
+        .askai-header{margin-bottom:14px;flex-shrink:0;}
+        .askai-header h1{font-size:1.5rem;margin-bottom:4px;display:flex;align-items:center;gap:8px;}
+        .askai-header p{color:var(--text-muted);font-size:0.85rem;}
+        .askai-panel{flex:1;min-height:0;background:var(--bg2);border:1px solid var(--border-soft);border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column;box-shadow:0 0 40px rgba(0,0,0,0.25);}
+        .askai-disclaimer{font-size:0.66rem;color:var(--text-dim);text-align:center;padding:8px 16px 0;flex-shrink:0;}
+        @media (max-width:640px){ .askai-wrap{padding:78px 10px 10px;} }
+    </style>
+</head>
+<body>
+<div class="nav-backdrop" id="navBackdrop" style="pointer-events:none;"></div>
+<nav class="auth-nav">
+    <div class="auth-nav-left">
+        <button class="auth-hamburger" id="authHamburger">☰</button>
+        <a href="index.html" class="logo" style="font-size:0.9rem;">
+            <div class="logo-icon" style="width:26px;height:26px;font-size:0.85rem;">◈</div>
+            <span>INVESTY<span class="logo-accent">SIGNALS</span></span>
+        </a>
+        <span class="page-title">ASK AI</span>
+    </div>
+    <nav class="auth-nav-menu" id="authNavMenu">
+        <a href="dashboard.html" class="auth-nav-link">📊 Dashboard</a>
+        <a href="analysis.html" class="auth-nav-link">🧠 Analysis</a>
+        <a href="live-signals.html" class="auth-nav-link">📝 Paper Trades</a>
+        <a href="ask-ai.html" class="auth-nav-link active">🤖 Ask AI</a>
+        <a href="profile.html" class="auth-nav-link">👤 Profile</a>
+        <a href="admin.html" id="adminNavLink" class="auth-nav-link" style="display:none;color:#f0b429;">⚡ Admin Panel</a>
+        <div class="nav-divider"></div>
+        <a class="auth-nav-link" style="color:var(--red,#ff4d4f);cursor:pointer;" id="navLogout">🔓 Log Out</a>
+    </nav>
+    <div class="auth-nav-right">
+        <a href="profile.html" class="user-chip">
+            <div class="user-avatar" id="userAvatar">U</div>
+            <span class="user-name" id="userName">User</span>
+        </a>
+    </div>
+</nav>
+
+<div class="askai-wrap">
+    <div class="askai-header">
+        <h1>🤖 AI Quant Analyst <span class="badge badge-outline" style="font-size:0.6rem;vertical-align:middle;">BETA</span></h1>
+        <p>Your crypto market co-pilot — grounded in live Binance data, real technicals, and fresh news. Not financial advice.</p>
+    </div>
+    <div class="askai-panel" id="askaiPanel"><!-- AIChat.mount() renders here --></div>
+    <div class="askai-disclaimer">AI-generated analysis for informational purposes only — always do your own research before trading.</div>
+</div>
+
+<!-- ══ FIREBASE AUTH ══ -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
+const auth = getAuth(initializeApp({
+  apiKey:"AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk",
+  authDomain:"investysignals-890ba.firebaseapp.com", projectId:"investysignals-890ba",
+  storageBucket:"investysignals-890ba.firebasestorage.app", messagingSenderId:"1045281522975",
+  appId:"1:1045281522975:web:47c4b8d32c5f235a7bdc2a"
+}));
+onAuthStateChanged(auth, async u => {
+  if (!u) { window.location.href = 'login.html'; return; }
+  window._authUser = u;
+  const name = u.displayName || u.email?.split('@')[0] || 'Trader';
+  const av = document.getElementById('userAvatar'); if(av) av.textContent = name.charAt(0).toUpperCase();
+  const un = document.getElementById('userName');   if(un) un.textContent = name;
+  try {
+    const tok = await u.getIdToken();
+    const sr = await fetch('/api/user/status', { headers:{ 'Authorization':'Bearer '+tok } });
+    const sj = await sr.json();
+    if(sj.success && sj.status.role === 'admin') {
+      const al = document.getElementById('adminNavLink');
+      if(al) al.style.display = 'flex';
+    }
+  } catch(_) {}
+  // Only mount the chat once we actually have a logged-in user + token.
+  window.AIChat.mount(document.getElementById('askaiPanel'), {
+    endpoint: '/api/agent/ask',
+    getToken: async () => window._authUser ? await window._authUser.getIdToken() : null,
+    welcomeText: "Ask me anything about the crypto market — I'll check live data before answering.",
+    placeholder: 'Ask about any coin, trend, or news…',
+    suggestions: [
+      "What's the trend for BTC today?",
+      'Scan the market for setups',
+      'Any news affecting ETH?',
+      'Explain RSI divergence',
+    ],
+  });
+});
+window.handleSignOut = async () => { try { await signOut(auth); } catch(e){} window.location.href = 'index.html'; };
+const navLogout = document.getElementById('navLogout');
+if (navLogout) navLogout.addEventListener('click', window.handleSignOut);
+const authHamburger = document.getElementById('authHamburger');
+const authNavMenu = document.getElementById('authNavMenu');
+const navBackdrop = document.getElementById('navBackdrop');
+if (authHamburger && authNavMenu) {
+  authHamburger.addEventListener('click', () => {
+    authNavMenu.classList.toggle('open');
+    if (navBackdrop) { navBackdrop.style.pointerEvents = authNavMenu.classList.contains('open') ? 'auto' : 'none'; }
+  });
+  if (navBackdrop) navBackdrop.addEventListener('click', () => { authNavMenu.classList.remove('open'); navBackdrop.style.pointerEvents = 'none'; });
+}
+</script>
+
+<script src="ai-chat-widget.js"></script>
+</body>
+</html>
