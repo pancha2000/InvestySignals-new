@@ -69,6 +69,12 @@ const DEFAULT_TEMPERATURE = Number.isFinite(parseFloat(process.env.GROQ_AGENT_TE
   : 0.4;
 
 const MAX_TOOL_ITERATIONS = parseInt(process.env.AI_MAX_TOOL_ITERATIONS || '5', 10);
+// NEW: hard wall-clock ceiling for one ENTIRE chat turn (covers however many
+// tool round-trips it takes). Protects against a rare hung Groq call or a
+// slow tool leaving the user staring at a spinner forever — Nginx alone
+// won't save us here since this VPS's proxy_read_timeout is intentionally
+// generous (86400s) to support legitimate long SSE streams.
+const MAX_TURN_MS = parseInt(process.env.AI_MAX_TURN_MS || '90000', 10);
 const MAX_USER_MESSAGE_CHARS = parseInt(process.env.AI_MAX_USER_MESSAGE_CHARS || '2000', 10);
 const MAX_RESPONSE_TOKENS = parseInt(process.env.AI_MAX_RESPONSE_TOKENS || '1000', 10);
 const MAX_TOOL_RESULT_CHARS = parseInt(process.env.AI_MAX_TOOL_RESULT_CHARS || '6000', 10);
@@ -263,14 +269,23 @@ const TOOLS_BY_NAME = Object.fromEntries(TOOLS.map((t) => [t.name, t]));
 /** Execute a single tool call by name. Never throws — always resolves to a
  *  string (JSON success or JSON error) so a tool failure becomes something
  *  the model can read and react to ("the news API is down, proceeding on
- *  technicals alone") instead of crashing the whole chat turn. */
+ *  technicals alone") instead of crashing the whole chat turn.
+ *
+ *  IMPORTANT: uses tool.invoke(), not tool.func() directly. .invoke() runs
+ *  the Zod schema (defined per-tool above) FIRST — coercing/validating the
+ *  model's raw tool-call arguments before they ever reach market_tools.js.
+ *  If Groq sends a slightly malformed argument (wrong type, missing field,
+ *  extra junk), .invoke() catches it and we hand the model back a precise
+ *  validation error it can read and self-correct from on the next turn —
+ *  instead of either crashing, or silently passing bad data straight
+ *  through to a Binance call that then fails in a confusing way. */
 async function runTool(name, args) {
   const tool = TOOLS_BY_NAME[name];
   if (!tool) return toToolResult({ success: false, error: `Unknown tool "${name}".` });
   try {
-    return await tool.func(args || {});
+    return await tool.invoke(args || {});
   } catch (err) {
-    return toToolResult({ success: false, error: err.message || `${name} failed unexpectedly.` });
+    return toToolResult({ success: false, error: `Invalid arguments for ${name}: ${err.message || 'schema validation failed'}. Re-check the parameters and try again.` });
   }
 }
 
@@ -456,9 +471,12 @@ async function handleAgentChat({ res, mode, history, userMessage, reportContext,
 
     let finalContent = '';
     let iterations = 0;
+    const turnDeadline = Date.now() + MAX_TURN_MS;
+    let timedOut = false;
 
     while (iterations < MAX_TOOL_ITERATIONS) {
       iterations += 1;
+      if (Date.now() > turnDeadline) { timedOut = true; break; } // wall-clock safety valve
       const gathered = await streamOneTurn(modelWithTools, messages, sse);
 
       if (gathered.tool_calls && gathered.tool_calls.length > 0) {
@@ -477,9 +495,10 @@ async function handleAgentChat({ res, mode, history, userMessage, reportContext,
       break; // already streamed live inside streamOneTurn — nothing more to send
     }
 
-    if (!finalContent && iterations >= MAX_TOOL_ITERATIONS) {
+    if (!finalContent && (iterations >= MAX_TOOL_ITERATIONS || timedOut)) {
       // Safety valve: force a tool-free final answer so the user is never
-      // left with a blank reply if the model gets stuck repeatedly calling tools.
+      // left with a blank reply if the model gets stuck repeatedly calling tools,
+      // or if the turn ran past its wall-clock budget.
       sse.send('status', { label: '✍️ Wrapping up…' });
       messages.push(new SystemMessage('You now have enough information. Give your final, concise answer to the user. Do not call any more tools.'));
       const forced = await streamOneTurn(baseModel, messages, sse);

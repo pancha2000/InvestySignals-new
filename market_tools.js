@@ -197,7 +197,19 @@ const btcTrendCache = new TTLCache(60 * 1000); // new: avoid refetching BTC cont
 /** Normalize a trading pair — always ensure a USDT suffix. xlm → XLMUSDT */
 function normalizePair(pair) {
   if (!pair) return '';
-  const p = pair.toString().toUpperCase().replace(/[^A-Z0-9]/g, '').trim();
+  const raw = pair.toString().trim();
+  if (!raw) return '';
+  // NEW: try a full coin-name match first (e.g. chat user types "bitcoin"
+  // or "internet computer" instead of the ticker). Must run BEFORE the
+  // space/punctuation-stripping below, since names can contain spaces.
+  // NAME_TO_TICKER is built later in this file (from COIN_ALIASES) but is
+  // already fully initialized by the time anything actually CALLS this
+  // function at runtime — function bodies resolve module-scope names at
+  // call time, not at definition time, so the later declaration is safe.
+  const rawUpper = raw.toUpperCase().replace(/\s+/g, ' ').trim();
+  if (NAME_TO_TICKER[rawUpper]) return NAME_TO_TICKER[rawUpper] + 'USDT';
+
+  const p = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (!p) return '';
   return p.endsWith('USDT') ? p : p + 'USDT';
 }
@@ -696,6 +708,14 @@ const COIN_ALIASES = {
 function aliasesFor(coin) {
   const extra = COIN_ALIASES[coin] || [];
   return [coin, ...extra];
+}
+// NEW: reverse of COIN_ALIASES (full name → ticker), used by normalizePair
+// above so chat users typing "bitcoin" / "internet computer" resolve
+// correctly. Single source of truth — COIN_ALIASES is still the only list
+// that needs maintaining when a new coin is added.
+const NAME_TO_TICKER = {};
+for (const [ticker, names] of Object.entries(COIN_ALIASES)) {
+  for (const name of names) NAME_TO_TICKER[name.toUpperCase()] = ticker;
 }
 
 async function fetchRSSFeed(feedUrl, label) {

@@ -61,6 +61,9 @@ const Event           = require('./models/Event');
 // is required *inside* ai_agent.js, not here, so server.js never needs to
 // know about LangChain internals.
 const aiAgent = require('./ai_agent');
+// NEW: reused directly by /api/deep-analysis for the news-risk check below
+// (reuses the SAME news engine the AI chat uses — no duplicate news code).
+const marketTools = require('./market_tools');
 
 // ── Firebase ─────────────────────────────────────────────────
 try {
@@ -1157,6 +1160,12 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     if (!coin) return res.status(400).json({ success:false, error:'coin required' });
     const symbol = coin + 'USDT';
 
+    // NEW: News-Risk Check — fire this off NOW, in parallel with everything
+    // below. It is only *awaited* right before the AI prompt is built (with
+    // a hard timeout), so it can NEVER slow down the "lightning fast"
+    // report — worst case it just contributes nothing, same as before.
+    const newsPromise = marketTools.getCryptoNews(coin).catch(() => null);
+
     // Fetch all timeframes in parallel
     const [m15c,h1c,h4c,d1c,btcH4] = await Promise.all([
       _da_klines(symbol,'15m',200),
@@ -1232,6 +1241,23 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
           oiTrend === 'FALLING' && priceDir === 'DOWN'  ? 'LONG_LIQUIDATION'       : // longs exiting → bearish
           'NEUTRAL';
         oiData = { current: oiCurrent, trend: oiTrend, signal: oiSignal, priceDir };
+      }
+    } catch(_) {}
+
+    // ── NEW: Liquidity Guard ───────────────────────────────────
+    // The Market Scanner already filters for ≥$15M 24h volume / ≥100k
+    // trades before a coin ever reaches the user — but Deep Analysis can
+    // also be run directly on ANY typed coin, bypassing that filter. A
+    // thinly-traded coin's RSI/MACD/S-R levels are far less reliable
+    // (easier to manipulate, wider effective spread) — same threshold as
+    // the scanner, applied here too, as a non-blocking warning only.
+    let liquidityWarning = null;
+    try {
+      const ticker = await fetch(`https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=${symbol}`).then(r => r.json());
+      const qVol = parseFloat(ticker?.quoteVolume);
+      const tCount = parseInt(ticker?.count);
+      if (Number.isFinite(qVol) && Number.isFinite(tCount) && (qVol < 15_000_000 || tCount < 100_000)) {
+        liquidityWarning = { quoteVolume: qVol, tradeCount: tCount, note: `${coin} has lower liquidity (24h volume $${(qVol/1e6).toFixed(1)}M, ${tCount.toLocaleString()} trades) than the platform's normal scan threshold — levels can be less reliable and more easily moved by single large orders.` };
       }
     } catch(_) {}
 
@@ -1367,6 +1393,39 @@ Rules you MUST follow:
 Rule: If confluenceScore < ${CONFLUENCE_THRESHOLD}, set overallBias to NEUTRAL.`;
     }
 
+    // ── NEW: News-Risk Check — resolve the parallel fetch started above ──
+    // Hard 4s timeout: news is a bonus signal, never a reason to slow down
+    // or break the report. If it's not ready in time (or fails entirely),
+    // the report proceeds exactly as it did before this feature existed.
+    let newsContext = '';
+    const newsRiskFlag = { checked: false, hasNews: false, headlines: [] };
+    try {
+      const newsResult = await Promise.race([
+        newsPromise,
+        new Promise((resolve) => setTimeout(() => resolve(null), 4000)),
+      ]);
+      // Only treat this as genuine COIN-SPECIFIC risk context when the
+      // provider actually matched this coin by name — 'rss-general' means
+      // no ${coin}-specific headlines existed, just generic market news,
+      // which would be misleading to present as "news about this coin".
+      const isCoinSpecific = newsResult && ['cryptocompare', 'cryptopanic', 'rss-filtered'].includes(newsResult.provider);
+      if (isCoinSpecific && Array.isArray(newsResult.articles) && newsResult.articles.length) {
+        newsRiskFlag.checked = true;
+        newsRiskFlag.hasNews = true;
+        newsRiskFlag.headlines = newsResult.articles.slice(0, 5).map(a => ({ title: a.title, source: a.source, url: a.url }));
+        newsContext = `\n\nRECENT NEWS for ${coin} (last ${newsRiskFlag.headlines.length} headlines — factor this into your summary and keyRisk; if it conflicts with the technical bias, say so explicitly and treat it as a reason to lower confidence/grade, never ignore it just because the chart looks clean):\n` +
+          newsRiskFlag.headlines.map((h, i) => `${i + 1}. ${h.title} (${h.source})`).join('\n');
+      } else {
+        newsRiskFlag.checked = !!newsResult; // attempted and resolved, just nothing coin-specific found
+      }
+    } catch (_) {
+      // best-effort only — a news failure must never break the report
+    }
+
+    const liquidityContext = liquidityWarning
+      ? `\n\nLIQUIDITY WARNING: ${liquidityWarning.note} Mention this briefly in keyRisk, and do not assign Grade S to a low-liquidity coin no matter how clean the technicals look.`
+      : '';
+
     // ── Groq AI Analysis ─────────────────────────────────────
     // DB ලේ key set කරලා ඇත්නම් ඒක use කරනවා, නැත්නම් .env ලේ key
     const GROQ_API_KEY = (globalSettings.groq_api_key && globalSettings.groq_api_key.trim())
@@ -1380,7 +1439,7 @@ Rule: If confluenceScore < ${CONFLUENCE_THRESHOLD}, set overallBias to NEUTRAL.`
     const earlyWarnText = earlyWarnings.length ? '\nEARLY WARNINGS (M15/H1 signals):\n' + earlyWarnings.map((w,i) => (i+1)+'. '+w).join('\n') : '';
     const prompt = `You are a professional crypto futures trader who provides institutional-grade signals. Analyze ${coin}/USDT and respond ONLY with valid JSON.
 
-${thesisContext}${earlyWarnText}
+${thesisContext}${earlyWarnText}${newsContext}${liquidityContext}
 
 MARKET DATA:
 - Price: $${price}
@@ -1632,6 +1691,8 @@ Respond with ONLY this JSON (no markdown, no explanation):
       thesisStatus,
       fibLevels,
       earlyWarnings,
+      newsRisk: newsRiskFlag, // NEW: { checked, hasNews, headlines: [{title,source,url}] }
+      liquidityWarning,       // NEW: null, or { quoteVolume, tradeCount, note }
       analysis,
       rawData,
       // Advanced indicators for frontend display
