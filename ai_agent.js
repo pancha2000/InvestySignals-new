@@ -68,6 +68,15 @@ const DEFAULT_TEMPERATURE = Number.isFinite(parseFloat(process.env.GROQ_AGENT_TE
   ? parseFloat(process.env.GROQ_AGENT_TEMPERATURE)
   : 0.4;
 
+// NEW: repetition-prevention (see the BUG FIX note above ChatGroq's
+// instantiation, and inside streamOneTurn, for the full root-cause story).
+const FREQUENCY_PENALTY = Number.isFinite(parseFloat(process.env.GROQ_AGENT_FREQUENCY_PENALTY))
+  ? parseFloat(process.env.GROQ_AGENT_FREQUENCY_PENALTY)
+  : 0.4;
+const PRESENCE_PENALTY = Number.isFinite(parseFloat(process.env.GROQ_AGENT_PRESENCE_PENALTY))
+  ? parseFloat(process.env.GROQ_AGENT_PRESENCE_PENALTY)
+  : 0.15;
+
 const MAX_TOOL_ITERATIONS = parseInt(process.env.AI_MAX_TOOL_ITERATIONS || '5', 10);
 // NEW: hard wall-clock ceiling for one ENTIRE chat turn (covers however many
 // tool round-trips it takes). Protects against a rare hung Groq call or a
@@ -321,7 +330,8 @@ NON-NEGOTIABLE RULES:
 3. NEVER FABRICATE. If a tool fails or data is missing, say so honestly and work with what you do have — never pretend you checked something you didn't.
 4. BE CONCISE. Most users are on a phone. Lead with the answer. Use short paragraphs, and use markdown formatting (bold for key numbers/levels, short bullet lists for multi-point breakdowns) only where it genuinely helps scanning — don't over-format simple answers.
 5. RISK FIRST. You may share a directional read when asked, but frame it around risk management (position sizing, invalidation levels, what would change your mind) rather than hype or certainty. You are not a financial advisor and you don't place trades — let that come through in tone, without repeating a disclaimer in every single message.
-6. LANGUAGE. Always reply in the same language the user just wrote in (English, Sinhala, or otherwise) — match them naturally.`;
+6. LANGUAGE. Always reply in the same language the user just wrote in (English, Sinhala, or otherwise) — match them naturally.
+7. NEVER REPEAT YOURSELF. State each point exactly once. Do not restate the same sentence, conclusion, or paragraph in different words within one answer — if you notice yourself about to repeat a point already made, stop and move on instead.`;
 
 const TRADE_COPILOT_ADDENDUM = `
 MODE: Trade Copilot (side panel). The user is currently looking at a specific trade report, included below — it already contains the entry, stop-loss, take-profit levels and the platform's own confluence reasoning. Use that data directly to answer "why is my SL here" / "why this entry" style questions instead of re-deriving it. Only call a tool if the user asks about a different coin, explicitly wants a fresher real-time check, or asks something the report doesn't cover — get_crypto_news is a good example of something genuinely worth fetching fresh even in this mode, since the report is a price/structure snapshot and contains no headlines.`;
@@ -388,6 +398,32 @@ function createSSEStream(res) {
 //             sent separately once we know which tool is running).
 // ════════════════════════════════════════════════════════════════════════
 
+/**
+ * Stream ONE model turn and return the gathered AIMessageChunk.
+ *
+ * BUG FIX (repeated/duplicated answers): Groq's tool-calling models
+ * sometimes emit ordinary `content` ALONGSIDE `tool_calls` in the very
+ * same message (a "lead-in" sentence before deciding to call a tool), and
+ * the agent loop can also run several iterations back-to-back when
+ * multiple tool calls are needed. The OLD code streamed `content` to the
+ * user the moment ANY content chunk arrived — with no way to know yet
+ * whether THIS iteration would turn out to be a tool call. The result:
+ * a "thinking out loud" preamble got shown as if it were the answer, then
+ * the model's REAL final answer (after seeing tool results) streamed
+ * again afterwards — landing in the same chat bubble as a near-identical,
+ * repeated paragraph.
+ *
+ * THE FIX: buffer this iteration's content chunks silently while
+ * streaming. Only once the stream finishes do we know for certain whether
+ * `tool_calls` ended up non-empty:
+ *   - tool_calls present  → this was just a lead-in; DISCARD the buffer,
+ *                            nothing is shown to the user for this iteration.
+ *   - tool_calls empty    → this IS the genuine final answer; replay the
+ *                            buffered text to the user as a fast, smooth
+ *                            "typing" stream (small word-sized chunks),
+ *                            so the live-streaming feel is preserved for
+ *                            the one piece of content that actually matters.
+ */
 async function streamOneTurn(boundModel, messages, sse) {
   let stream;
   try {
@@ -398,21 +434,40 @@ async function streamOneTurn(boundModel, messages, sse) {
   }
 
   let gathered;
-  let answering = false;
+  let buffer = '';
   try {
     for await (const chunk of stream) {
       gathered = gathered === undefined ? chunk : gathered.concat(chunk);
-      if (!answering && chunk.content) answering = true;
-      if (answering && chunk.content && !sse.isClosed()) {
-        sse.send('token', { text: chunk.content });
-      }
+      if (chunk.content) buffer += chunk.content; // buffered, NOT sent yet — see fix note above
       if (sse.isClosed()) break; // client navigated away — stop burning tokens/CPU
     }
   } catch (midStreamErr) {
     console.error('[ai_agent] stream interrupted mid-turn:', midStreamErr.message);
     if (!sse.isClosed()) sse.send('status', { label: '⚠️ Connection hiccup — wrapping up with what we have…' });
   }
-  return gathered || { content: '', tool_calls: [] };
+
+  gathered = gathered || { content: '', tool_calls: [] };
+  const isToolCallTurn = gathered.tool_calls && gathered.tool_calls.length > 0;
+
+  if (!isToolCallTurn && buffer && !sse.isClosed()) {
+    // Genuine final answer — replay it as small word-chunks with a tiny
+    // delay so it still reads as a live "typing" stream on the frontend,
+    // even though we deliberately waited for the full generation first.
+    // Groq's inference is fast enough that this adds negligible delay.
+    const words = buffer.match(/\S+\s*/g) || [buffer];
+    for (let i = 0; i < words.length; i += 3) {
+      if (sse.isClosed()) break;
+      sse.send('token', { text: words.slice(i, i + 3).join('') });
+      await sleep(12);
+    }
+  }
+  // isToolCallTurn === true → buffer is intentionally discarded here.
+  // gathered.content still holds the raw text internally (LangChain keeps
+  // it on the AIMessage pushed into history below), which is fine — the
+  // model is allowed to see its own prior lead-in text in context, we just
+  // never SHOW that lead-in to the user as if it were a real answer.
+
+  return gathered;
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -460,6 +515,16 @@ async function handleAgentChat({ res, mode, history, userMessage, reportContext,
       model: safeModel,
       temperature: safeTemp,
       maxTokens: MAX_RESPONSE_TOKENS,
+      // BUG FIX (repeated/duplicated answers, part 2): without a frequency
+      // penalty, Llama-family models — especially when generating in a
+      // lower-resource language like Sinhala, where the model is far less
+      // fluent/confident than in English — can fall into a verbatim
+      // repetition loop, restating the same sentence 3-4+ times in one
+      // response. A modest frequencyPenalty directly discourages repeating
+      // the same tokens/phrases; a small presencePenalty nudges the model
+      // to keep moving forward rather than circling the same point.
+      frequencyPenalty: FREQUENCY_PENALTY,
+      presencePenalty: PRESENCE_PENALTY,
     });
     const modelWithTools = baseModel.bindTools(TOOLS);
 
