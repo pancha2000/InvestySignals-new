@@ -194,10 +194,21 @@ function normalizePair(pair) {
 // ── [3] Outlier Sanitization ─────────────────────────────────
 function sanitizeCandles(klines) {
   if (!klines || klines.length < 10) return klines;
-  const closes = klines.map(k => parseFloat(k[4])).sort((a, b) => a - b);
+  // NEW: Whipsaw Protection — drop the currently-forming (not-yet-closed)
+  // candle before it ever reaches RSI/MACD/structure/S-R calculations.
+  // Binance's /klines always includes the in-progress candle as the last
+  // element; using it means indicator values can still change before that
+  // candle actually closes, producing false breakout signals that flip
+  // back moments later (a classic "whale trap" / whipsaw pattern). Only
+  // fully-closed candles are used from here on. closeTime is index [6].
+  const last = klines[klines.length - 1];
+  const lastCloseTime = last && Number(last[6]);
+  const closed = (lastCloseTime && lastCloseTime > Date.now()) ? klines.slice(0, -1) : klines;
+  if (closed.length < 10) return closed;
+  const closes = closed.map(k => parseFloat(k[4])).sort((a, b) => a - b);
   const median = closes[Math.floor(closes.length / 2)];
-  if (median <= 0) return klines;
-  return klines.filter(k => Math.abs(parseFloat(k[4]) - median) / median < 0.30); // BUG FIX: 15%→30% — 15% too aggressive, removes valid volatile candles
+  if (median <= 0) return closed;
+  return closed.filter(k => Math.abs(parseFloat(k[4]) - median) / median < 0.30); // BUG FIX: 15%→30% — 15% too aggressive, removes valid volatile candles
 }
 
 // ── [13] State + [11] Throttle ───────────────────────────────
@@ -422,6 +433,22 @@ app.get('/api/scan', async (req, res) => {
       .map(c=>({symbol:c.symbol,change:parseFloat(c.priceChangePercent),volume:parseFloat(c.quoteVolume),price:parseFloat(c.lastPrice),trades:parseInt(c.count)}));
     res.json({ success:true, count:results.length, coins:results });
   } catch(err) { res.status(500).json({ success:false, error:err.message }); }
+});
+
+// ── NEW: "Early Signals" scanner — Bollinger Squeeze + Volume Anomaly ──
+// Finds coins that have NOT made a big move yet but show compressed
+// volatility and/or unusual incoming volume relative to their OWN recent
+// history — the opposite bias of /api/scan above, which only ever shows
+// coins AFTER a ≥3% move has already happened. See the detailed rationale
+// in market_tools.js's scanMarketSmart(). Public (no verifyToken) to match
+// the existing /api/scan route's access level.
+app.get('/api/scan-smart', async (req, res) => {
+  try {
+    const result = await marketTools.scanMarketSmart();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 app.get('/api/user/status', verifyToken, async (req, res) => {

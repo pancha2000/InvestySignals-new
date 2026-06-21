@@ -193,11 +193,14 @@ const TOOLS = [
   new DynamicStructuredTool({
     name: 'scan_market',
     description:
-      'Scan the entire Binance USDT market right now and return the most volatile / highest-volume coins currently moving (top gainers, top losers, top-by-volume, all filtered to liquid, actively-traded pairs). Use this when the user asks something broad like "what should I watch today", "any good setups right now", or "what is pumping". Takes no arguments.',
-    schema: z.object({}),
-    func: async () => {
+      'Scan the entire Binance USDT market right now. Two modes: "top_movers" (default) returns coins ALREADY moving — highest volume / biggest gainers&losers, for "what should I watch today" or "what is pumping". "early_signals" returns coins that have NOT made a big move yet but show volatility compression (Bollinger Squeeze) and/or unusual incoming volume relative to their own recent history — for "find me something before it moves", "any coins about to break out", "catch something early". Use early_signals whenever the user wants to get in BEFORE a move rather than chase one that already happened.',
+    schema: z.object({
+      mode: z.enum(['top_movers', 'early_signals']).optional().describe('Defaults to "top_movers" if omitted.'),
+    }),
+    func: async ({ mode } = {}) => {
       try {
-        return toToolResult(await marketTools.scanMarket());
+        const result = mode === 'early_signals' ? await marketTools.scanMarketSmart() : await marketTools.scanMarket();
+        return toToolResult(result);
       } catch (err) {
         return toToolResult({ success: false, error: err.message || 'scan_market failed' });
       }
@@ -304,7 +307,9 @@ function statusLabelFor(toolName, args) {
   const sym = args && args.symbol ? String(args.symbol).toUpperCase().replace(/USDT$/, '') : '';
   switch (toolName) {
     case 'scan_market':
-      return '🔍 Scanning the market for volatile, high-volume coins…';
+      return args && args.mode === 'early_signals'
+        ? '⚡ Scanning for early-stage setups (squeeze + volume anomaly)…'
+        : '🔍 Scanning the market for volatile, high-volume coins…';
     case 'get_live_price':
       return `💰 Fetching the live price for ${sym || 'that coin'}…`;
     case 'get_technical_indicators':

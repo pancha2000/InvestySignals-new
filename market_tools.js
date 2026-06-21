@@ -218,10 +218,18 @@ function normalizePair(pair) {
  *  (protects every downstream indicator from a single bad/spiked print). */
 function sanitizeCandles(klines) {
   if (!klines || klines.length < 10) return klines;
-  const closes = klines.map((k) => parseFloat(k[4])).sort((a, b) => a - b);
+  // NEW: Whipsaw Protection — drop the currently-forming (not-yet-closed)
+  // candle. See the matching comment in server.js's sanitizeCandles for
+  // the full rationale; kept identical in both places since each file has
+  // its own independent kline pipeline.
+  const last = klines[klines.length - 1];
+  const lastCloseTime = last && Number(last[6]);
+  const closed = (lastCloseTime && lastCloseTime > Date.now()) ? klines.slice(0, -1) : klines;
+  if (closed.length < 10) return closed;
+  const closes = closed.map((k) => parseFloat(k[4])).sort((a, b) => a - b);
   const median = closes[Math.floor(closes.length / 2)];
-  if (median <= 0) return klines;
-  return klines.filter((k) => Math.abs(parseFloat(k[4]) - median) / median < 0.3);
+  if (median <= 0) return closed;
+  return closed.filter((k) => Math.abs(parseFloat(k[4]) - median) / median < 0.3);
 }
 
 /**
@@ -878,6 +886,124 @@ async function scanMarket() {
   return scanCache.set('top', result);
 }
 
+/**
+ * scan_market_smart() — "Early Signals" scan.
+ *
+ * The plain scanMarket() above only ever surfaces coins AFTER they've
+ * already moved ≥3% — by definition late, momentum-chasing entries. It
+ * also sorts by raw volume, which means the same handful of mega-caps
+ * (BTC, ETH, SOL...) crowd out everything else every single time, since
+ * they're always the highest-volume pairs on the exchange.
+ *
+ * This function does the opposite job: find coins that are NOT moving
+ * much yet, but show signs they're ABOUT to —
+ *   1. Bollinger Squeeze — volatility (band width) compressed to near a
+ *      multi-period LOW for that specific coin. Tight bands = energy
+ *      building up; squeezes statistically precede expansion moves.
+ *   2. Volume Anomaly — the latest CLOSED 1H candle's volume is unusually
+ *      high vs that coin's own recent average, while price hasn't reacted
+ *      much yet (24h change still small) — classic early-accumulation
+ *      footprint, often visible before the price catches up.
+ *
+ * Both checks are RELATIVE TO EACH COIN'S OWN HISTORY, not to other
+ * coins' absolute volume — which is exactly what lets smaller/mid-cap
+ * coins surface here instead of the same repeat large-caps.
+ *
+ * Heavier than scanMarket() (needs 1H klines per candidate, not just one
+ * bulk ticker call), so: candidate pool is capped at 80 coins (still far
+ * more diverse than the existing top-20), every kline fetch goes through
+ * the SAME fetchJSON()→binanceLimiter chokepoint as everything else in
+ * this file (cached 5 min, retried, concurrency-capped — no new
+ * infrastructure needed), and the whole result is cached for 60s.
+ */
+async function scanMarketSmart() {
+  const cached = scanCache.get('smart');
+  if (cached) return cached;
+
+  const data = await fetchJSON('https://api.binance.com/api/v3/ticker/24hr', { retries: 2, timeoutMs: 10000 });
+  const candidates = data
+    .filter((c) => c.symbol.endsWith('USDT') && !STABLECOINS.has(c.symbol))
+    // Deliberately MORE PERMISSIVE liquidity floor than scanMarket()'s
+    // $15M — the whole point is letting mid-caps that mega-caps would
+    // normally crowd out get a fair look. Still filters out dead/illiquid
+    // garbage that would give meaningless squeeze/volume readings.
+    .filter((c) => parseFloat(c.quoteVolume) >= 3_000_000 && parseInt(c.count, 10) >= 20_000)
+    .map((c) => ({
+      symbol: c.symbol,
+      change: round(parseFloat(c.priceChangePercent), 2),
+      volume: round(parseFloat(c.quoteVolume), 0),
+      price: parseFloat(c.lastPrice),
+    }))
+    .sort((a, b) => b.volume - a.volume)
+    .slice(0, 80); // bounds worst-case latency on a small VPS
+
+  const analyzed = await Promise.all(candidates.map(async (c) => {
+    try {
+      const raw = await fetchKlinesCached(c.symbol, '1h', 60);
+      const candles = sanitizeCandles(raw).map((k) => ({ close: parseFloat(k[4]), volume: parseFloat(k[5]) }));
+      if (candles.length < 25) return null; // too new / not enough history yet
+
+      const closes = candles.map((k) => k.close);
+
+      // Rolling 20-period Bollinger band-width SERIES (not just the latest
+      // snapshot) — needed to know whether the CURRENT width is unusually
+      // tight relative to this coin's own recent range.
+      const bwSeries = [];
+      for (let i = 20; i <= closes.length; i++) {
+        const win = closes.slice(i - 20, i);
+        const m = win.reduce((a, b) => a + b, 0) / 20;
+        const std = Math.sqrt(win.reduce((a, x) => a + (x - m) ** 2, 0) / 20);
+        bwSeries.push(m > 0 ? (4 * std) / m : 0); // bandWidth = (upper-lower)/middle = 4·σ/mean
+      }
+      if (bwSeries.length < 10) return null;
+
+      const currentBW = bwSeries[bwSeries.length - 1];
+      const lookback = bwSeries.slice(-40);
+      const minBW = Math.min(...lookback);
+      const maxBW = Math.max(...lookback);
+      const range = maxBW - minBW;
+      const squeezePct = range > 0 ? (currentBW - minBW) / range : 0; // 0=tightest in lookback, 1=widest
+      const squeezeActive = squeezePct <= 0.2;
+
+      const lastVol = candles[candles.length - 1].volume;
+      const avgVol = candles.slice(-21, -1).reduce((a, k) => a + k.volume, 0) / 20;
+      const volRatio = avgVol > 0 ? lastVol / avgVol : 0;
+      const volumeAnomaly = volRatio >= 2.0 && Math.abs(c.change) < 4; // spike WITHOUT a big move yet
+
+      if (!squeezeActive && !volumeAnomaly) return null; // nothing notable — skip
+
+      const smartScore = round((squeezeActive ? 5 : 0) + (volumeAnomaly ? 5 : 0) + Math.min(volRatio, 5), 1);
+
+      return {
+        symbol: c.symbol,
+        coin: c.symbol.replace('USDT', ''),
+        price: c.price,
+        change24h: c.change,
+        volume24h: c.volume,
+        squeezeActive,
+        squeezePct: round(squeezePct * 100, 0), // lower = tighter squeeze
+        volumeRatio: round(volRatio, 2),
+        volumeAnomaly,
+        smartScore,
+      };
+    } catch (_) {
+      return null; // one bad/delisted coin must never break the whole scan
+    }
+  }));
+
+  const signals = analyzed.filter(Boolean).sort((a, b) => b.smartScore - a.smartScore).slice(0, 20);
+
+  const result = {
+    success: true,
+    mode: 'early_signals',
+    count: signals.length,
+    generatedAt: new Date().toISOString(),
+    coins: signals,
+    note: 'Coins showing volatility compression (Bollinger Squeeze) and/or unusual incoming volume relative to their OWN recent history — possible early-stage setups, before a big move shows up on the standard scanner. Always confirm with Deep Analysis before entering.',
+  };
+  return scanCache.set('smart', result);
+}
+
 /** get_live_price(symbol) */
 async function getLivePriceSnapshot(symbolRaw) {
   const symbol = normalizePair(symbolRaw);
@@ -975,6 +1101,7 @@ async function getMarketStructure(symbolRaw) {
 module.exports = {
   // ── The 5 AI-tool-ready functions (what ai_agent.js wraps) ──
   scanMarket,
+  scanMarketSmart, // NEW: Bollinger Squeeze + Volume Anomaly "early signals" scan
   getLivePriceSnapshot,
   getTechnicalIndicators,
   getMarketStructure,
