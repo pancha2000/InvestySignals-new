@@ -119,6 +119,14 @@
         .sig-pill.bear { background:rgba(255,59,92,0.08); color:var(--red); }
         .sig-pill.neut { background:var(--surface); color:var(--text-muted); }
         .rsi-val { font-family:'JetBrains Mono',monospace; font-size:0.82rem; font-weight:600; }
+        .es-badge {
+            display:inline-flex; align-items:center; gap:3px; padding:3px 8px;
+            border-radius:6px; font-size:0.66rem; font-weight:700;
+            font-family:'JetBrains Mono',monospace; margin-right:5px; white-space:nowrap;
+        }
+        .es-squeeze { background:rgba(255,152,0,0.1); border:1px solid rgba(255,152,0,0.3); color:#ff9800; }
+        .es-volume  { background:rgba(124,255,178,0.1); border:1px solid rgba(124,255,178,0.3); color:#7cffb2; }
+
         .scan-action-btn {
             width:36px; height:36px; border-radius:var(--radius-xs);
             background:var(--surface2); border:1px solid var(--border-soft);
@@ -420,6 +428,10 @@
                 <span id="smartScanIcon">📡</span>
                 <span id="smartScanLabel">Smart Scan</span>
             </button>
+            <button class="smart-scan-btn" id="earlySignalsBtn" onclick="runEarlySignalsScan()" style="background:linear-gradient(135deg,rgba(124,255,178,0.12),rgba(124,255,178,0.03));border-color:rgba(124,255,178,0.3);color:#7cffb2;">
+                <span id="earlySignalsIcon">⚡</span>
+                <span id="earlySignalsLabel">Early Signals</span>
+            </button>
 
             <div class="scanner-input-row">
                 <input id="customCoinInput" class="scanner-input"
@@ -455,6 +467,9 @@
 
         <!-- Results rows -->
         <div id="scanResultsList"></div>
+
+        <!-- NEW: Early Signals results (separate container — different card format, shows squeeze/volume badges) -->
+        <div id="earlySignalsList"></div>
 
         <!-- Empty state -->
         <div class="scanner-empty" id="scanEmptyState">
@@ -619,6 +634,91 @@ window.runSmartScan = async function() {
         renderScanTable();
     }, 200);
 };
+
+/* ── EARLY SIGNALS SCAN (NEW) — Bollinger Squeeze + Volume Anomaly ──
+   Different job than Smart Scan above: Smart Scan shows coins ALREADY
+   moving ≥3%; this shows coins that are NOT moving much yet but show
+   compressed volatility and/or unusual incoming volume relative to their
+   OWN recent history — i.e. coins that might be about to move. */
+let earlySignalsResults = [];
+
+window.runEarlySignalsScan = async function() {
+    const btn = document.getElementById('earlySignalsBtn');
+    const icon = document.getElementById('earlySignalsIcon');
+    const label = document.getElementById('earlySignalsLabel');
+    const prog = document.getElementById('scanProgress');
+    const fill = document.getElementById('spBarFill');
+    const spTxt = document.getElementById('spText');
+
+    btn.disabled = true;
+    icon.style.animation = 'scanPulse 0.8s ease infinite';
+    label.textContent = 'Scanning...';
+    prog.style.display = 'block';
+    fill.style.width = '20%';
+    document.getElementById('scanEmptyState').style.display = 'none';
+    document.getElementById('scanTableHead').style.display = 'none';
+    document.getElementById('scanResultsList').innerHTML = '';
+    document.getElementById('earlySignalsList').innerHTML = '';
+    closeCoinPanel();
+    scanResults = []; earlySignalsResults = []; activeCoin = null;
+
+    try {
+        spTxt.textContent = 'Checking volatility compression + volume across the market…';
+        fill.style.width = '55%';
+        const res = await fetch('/api/scan-smart');
+        const contentType = res.headers.get('content-type') || '';
+        if (!res.ok || !contentType.includes('application/json')) {
+            throw new Error('Server error (' + res.status + ') — please try again shortly');
+        }
+        const j = await res.json();
+        if (!j.success) throw new Error(j.error || 'Scan failed');
+
+        fill.style.width = '100%';
+        earlySignalsResults = j.coins || [];
+    } catch (err) {
+        prog.style.display = 'none';
+        icon.style.animation = 'none'; icon.textContent = '⚡'; label.textContent = 'Early Signals'; btn.disabled = false;
+        document.getElementById('scanEmptyState').innerHTML = `<div class="se-icon">⚠️</div><div style="color:var(--red);">Scan failed: ${err.message}</div>`;
+        document.getElementById('scanEmptyState').style.display = 'block';
+        return;
+    }
+
+    setTimeout(() => {
+        prog.style.display = 'none';
+        icon.style.animation = 'none'; icon.textContent = '✅'; label.textContent = 'Early Signals'; btn.disabled = false;
+        const now = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+        if (!earlySignalsResults.length) {
+            document.getElementById('scannerStatus').textContent = `No compression/volume signals right now · ${now}`;
+            document.getElementById('scanEmptyState').innerHTML = '<div class="se-icon">⚡</div><div>Nothing showing early signals right now — market is either trending hard already or genuinely quiet. Try again shortly.</div>';
+            document.getElementById('scanEmptyState').style.display = 'block';
+            return;
+        }
+        document.getElementById('scannerStatus').textContent = `${earlySignalsResults.length} early-stage candidates · ${now}`;
+        document.getElementById('refreshTime').textContent = 'Last: ' + now;
+        renderEarlySignalsTable();
+    }, 200);
+};
+
+function renderEarlySignalsTable() {
+    const list = document.getElementById('earlySignalsList');
+    list.innerHTML = '<div style="padding:4px 16px 10px;font-size:0.68rem;color:var(--text-dim);">⚡ Compressed volatility and/or unusual volume vs each coin\'s own history — not yet a confirmed move. Always run Deep Analysis before entering.</div>'
+        + earlySignalsResults.map(r => {
+            const chgClr = r.change24h >= 0 ? 'var(--green)' : 'var(--red)';
+            const chgStr = (r.change24h >= 0 ? '+' : '') + r.change24h.toFixed(2) + '%';
+            const isActive = activeCoin === r.coin;
+            const badges = [
+                r.squeezeActive ? `<span class="es-badge es-squeeze">🔥 Squeeze ${r.squeezePct}%</span>` : '',
+                r.volumeAnomaly ? `<span class="es-badge es-volume">📊 Vol ${r.volumeRatio}x</span>` : '',
+            ].join('');
+            return `
+            <div class="scan-row${isActive?' active-row':''}" onclick="openCoinFromScan('${r.coin}','${r.price}')">
+                <div class="scan-sym">${r.coin}<span>/U</span></div>
+                <div>${badges}</div>
+                <div class="rsi-val" style="color:${chgClr};">${chgStr}</div>
+                <button class="scan-action-btn${isActive?' active':''}" onclick="event.stopPropagation();openCoinFromScan('${r.coin}','${r.price}')">🔬</button>
+            </div>`;
+        }).join('');
+}
 
 /* ── Render table ── */
 function renderScanTable() {
