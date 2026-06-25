@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>Backtest Engine | InvestySignals</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .bt-wrap { padding:88px 20px 60px; max-width:980px; margin:0 auto; }
+        .bt-header { margin-bottom:22px; }
+        .bt-header h1 { font-size:1.4rem; margin-bottom:4px; }
+        .bt-header p { color:var(--text-muted); font-size:0.82rem; line-height:1.5; }
+        .bt-notice { background:rgba(255,152,0,0.07); border:1px solid rgba(255,152,0,0.22); border-radius:8px; padding:10px 14px; font-size:0.75rem; color:#ff9800; margin-bottom:20px; }
+
+        /* ── Config panel ── */
+        .bt-config { background:var(--bg2); border:1px solid var(--border-soft); border-radius:var(--radius); padding:18px 20px; margin-bottom:20px; }
+        .bt-config h3 { font-size:0.82rem; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-muted); margin-bottom:14px; }
+        .bt-fields { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-bottom:16px; }
+        .bt-field label { display:block; font-size:0.68rem; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-muted); margin-bottom:5px; }
+        .bt-field input, .bt-field select { width:100%; background:var(--surface); border:1px solid var(--border-soft); color:var(--text); padding:8px 10px; border-radius:6px; font-size:0.85rem; box-sizing:border-box; }
+        .bt-field input:focus, .bt-field select:focus { outline:none; border-color:var(--gold); }
+        .bt-run-btn { padding:11px 24px; background:linear-gradient(135deg,rgba(240,180,41,0.22),rgba(240,180,41,0.06)); border:1px solid rgba(240,180,41,0.4); color:var(--gold); border-radius:8px; font-weight:700; font-size:0.88rem; cursor:pointer; font-family:'Space Grotesk',sans-serif; }
+        .bt-run-btn:hover:not(:disabled) { box-shadow:0 0 16px rgba(240,180,41,0.2); }
+        .bt-run-btn:disabled { opacity:0.45; cursor:not-allowed; }
+
+        /* ── Progress ── */
+        .bt-progress { display:none; background:var(--bg2); border:1px solid var(--border-soft); border-radius:var(--radius); padding:16px 20px; margin-bottom:20px; }
+        .bt-progress-bar { height:6px; background:var(--border-soft); border-radius:3px; margin:10px 0 6px; overflow:hidden; }
+        .bt-progress-fill { height:100%; background:linear-gradient(90deg,var(--gold),#ffda6a); border-radius:3px; transition:width 0.4s ease; width:0%; }
+        .bt-progress-label { font-size:0.75rem; color:var(--text-muted); }
+
+        /* ── Summary stats ── */
+        .bt-stats-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:20px; }
+        .bt-stat { background:var(--bg2); border:1px solid var(--border-soft); border-radius:10px; padding:14px 16px; }
+        .bt-stat-label { font-size:0.62rem; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-dim); margin-bottom:6px; }
+        .bt-stat-val { font-size:1.25rem; font-weight:700; font-family:'JetBrains Mono',monospace; }
+        .bt-stat-sub { font-size:0.68rem; color:var(--text-muted); margin-top:3px; }
+        .green { color:var(--green,#2ecc71); }
+        .red   { color:var(--red,#ff4d4f); }
+        .gold  { color:var(--gold,#f0b429); }
+
+        /* ── Equity curve ── */
+        .bt-chart-wrap { background:var(--bg2); border:1px solid var(--border-soft); border-radius:var(--radius); padding:16px 20px; margin-bottom:20px; }
+        .bt-chart-wrap h3 { font-size:0.75rem; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-muted); margin-bottom:12px; }
+        #equityCanvas { width:100%; height:180px; display:block; }
+
+        /* ── Grade breakdown ── */
+        .bt-grade-row { display:flex; gap:10px; margin-bottom:20px; }
+        .bt-grade-card { flex:1; background:var(--bg2); border:1px solid var(--border-soft); border-radius:10px; padding:12px 14px; text-align:center; }
+        .bt-grade-badge { font-size:1.2rem; font-weight:900; font-family:'Orbitron',sans-serif; }
+        .badge-S { color:#f0b429; } .badge-A { color:#2ecc71; } .badge-B { color:#3b8bff; } .badge-C { color:#ff9800; }
+        .bt-grade-card .count { font-size:0.72rem; color:var(--text-muted); margin-top:4px; }
+        .bt-grade-card .wr { font-size:0.85rem; font-weight:700; margin-top:3px; }
+
+        /* ── Trade table ── */
+        .bt-table-wrap { background:var(--bg2); border:1px solid var(--border-soft); border-radius:var(--radius); margin-bottom:24px; overflow:hidden; }
+        .bt-table-head { display:flex; gap:0; padding:8px 14px; border-bottom:1px solid var(--border-soft); font-size:0.65rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-dim); }
+        .bt-table-head span { flex:1; }
+        .bt-row { display:flex; padding:9px 14px; border-bottom:1px solid rgba(255,255,255,0.03); font-size:0.78rem; align-items:center; }
+        .bt-row:last-child { border-bottom:none; }
+        .bt-row:hover { background:rgba(255,255,255,0.02); }
+        .bt-row span { flex:1; font-family:'JetBrains Mono',monospace; font-size:0.72rem; }
+        .exit-SL  { color:var(--red); }
+        .exit-TP1 { color:#ff9800; }
+        .exit-TP2 { color:#2ecc71; }
+        .exit-TP3 { color:#7cffb2; font-weight:700; }
+        .exit-TIMEOUT { color:var(--text-dim); }
+        .dir-LONG  { color:#2ecc71; }
+        .dir-SHORT { color:var(--red); }
+
+        /* ── History ── */
+        .bt-history { background:var(--bg2); border:1px solid var(--border-soft); border-radius:var(--radius); overflow:hidden; }
+        .bt-history-head { padding:14px 18px; border-bottom:1px solid var(--border-soft); font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); }
+        .bt-hist-row { display:flex; padding:11px 18px; border-bottom:1px solid rgba(255,255,255,0.03); font-size:0.78rem; align-items:center; cursor:pointer; }
+        .bt-hist-row:last-child { border-bottom:none; }
+        .bt-hist-row:hover { background:rgba(255,255,255,0.025); }
+        .bt-hist-row span { flex:1; }
+        .status-running { color:#ff9800; }
+        .status-completed { color:#2ecc71; }
+        .status-failed { color:var(--red); }
+
+        .bt-empty { padding:30px; text-align:center; color:var(--text-dim); font-size:0.82rem; }
+        #btResults { display:none; }
+        @media (max-width:640px) {
+            .bt-fields { grid-template-columns:1fr 1fr; }
+            .bt-stats-grid { grid-template-columns:1fr 1fr; }
+            .bt-grade-row { flex-wrap:wrap; }
+            .bt-row span:nth-child(4), .bt-row span:nth-child(5) { display:none; }
+            .bt-table-head span:nth-child(4), .bt-table-head span:nth-child(5) { display:none; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ── Nav ── -->
+<div class="nav-backdrop" id="navBackdrop" style="pointer-events:none;"></div>
+<nav class="auth-nav">
+    <div class="auth-nav-left">
+        <button class="auth-hamburger" id="authHamburger">☰</button>
+        <a href="index.html" class="logo" style="font-size:0.9rem;">
+            <div class="logo-icon" style="width:26px;height:26px;font-size:0.85rem;">◈</div>
+            <span>INVESTY<span class="logo-accent">SIGNALS</span></span>
+        </a>
+        <span class="page-title">BACKTEST</span>
+    </div>
+    <nav class="auth-nav-menu" id="authNavMenu">
+        <a href="dashboard.html" class="auth-nav-link">📊 Dashboard</a>
+        <a href="analysis.html" class="auth-nav-link">🧠 Analysis</a>
+        <a href="live-signals.html" class="auth-nav-link">📝 Paper Trades</a>
+        <a href="ask-ai.html" class="auth-nav-link">🤖 Ask AI</a>
+        <a href="backtest.html" class="auth-nav-link active">🔬 Backtest</a>
+        <a href="profile.html" class="auth-nav-link">👤 Profile</a>
+        <a href="admin.html" id="adminNavLink" class="auth-nav-link" style="display:none;color:#f0b429;">⚡ Admin Panel</a>
+        <div class="nav-divider"></div>
+        <a class="auth-nav-link" style="color:var(--red,#ff4d4f);cursor:pointer;" id="navLogout">🔓 Log Out</a>
+    </nav>
+    <div class="auth-nav-right">
+        <a href="profile.html" class="user-chip">
+            <div class="user-avatar" id="userAvatar">U</div>
+            <span class="user-name" id="userName">User</span>
+        </a>
+    </div>
+</nav>
+
+<!-- ── Page body ── -->
+<div class="bt-wrap">
+    <div class="bt-header">
+        <h1>🔬 Backtest Engine</h1>
+        <p>Replay historical Binance data through the exact same indicator logic the live dashboard uses — and see how many trades would have been wins, losses, or timeouts. Admin only.</p>
+    </div>
+    <div class="bt-notice">
+        ⚠️ <strong>What this tests:</strong> The technical confluence engine (RSI, MACD, ADX, EMA, Order Blocks, FVGs, Fibonacci). Open Interest and live News data are NOT included — no reliable historical source exists for those. Numbers represent the code's technical core, not a perfect replay of what the AI would have said on any given day. Always combine with judgment.
+    </div>
+
+    <!-- Config panel -->
+    <div class="bt-config">
+        <h3>Configuration</h3>
+        <div class="bt-fields">
+            <div class="bt-field">
+                <label>Coin (ticker)</label>
+                <input type="text" id="btSymbol" value="BTC" placeholder="BTC, ETH, SOL…">
+            </div>
+            <div class="bt-field">
+                <label>Timeframe</label>
+                <select id="btTimeframe">
+                    <option value="4h" selected>4H (recommended)</option>
+                    <option value="1h">1H</option>
+                    <option value="1d">1D</option>
+                    <option value="15m">15M (slow)</option>
+                </select>
+            </div>
+            <div class="bt-field">
+                <label>Candle history</label>
+                <select id="btCount">
+                    <option value="500">500 (~3 months 4H)</option>
+                    <option value="1000" selected>1,000 (~6 months 4H)</option>
+                    <option value="2000">2,000 (~1 year 4H)</option>
+                    <option value="3000">3,000 (~18 months 4H, slow)</option>
+                </select>
+            </div>
+        </div>
+        <button class="bt-run-btn" id="btRunBtn" onclick="startBacktest()">▶ Run Full History</button>
+        <button class="bt-run-btn" id="btWfBtn" onclick="startWalkForward()" style="margin-left:10px;background:linear-gradient(135deg,rgba(124,255,178,0.15),rgba(124,255,178,0.03));border-color:rgba(124,255,178,0.4);color:#7cffb2;">
+            ⟳ Walk-Forward Validation
+        </button>
+        <div style="font-size:0.7rem;color:var(--text-dim);margin-top:8px;">
+            <b style="color:var(--text-muted);">Full History</b> — runs the simulation across all available candles (shows what the system would have done historically).
+            &nbsp;|&nbsp;
+            <b style="color:#7cffb2;">Walk-Forward</b> — splits history into in-sample/out-of-sample windows to check if results hold on <em>unseen</em> data (the honest validation test).
+        </div>
+        <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;" id="wfExtraConfig">
+            <div class="bt-field" style="flex:0 0 auto;">
+                <label>WF Splits</label>
+                <select id="btSplits" style="width:90px;">
+                    <option value="3">3 windows</option>
+                    <option value="4" selected>4 windows</option>
+                    <option value="5">5 windows</option>
+                    <option value="6">6 windows</option>
+                </select>
+            </div>
+            <div class="bt-field" style="flex:0 0 auto;">
+                <label>Train ratio</label>
+                <select id="btTrainRatio" style="width:100px;">
+                    <option value="0.6">60% train</option>
+                    <option value="0.7" selected>70% train</option>
+                    <option value="0.75">75% train</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- Progress bar -->
+    <div class="bt-progress" id="btProgress">
+        <div style="font-size:0.82rem;font-weight:600;" id="btProgressLabel">Initialising…</div>
+        <div class="bt-progress-bar"><div class="bt-progress-fill" id="btProgressFill"></div></div>
+        <div class="bt-progress-label" id="btProgressSub"></div>
+    </div>
+
+    <!-- Results (hidden until a run completes) -->
+    <div id="btResults">
+
+    <!-- Walk-forward verdict (only shown for WF runs) -->
+    <div id="btWfVerdict" style="display:none;margin-bottom:20px;"></div>
+    <div id="btWfWindows" style="display:none;margin-bottom:20px;"></div>
+
+        <div class="bt-stats-grid" id="btStatGrid"></div>
+        <div class="bt-grade-row" id="btGradeRow"></div>
+        <div class="bt-chart-wrap">
+            <h3>Cumulative R-Multiple (Equity Curve)</h3>
+            <canvas id="equityCanvas"></canvas>
+        </div>
+        <div class="bt-table-wrap">
+            <div class="bt-table-head">
+                <span>Date</span><span>Dir</span><span>Entry</span><span>Exit</span><span>Result</span><span>R</span><span>Grade</span>
+            </div>
+            <div id="btTradeList"></div>
+        </div>
+    </div>
+
+    <!-- History -->
+    <div class="bt-history">
+        <div class="bt-history-head">Past Runs</div>
+        <div id="btHistoryList"><div class="bt-empty">No past backtest runs yet.</div></div>
+    </div>
+</div>
+
+<!-- ── Firebase Auth ── -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
+const auth = getAuth(initializeApp({
+  apiKey:"AIzaSyA49TYbX5omoN56bffDnlqZGGjjpKZtOvk",
+  authDomain:"investysignals-890ba.firebaseapp.com", projectId:"investysignals-890ba",
+  storageBucket:"investysignals-890ba.firebasestorage.app", messagingSenderId:"1045281522975",
+  appId:"1:1045281522975:web:47c4b8d32c5f235a7bdc2a"
+}));
+onAuthStateChanged(auth, async u => {
+  if (!u) { window.location.href = 'login.html'; return; }
+  window._authUser = u;
+  const name = u.displayName || u.email?.split('@')[0] || 'User';
+  const av = document.getElementById('userAvatar'); if(av) av.textContent = name.charAt(0).toUpperCase();
+  const un = document.getElementById('userName');   if(un) un.textContent = name;
+  try {
+    const tok = await u.getIdToken();
+    const sr = await fetch('/api/user/status', { headers:{ 'Authorization':'Bearer '+tok } });
+    const sj = await sr.json();
+    if (!sj.success || sj.status.role !== 'admin') {
+      document.querySelector('.bt-wrap').innerHTML = '<div style="padding:60px 20px;text-align:center;color:var(--red);">🔒 Admin access required to use the Backtest Engine.</div>';
+      return;
+    }
+    const al = document.getElementById('adminNavLink'); if(al) al.style.display = 'flex';
+  } catch(_) {}
+  window._adminReady = true;
+  loadHistory();
+});
+window.handleSignOut = async () => { try { await signOut(auth); } catch(e){} window.location.href = 'index.html'; };
+document.getElementById('navLogout')?.addEventListener('click', window.handleSignOut);
+const ham = document.getElementById('authHamburger'), menu = document.getElementById('authNavMenu'), backdrop = document.getElementById('navBackdrop');
+ham?.addEventListener('click', () => { menu?.classList.toggle('open'); if(backdrop) backdrop.style.pointerEvents = menu?.classList.contains('open') ? 'auto' : 'none'; });
+backdrop?.addEventListener('click', () => { menu?.classList.remove('open'); if(backdrop) backdrop.style.pointerEvents = 'none'; });
+</script>
+
+<script>
+async function getToken() { return window._authUser ? await window._authUser.getIdToken() : null; }
+async function authFetch(url, opts = {}) {
+    const tok = await getToken();
+    return fetch(url, { ...opts, headers: { 'Content-Type':'application/json', 'Authorization': tok ? 'Bearer '+tok : '', ...(opts.headers||{}) } });
+}
+
+// ── Start a new run ────────────────────────────────────────────
+let pollTimer = null;
+window.startBacktest = async function() {
+    if (!window._adminReady) return;
+    const sym = document.getElementById('btSymbol').value.trim().toUpperCase();
+    if (!sym) { alert('Please enter a coin symbol.'); return; }
+    const timeframe = document.getElementById('btTimeframe').value;
+    const candleCount = parseInt(document.getElementById('btCount').value, 10);
+
+    document.getElementById('btRunBtn').disabled = true;
+    document.getElementById('btWfBtn').disabled  = true;
+    document.getElementById('btResults').style.display = 'none';
+    const prog = document.getElementById('btProgress');
+    prog.style.display = 'block';
+    setProgress(2, `Starting backtest for ${sym} / ${timeframe}…`, '');
+
+    try {
+        const res = await authFetch('/api/backtest/run', { method:'POST', body: JSON.stringify({ symbol:sym, timeframe, candleCount }) });
+        const j = await res.json();
+        if (!j.success) throw new Error(j.error || 'Failed to start run');
+        pollRun(j.runId);
+    } catch (err) {
+        prog.style.display = 'none';
+        document.getElementById('btRunBtn').disabled = false;
+        document.getElementById('btWfBtn').disabled  = false;
+        alert('Error: ' + err.message);
+    }
+};
+
+function setProgress(pct, label, sub) {
+    document.getElementById('btProgressFill').style.width = pct + '%';
+    document.getElementById('btProgressLabel').textContent = label;
+    document.getElementById('btProgressSub').textContent = sub;
+}
+
+function pollRun(runId) {
+    if (pollTimer) clearInterval(pollTimer);
+    let lastPct = 0;
+    pollTimer = setInterval(async () => {
+        try {
+            const res = await authFetch('/api/backtest/runs/' + runId);
+            const j = await res.json();
+            if (!j.success) return;
+            const run = j.run;
+            if (run.status === 'running') {
+                const pct = run.progressPct || lastPct;
+                lastPct = pct;
+                setProgress(pct, `Running ${run.symbol} ${run.timeframe}…`, `${pct}% of bars processed`);
+            } else if (run.status === 'completed') {
+                clearInterval(pollTimer);
+                document.getElementById('btProgress').style.display = 'none';
+                document.getElementById('btRunBtn').disabled = false;
+                document.getElementById('btWfBtn').disabled  = false;
+                renderResults(run);
+                loadHistory();
+            } else if (run.status === 'failed') {
+                clearInterval(pollTimer);
+                document.getElementById('btProgress').style.display = 'none';
+                document.getElementById('btRunBtn').disabled = false;
+                document.getElementById('btWfBtn').disabled  = false;
+                alert('Backtest failed: ' + (run.error || 'Unknown error'));
+                loadHistory();
+            }
+        } catch (_) {}
+    }, 2000);
+}
+
+// ── Render results ─────────────────────────────────────────────
+function renderResults(run) {
+    const s = run.summary;
+    const r = document.getElementById('btResults');
+    r.style.display = 'block';
+
+    // Summary cards
+    const pf = s.profitFactor === Infinity ? '∞' : s.profitFactor.toFixed(2);
+    document.getElementById('btStatGrid').innerHTML = [
+        { label:'Total Trades', val: s.totalTrades, sub:`${s.wins}W / ${s.losses}L / ${s.timeouts}TO` },
+        { label:'Win Rate', val: s.winRate + '%', sub:'TP1/TP2/TP3 hit', cls: s.winRate >= 55 ? 'green' : s.winRate >= 45 ? 'gold' : 'red' },
+        { label:'Profit Factor', val: pf, sub:'Gross win / gross loss', cls: s.profitFactor >= 1.5 ? 'green' : s.profitFactor >= 1 ? 'gold' : 'red' },
+        { label:'Total R', val: (s.totalR >= 0 ? '+' : '') + s.totalR.toFixed(1) + 'R', sub: `Avg ${(s.avgR >= 0 ? '+' : '') + s.avgR.toFixed(2)}R per trade`, cls: s.totalR >= 0 ? 'green' : 'red' },
+        { label:'Max Drawdown', val: s.maxDrawdownR.toFixed(1) + 'R', sub:'Worst consecutive run', cls: s.maxDrawdownR > -5 ? 'gold' : 'red' },
+        { label:'Candles', val: run.candleCount, sub:`${run.symbol} ${run.timeframe}` },
+        { label:'Duration', val: run.trades.length && run.trades[0].openTime ? fmtDuration(run) : '—', sub:'Backtest period' },
+        { label:'Signals/Month', val: s.totalTrades && run.trades.length ? fmtRate(run) : '—', sub:'avg entry frequency' },
+    ].map(c => `<div class="bt-stat"><div class="bt-stat-label">${c.label}</div><div class="bt-stat-val ${c.cls||''}">${c.val}</div><div class="bt-stat-sub">${c.sub}</div></div>`).join('');
+
+    // Grade breakdown
+    document.getElementById('btGradeRow').innerHTML = ['S','A','B','C'].map(g => {
+        const gd = s.byGrade[g] || { count:0, winRate:0 };
+        const cls = g==='S'?'badge-S':g==='A'?'badge-A':g==='B'?'badge-B':'badge-C';
+        return `<div class="bt-grade-card"><div class="bt-grade-badge ${cls}">Grade ${g}</div><div class="count">${gd.count} trades</div><div class="wr ${gd.winRate>=55?'green':gd.winRate>=45?'gold':'red'}">${gd.winRate}% WR</div></div>`;
+    }).join('');
+
+    // Equity curve
+    drawEquityCurve(run.trades);
+
+    // Trade list
+    const tbody = document.getElementById('btTradeList');
+    if (!run.trades.length) {
+        tbody.innerHTML = '<div class="bt-empty">No signals triggered in this period.</div>';
+    } else {
+        tbody.innerHTML = run.trades.map(t => {
+            const dt = t.openTime ? new Date(t.openTime).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'}) : '—';
+            const rStr = (t.rMultiple >= 0 ? '+' : '') + t.rMultiple.toFixed(2) + 'R';
+            return `<div class="bt-row">
+                <span>${dt}</span>
+                <span class="dir-${t.direction}">${t.direction}</span>
+                <span>${fmt(t.entry)}</span>
+                <span>${fmt(t.exitPrice)}</span>
+                <span class="exit-${t.exitReason}">${t.exitReason}</span>
+                <span class="${t.rMultiple >= 0 ? 'green' : 'red'}">${rStr}</span>
+                <span class="badge-${t.grade}">${t.grade}</span>
+            </div>`;
+        }).join('');
+    }
+}
+
+function drawEquityCurve(trades) {
+    const canvas = document.getElementById('equityCanvas');
+    const dpr = window.devicePixelRatio || 1;
+    const W = canvas.parentElement.clientWidth - 40;
+    const H = 180;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+
+    if (!trades.length) {
+        ctx.fillStyle = '#666'; ctx.font = '13px Space Grotesk';
+        ctx.fillText('No trades to display.', 20, H/2);
+        return;
+    }
+
+    // Build equity series
+    const points = [0];
+    let cum = 0;
+    for (const t of trades) { cum += t.rMultiple; points.push(parseFloat(cum.toFixed(3))); }
+    const maxV = Math.max(...points), minV = Math.min(...points);
+    const range = maxV - minV || 1;
+    const pad = { top:16, bottom:24, left:10, right:10 };
+    const plotW = W - pad.left - pad.right, plotH = H - pad.top - pad.bottom;
+    const toX = (i) => pad.left + (i / (points.length - 1)) * plotW;
+    const toY = (v) => pad.top + (1 - (v - minV) / range) * plotH;
+
+    // Zero line
+    const zeroY = toY(0);
+    ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(pad.left, zeroY); ctx.lineTo(W - pad.right, zeroY); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Fill area under curve
+    const grad = ctx.createLinearGradient(0, pad.top, 0, H - pad.bottom);
+    grad.addColorStop(0, 'rgba(240,180,41,0.18)');
+    grad.addColorStop(1, 'rgba(240,180,41,0.0)');
+    ctx.beginPath();
+    ctx.moveTo(toX(0), toY(points[0]));
+    for (let i = 1; i < points.length; i++) ctx.lineTo(toX(i), toY(points[i]));
+    ctx.lineTo(toX(points.length - 1), H - pad.bottom);
+    ctx.lineTo(toX(0), H - pad.bottom);
+    ctx.closePath();
+    ctx.fillStyle = grad; ctx.fill();
+
+    // Equity line
+    ctx.strokeStyle = '#f0b429'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(toX(0), toY(points[0]));
+    for (let i = 1; i < points.length; i++) ctx.lineTo(toX(i), toY(points[i]));
+    ctx.stroke();
+
+    // Labels
+    ctx.fillStyle = '#9a9aa2'; ctx.font = '10px JetBrains Mono';
+    ctx.fillText((maxV >= 0 ? '+' : '') + maxV.toFixed(1) + 'R', W - pad.right - 36, pad.top + 10);
+    ctx.fillText((minV >= 0 ? '+' : '') + minV.toFixed(1) + 'R', W - pad.right - 36, H - pad.bottom - 4);
+}
+
+// ── History ───────────────────────────────────────────────────
+async function loadHistory() {
+    const list = document.getElementById('btHistoryList');
+    try {
+        const res = await authFetch('/api/backtest/runs');
+        const j = await res.json();
+        if (!j.success || !j.runs.length) { list.innerHTML = '<div class="bt-empty">No past backtest runs yet.</div>'; return; }
+        list.innerHTML = j.runs.map(r => {
+            const dt = new Date(r.createdAt).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+            const wr = r.summary?.winRate != null ? r.summary.winRate + '% WR' : '—';
+            const trades = r.summary?.totalTrades != null ? r.summary.totalTrades + ' trades' : '—';
+            const modeLabel = r.mode === 'walkforward'
+                ? '<span style="color:#7cffb2;font-size:0.65rem;">⟳ WF</span>'
+                : '<span style="color:var(--gold);font-size:0.65rem;">▶ Full</span>';
+            return `<div class="bt-hist-row" onclick="loadRun('${r._id}')">
+                <span><b>${r.symbol}</b> ${r.timeframe} ${modeLabel}</span>
+                <span class="status-${r.status}">${r.status}</span>
+                <span>${wr}</span>
+                <span>${trades}</span>
+                <span style="color:var(--text-dim);font-size:0.68rem;">${dt}</span>
+            </div>`;
+        }).join('');
+    } catch (_) { list.innerHTML = '<div class="bt-empty">Could not load history.</div>'; }
+}
+
+async function loadRun(id) {
+    try {
+        const res = await authFetch('/api/backtest/runs/' + id);
+        const j = await res.json();
+        if (!j.success) return;
+        if (j.run.status === 'completed') {
+            if (j.run.mode === 'walkforward' && j.run.walkForwardResult) {
+                renderWalkForwardResults(j.run);
+            } else {
+                renderResults(j.run);
+            }
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        } else if (j.run.status === 'running') {
+            alert('This run is still in progress — please wait.');
+            pollRun(id);
+        } else {
+            alert('Run failed: ' + (j.run.error || 'Unknown'));
+        }
+    } catch (_) {}
+}
+
+// ── Walk-Forward ────────────────────────────────────────────────
+window.startWalkForward = async function() {
+    if (!window._adminReady) return;
+    const sym = document.getElementById('btSymbol').value.trim().toUpperCase();
+    if (!sym) { alert('Please enter a coin symbol.'); return; }
+    const timeframe   = document.getElementById('btTimeframe').value;
+    const candleCount = parseInt(document.getElementById('btCount').value, 10);
+    const splits      = parseInt(document.getElementById('btSplits').value, 10);
+    const trainRatio  = parseFloat(document.getElementById('btTrainRatio').value);
+
+    document.getElementById('btRunBtn').disabled = true;
+    document.getElementById('btWfBtn').disabled  = true;
+    document.getElementById('btResults').style.display = 'none';
+    document.getElementById('btWfVerdict').style.display = 'none';
+    document.getElementById('btWfWindows').style.display = 'none';
+    const prog = document.getElementById('btProgress');
+    prog.style.display = 'block';
+    setProgress(2, `Starting walk-forward validation for ${sym} / ${timeframe} (${splits} windows)…`, '');
+
+    try {
+        const res = await authFetch('/api/backtest/walkforward', { method:'POST', body: JSON.stringify({ symbol:sym, timeframe, candleCount, splits, trainRatio }) });
+        const j = await res.json();
+        if (!j.success) throw new Error(j.error || 'Failed to start run');
+        pollRunWf(j.runId);
+    } catch (err) {
+        prog.style.display = 'none';
+        document.getElementById('btRunBtn').disabled = false;
+        document.getElementById('btWfBtn').disabled  = false;
+        alert('Error: ' + err.message);
+    }
+};
+
+function pollRunWf(runId) {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(async () => {
+        try {
+            const res = await authFetch('/api/backtest/runs/' + runId);
+            const j = await res.json();
+            if (!j.success) return;
+            const run = j.run;
+            if (run.status === 'running') {
+                setProgress(run.progressPct || 0, `Walk-forward: ${run.symbol} ${run.timeframe}…`, `${run.progressPct || 0}% complete`);
+            } else if (run.status === 'completed') {
+                clearInterval(pollTimer);
+                document.getElementById('btProgress').style.display = 'none';
+                document.getElementById('btRunBtn').disabled = false;
+                document.getElementById('btWfBtn').disabled  = false;
+                renderWalkForwardResults(run);
+                loadHistory();
+            } else if (run.status === 'failed') {
+                clearInterval(pollTimer);
+                document.getElementById('btProgress').style.display = 'none';
+                document.getElementById('btRunBtn').disabled = false;
+                document.getElementById('btWfBtn').disabled  = false;
+                alert('Walk-forward failed: ' + (run.error || 'Unknown error'));
+            }
+        } catch (_) {}
+    }, 2000);
+}
+
+function renderWalkForwardResults(run) {
+    const wf = run.walkForwardResult;
+    if (!wf) return;
+    const r = document.getElementById('btResults');
+    r.style.display = 'block';
+
+    // Clear full-history sections
+    document.getElementById('btStatGrid').innerHTML = '';
+    document.getElementById('btGradeRow').innerHTML = '';
+    document.getElementById('btTradeList').innerHTML = '';
+    const ctx = document.getElementById('equityCanvas').getContext('2d');
+    ctx.clearRect(0, 0, 9999, 9999);
+
+    // Verdict banner
+    const vColors = { VALIDATED:'#2ecc71', MARGINAL:'#ff9800', NOT_VALIDATED:'#ff4d4f', INSUFFICIENT_DATA:'#9a9aa2' };
+    const vEmoji  = { VALIDATED:'✅', MARGINAL:'⚠️', NOT_VALIDATED:'❌', INSUFFICIENT_DATA:'ℹ️' };
+    const vc = vColors[wf.verdict] || '#ff9800';
+    document.getElementById('btWfVerdict').innerHTML = `
+        <div style="padding:14px 18px;border-radius:10px;border:1px solid ${vc}30;background:${vc}10;">
+            <div style="font-size:1rem;font-weight:700;color:${vc};margin-bottom:6px;">${vEmoji[wf.verdict] || '⚠️'} ${wf.verdict.replace(/_/g,' ')}</div>
+            <div style="font-size:0.8rem;color:var(--text-muted);line-height:1.6;">${wf.verdictDetail}</div>
+            <div style="display:flex;gap:20px;margin-top:12px;flex-wrap:wrap;">
+                <div><div style="font-size:0.62rem;color:var(--text-dim);text-transform:uppercase;">Avg In-Sample WR</div><div style="font-size:1rem;font-weight:700;color:var(--gold);">${wf.aggregate.avgInSampleWR}%</div></div>
+                <div><div style="font-size:0.62rem;color:var(--text-dim);text-transform:uppercase;">Out-of-Sample WR</div><div style="font-size:1rem;font-weight:700;color:${vc};">${wf.aggregate.outOfSampleWR}%</div></div>
+                <div><div style="font-size:0.62rem;color:var(--text-dim);text-transform:uppercase;">Avg OOS Profit Factor</div><div style="font-size:1rem;font-weight:700;">${wf.aggregate.avgOutOfSamplePF}</div></div>
+                <div><div style="font-size:0.62rem;color:var(--text-dim);text-transform:uppercase;">Total OOS Trades</div><div style="font-size:1rem;font-weight:700;">${wf.aggregate.totalOutTrades}</div></div>
+            </div>
+        </div>`;
+    document.getElementById('btWfVerdict').style.display = 'block';
+
+    // Per-window breakdown table
+    document.getElementById('btWfWindows').innerHTML = `
+        <div style="background:var(--bg2);border:1px solid var(--border-soft);border-radius:var(--radius);overflow:hidden;">
+            <div style="padding:12px 16px;border-bottom:1px solid var(--border-soft);font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Window-by-Window Results</div>
+            <div style="padding:8px 14px;border-bottom:1px solid var(--border-soft);display:flex;font-size:0.65rem;text-transform:uppercase;color:var(--text-dim);">
+                <span style="flex:0 0 50px;">Win.</span><span style="flex:1;">Period</span>
+                <span style="flex:0 0 80px;text-align:center;">In-S. WR</span>
+                <span style="flex:0 0 80px;text-align:center;">OOS WR</span>
+                <span style="flex:0 0 70px;text-align:center;">OOS PF</span>
+                <span style="flex:0 0 60px;text-align:center;">Trades</span>
+            </div>
+            ${wf.windows.map(w => {
+                const drop = w.inSample.winRate - w.outOfSample.winRate;
+                const wr2c = w.outOfSample.winRate >= 55 ? '#2ecc71' : w.outOfSample.winRate >= 45 ? '#ff9800' : '#ff4d4f';
+                const pfc  = (w.outOfSample.profitFactor||0) >= 1.3 ? '#2ecc71' : (w.outOfSample.profitFactor||0) >= 1 ? '#ff9800' : '#ff4d4f';
+                return `<div style="display:flex;align-items:center;padding:9px 14px;border-bottom:1px solid rgba(255,255,255,0.03);font-size:0.75rem;">
+                    <span style="flex:0 0 50px;color:var(--text-dim);">#${w.window}</span>
+                    <span style="flex:1;font-size:0.68rem;color:var(--text-muted);">${w.periodStart} → ${w.testEnd}</span>
+                    <span style="flex:0 0 80px;text-align:center;font-family:'JetBrains Mono',monospace;">${w.inSample.winRate}%</span>
+                    <span style="flex:0 0 80px;text-align:center;font-family:'JetBrains Mono',monospace;color:${wr2c};">${w.outOfSample.winRate}%</span>
+                    <span style="flex:0 0 70px;text-align:center;font-family:'JetBrains Mono',monospace;color:${pfc};">${isFinite(w.outOfSample.profitFactor) ? w.outOfSample.profitFactor : '∞'}</span>
+                    <span style="flex:0 0 60px;text-align:center;color:var(--text-muted);">${w.outTradeCount}</span>
+                </div>`;
+            }).join('')}
+        </div>`;
+    document.getElementById('btWfWindows').style.display = 'block';
+}
+
+
+// ── Helpers ───────────────────────────────────────────────────
+function fmt(n) {
+    if (n == null) return '—';
+    return n >= 10000 ? n.toFixed(0) : n >= 100 ? n.toFixed(2) : n.toFixed(4);
+}
+
+function fmtDuration(run) {
+    if (!run.trades.length) return '—';
+    const t0 = new Date(run.trades[0].openTime);
+    const t1 = new Date(run.trades[run.trades.length-1].closeTime || run.trades[run.trades.length-1].openTime);
+    const days = Math.round((t1 - t0) / 864e5);
+    return days < 60 ? days + ' days' : Math.round(days/30) + ' months';
+}
+
+function fmtRate(run) {
+    if (!run.trades.length) return '—';
+    const t0 = new Date(run.trades[0].openTime);
+    const t1 = new Date(run.trades[run.trades.length-1].openTime);
+    const months = Math.max((t1 - t0) / (30*864e5), 1);
+    return (run.trades.length / months).toFixed(1) + '/mo';
+}
+</script>
+</body>
+</html>

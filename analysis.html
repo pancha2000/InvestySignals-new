@@ -126,6 +126,10 @@
         }
         .es-squeeze { background:rgba(255,152,0,0.1); border:1px solid rgba(255,152,0,0.3); color:#ff9800; }
         .es-volume  { background:rgba(124,255,178,0.1); border:1px solid rgba(124,255,178,0.3); color:#7cffb2; }
+        .scan-section-label {
+            padding:10px 16px 6px; font-size:0.68rem; font-weight:700; text-transform:uppercase;
+            letter-spacing:0.08em; color:var(--text-dim); font-family:'JetBrains Mono',monospace;
+        }
 
         .scan-action-btn {
             width:36px; height:36px; border-radius:var(--radius-xs);
@@ -393,6 +397,7 @@
         <a href="analysis.html" class="auth-nav-link active">🧠 Analysis</a>
         <a href="live-signals.html" class="auth-nav-link">📝 Paper Trades</a>
         <a href="ask-ai.html" class="auth-nav-link">🤖 Ask AI</a>
+        <a href="backtest.html" class="auth-nav-link">🔬 Backtest</a>
         <a href="profile.html" class="auth-nav-link">👤 Profile</a>
         <a href="admin.html" id="adminNavLink" class="auth-nav-link" style="display:none;color:#f0b429;">⚡ Admin Panel</a>
         <div class="nav-divider"></div>
@@ -424,14 +429,24 @@
             </div>
             <div class="scanner-sub" id="scannerStatus">Scan top 20 coins · Select any coin to run deep analysis</div>
 
-            <button class="smart-scan-btn" id="smartScanBtn" onclick="runSmartScan()">
+            <button class="smart-scan-btn" id="smartScanBtn" onclick="runUnifiedScan()">
                 <span id="smartScanIcon">📡</span>
-                <span id="smartScanLabel">Smart Scan</span>
+                <span id="smartScanLabel">Scan Market</span>
             </button>
-            <button class="smart-scan-btn" id="earlySignalsBtn" onclick="runEarlySignalsScan()" style="background:linear-gradient(135deg,rgba(124,255,178,0.12),rgba(124,255,178,0.03));border-color:rgba(124,255,178,0.3);color:#7cffb2;">
-                <span id="earlySignalsIcon">⚡</span>
-                <span id="earlySignalsLabel">Early Signals</span>
-            </button>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;">
+                <label style="display:flex;align-items:center;gap:5px;font-size:0.72rem;color:var(--text-muted);cursor:pointer;">
+                    <input type="checkbox" id="autoRefreshToggle" onchange="toggleAutoRefresh()" style="accent-color:var(--gold);">
+                    Auto-refresh 5min
+                </label>
+                <span style="color:var(--border-soft);">|</span>
+                <label style="font-size:0.72rem;color:var(--text-muted);">Show:</label>
+                <select id="scanFilter" onchange="applyScanFilter()" style="background:var(--surface);border:1px solid var(--border-soft);color:var(--text);padding:3px 7px;border-radius:5px;font-size:0.72rem;">
+                    <option value="all">All</option>
+                    <option value="movers">🔥 Movers only</option>
+                    <option value="early">⚡ Early Signals only</option>
+                    <option value="both">Both (squeeze + mover)</option>
+                </select>
+            </div>
 
             <div class="scanner-input-row">
                 <input id="customCoinInput" class="scanner-input"
@@ -466,9 +481,11 @@
         </div>
 
         <!-- Results rows -->
+        <div id="scanSection1Label" class="scan-section-label" style="display:none;">🔥 Already Moving</div>
         <div id="scanResultsList"></div>
 
         <!-- NEW: Early Signals results (separate container — different card format, shows squeeze/volume badges) -->
+        <div id="scanSection2Label" class="scan-section-label" style="display:none;">⚡ Building Up — Early Signals</div>
         <div id="earlySignalsList"></div>
 
         <!-- Empty state -->
@@ -578,7 +595,14 @@ function signalFor(chg) {
 }
 
 /* ── SMART SCAN ── */
-window.runSmartScan = async function() {
+/* ── UNIFIED SCAN — fetches BOTH scan modes in parallel, renders 2 sections ──
+   Section 1 "🔥 Already Moving": coins that already moved ≥3% (old Smart Scan logic).
+   Section 2 "⚡ Building Up": coins NOT moving much yet but showing Bollinger
+   Squeeze / Volume Anomaly relative to their own history (early signals).
+   Uses Promise.allSettled so one mode failing never blocks the other. */
+let earlySignalsResults = [];
+
+window.runUnifiedScan = async function() {
     const btn = document.getElementById('smartScanBtn');
     const icon = document.getElementById('smartScanIcon');
     const label = document.getElementById('smartScanLabel');
@@ -590,113 +614,116 @@ window.runSmartScan = async function() {
     icon.style.animation = 'scanPulse 0.8s ease infinite';
     label.textContent = 'Scanning...';
     prog.style.display = 'block';
-    fill.style.width = '30%';
-    document.getElementById('scanEmptyState').style.display = 'none';
-    document.getElementById('scanTableHead').style.display  = 'none';
-    document.getElementById('scanResultsList').innerHTML    = '';
-    closeCoinPanel();
-    scanResults = []; activeCoin = null;
-
-    try {
-        spTxt.textContent = 'Fetching top volatile coins from Binance...';
-        fill.style.width = '60%';
-        const res = await fetch('/api/scan');
-        const contentType = res.headers.get('content-type') || '';
-        if (!res.ok || !contentType.includes('application/json')) {
-            throw new Error('Server error (' + res.status + ') — please try again shortly');
-        }
-        const j   = await res.json();
-        if (!j.success || !j.coins?.length) throw new Error(j.error || 'No coins returned');
-
-        fill.style.width = '100%';
-        scanResults = j.coins.map(c => {
-            const chgAbs   = Math.abs(c.change);
-            const chgScore = Math.min(Math.round(chgAbs * 3), 50);
-            const volScore = Math.min(Math.round(c.volume / 1e7), 50);
-            const score    = Math.min(chgScore + volScore, 100);
-            return { coin: c.symbol.replace('USDT',''), symbol: c.symbol, change: c.change, volume: c.volume, price: c.price, score };
-        }).sort((a,b) => b.score - a.score);
-
-    } catch(err) {
-        prog.style.display = 'none';
-        icon.style.animation = 'none'; icon.textContent = '📡'; label.textContent = 'Smart Scan'; btn.disabled = false;
-        document.getElementById('scanEmptyState').innerHTML = `<div class="se-icon">⚠️</div><div style="color:var(--red);">Scan failed: ${err.message}</div>`;
-        document.getElementById('scanEmptyState').style.display = 'block';
-        return;
-    }
-
-    setTimeout(() => {
-        prog.style.display = 'none';
-        icon.style.animation = 'none'; icon.textContent = '✅'; label.textContent = 'Smart Scan'; btn.disabled = false;
-        const now = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-        document.getElementById('scannerStatus').textContent = `Found ${scanResults.length} active coins · ${now}`;
-        document.getElementById('refreshTime').textContent   = 'Last: ' + now;
-        renderScanTable();
-    }, 200);
-};
-
-/* ── EARLY SIGNALS SCAN (NEW) — Bollinger Squeeze + Volume Anomaly ──
-   Different job than Smart Scan above: Smart Scan shows coins ALREADY
-   moving ≥3%; this shows coins that are NOT moving much yet but show
-   compressed volatility and/or unusual incoming volume relative to their
-   OWN recent history — i.e. coins that might be about to move. */
-let earlySignalsResults = [];
-
-window.runEarlySignalsScan = async function() {
-    const btn = document.getElementById('earlySignalsBtn');
-    const icon = document.getElementById('earlySignalsIcon');
-    const label = document.getElementById('earlySignalsLabel');
-    const prog = document.getElementById('scanProgress');
-    const fill = document.getElementById('spBarFill');
-    const spTxt = document.getElementById('spText');
-
-    btn.disabled = true;
-    icon.style.animation = 'scanPulse 0.8s ease infinite';
-    label.textContent = 'Scanning...';
-    prog.style.display = 'block';
     fill.style.width = '20%';
     document.getElementById('scanEmptyState').style.display = 'none';
     document.getElementById('scanTableHead').style.display = 'none';
+    document.getElementById('scanSection1Label').style.display = 'none';
+    document.getElementById('scanSection2Label').style.display = 'none';
     document.getElementById('scanResultsList').innerHTML = '';
     document.getElementById('earlySignalsList').innerHTML = '';
     closeCoinPanel();
     scanResults = []; earlySignalsResults = []; activeCoin = null;
 
-    try {
-        spTxt.textContent = 'Checking volatility compression + volume across the market…';
-        fill.style.width = '55%';
-        const res = await fetch('/api/scan-smart');
-        const contentType = res.headers.get('content-type') || '';
-        if (!res.ok || !contentType.includes('application/json')) {
-            throw new Error('Server error (' + res.status + ') — please try again shortly');
-        }
-        const j = await res.json();
-        if (!j.success) throw new Error(j.error || 'Scan failed');
+    spTxt.textContent = 'Scanning movers + checking volatility compression across the market…';
+    fill.style.width = '50%';
 
-        fill.style.width = '100%';
-        earlySignalsResults = j.coins || [];
-    } catch (err) {
-        prog.style.display = 'none';
-        icon.style.animation = 'none'; icon.textContent = '⚡'; label.textContent = 'Early Signals'; btn.disabled = false;
-        document.getElementById('scanEmptyState').innerHTML = `<div class="se-icon">⚠️</div><div style="color:var(--red);">Scan failed: ${err.message}</div>`;
+    const [moversOutcome, earlyOutcome] = await Promise.allSettled([
+        fetch('/api/scan').then(r => r.json()),
+        fetch('/api/scan-smart').then(r => r.json()),
+    ]);
+
+    fill.style.width = '100%';
+
+    let anySuccess = false;
+    let errorMsg = '';
+
+    if (moversOutcome.status === 'fulfilled' && moversOutcome.value.success && moversOutcome.value.coins?.length) {
+        anySuccess = true;
+        scanResults = moversOutcome.value.coins.map(c => {
+            const chgAbs = Math.abs(c.change);
+            const chgScore = Math.min(Math.round(chgAbs * 3), 50);
+            const volScore = Math.min(Math.round(c.volume / 1e7), 50);
+            const score = Math.min(chgScore + volScore, 100);
+            return { coin: c.symbol.replace('USDT',''), symbol: c.symbol, change: c.change, volume: c.volume, price: c.price, score };
+        }).sort((a,b) => b.score - a.score);
+    } else if (moversOutcome.status === 'rejected') {
+        errorMsg = 'Movers scan failed. ';
+    }
+
+    if (earlyOutcome.status === 'fulfilled' && earlyOutcome.value.success) {
+        anySuccess = true;
+        earlySignalsResults = earlyOutcome.value.coins || [];
+    } else if (earlyOutcome.status === 'rejected') {
+        errorMsg += 'Early-signals scan failed.';
+    }
+
+    prog.style.display = 'none';
+    icon.style.animation = 'none'; icon.textContent = anySuccess ? '✅' : '⚠️'; label.textContent = 'Scan Market'; btn.disabled = false;
+
+    if (!anySuccess) {
+        document.getElementById('scanEmptyState').innerHTML = `<div class="se-icon">⚠️</div><div style="color:var(--red);">${errorMsg || 'Scan failed — please try again shortly'}</div>`;
         document.getElementById('scanEmptyState').style.display = 'block';
         return;
     }
 
-    setTimeout(() => {
-        prog.style.display = 'none';
-        icon.style.animation = 'none'; icon.textContent = '✅'; label.textContent = 'Early Signals'; btn.disabled = false;
-        const now = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-        if (!earlySignalsResults.length) {
-            document.getElementById('scannerStatus').textContent = `No compression/volume signals right now · ${now}`;
-            document.getElementById('scanEmptyState').innerHTML = '<div class="se-icon">⚡</div><div>Nothing showing early signals right now — market is either trending hard already or genuinely quiet. Try again shortly.</div>';
-            document.getElementById('scanEmptyState').style.display = 'block';
-            return;
-        }
-        document.getElementById('scannerStatus').textContent = `${earlySignalsResults.length} early-stage candidates · ${now}`;
-        document.getElementById('refreshTime').textContent = 'Last: ' + now;
+    const now = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    document.getElementById('scannerStatus').textContent = `${scanResults.length} active · ${earlySignalsResults.length} early-stage · ${now}`;
+    document.getElementById('refreshTime').textContent = 'Last: ' + now;
+
+    if (scanResults.length) {
+        document.getElementById('scanSection1Label').style.display = 'block';
+        renderScanTable();
+    }
+    if (earlySignalsResults.length) {
+        document.getElementById('scanSection2Label').style.display = 'block';
         renderEarlySignalsTable();
-    }, 200);
+    }
+    if (!scanResults.length && !earlySignalsResults.length) {
+        document.getElementById('scanEmptyState').innerHTML = '<div class="se-icon">📡</div><div>No active movers or early signals right now — market is quiet. Try again shortly.</div>';
+        document.getElementById('scanEmptyState').style.display = 'block';
+    }
+    // Apply whatever filter is currently selected after fresh data arrives
+    applyScanFilter();
+};
+
+// ── Auto-refresh timer ─────────────────────────────────────────
+let autoRefreshTimer = null;
+window.toggleAutoRefresh = function() {
+    const on = document.getElementById('autoRefreshToggle').checked;
+    if (on) {
+        autoRefreshTimer = setInterval(function() {
+            if (!document.hidden) runUnifiedScan();
+        }, 5 * 60 * 1000);
+    } else {
+        clearInterval(autoRefreshTimer);
+        autoRefreshTimer = null;
+    }
+};
+
+// ── Scan filter ────────────────────────────────────────────────
+window.applyScanFilter = function() {
+    const filter = document.getElementById('scanFilter') ? document.getElementById('scanFilter').value : 'all';
+    const sec1 = document.getElementById('scanSection1Label');
+    const sec2 = document.getElementById('scanSection2Label');
+    const list1 = document.getElementById('scanResultsList');
+    const list2 = document.getElementById('earlySignalsList');
+    if (!sec1 || !sec2) return;
+    if (filter === 'movers') {
+        sec1.style.display = scanResults.length ? 'block' : 'none';
+        list1.style.display = 'block';
+        sec2.style.display = 'none';
+        list2.style.display = 'none';
+    } else if (filter === 'early') {
+        sec1.style.display = 'none';
+        list1.style.display = 'none';
+        sec2.style.display = earlySignalsResults.length ? 'block' : 'none';
+        list2.style.display = 'block';
+    } else {
+        sec1.style.display = scanResults.length ? 'block' : 'none';
+        list1.style.display = 'block';
+        sec2.style.display = earlySignalsResults.length ? 'block' : 'none';
+        list2.style.display = 'block';
+    }
 };
 
 function renderEarlySignalsTable() {

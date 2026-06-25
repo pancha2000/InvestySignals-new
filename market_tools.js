@@ -199,15 +199,17 @@ function normalizePair(pair) {
   if (!pair) return '';
   const raw = pair.toString().trim();
   if (!raw) return '';
-  // NEW: try a full coin-name match first (e.g. chat user types "bitcoin"
-  // or "internet computer" instead of the ticker). Must run BEFORE the
-  // space/punctuation-stripping below, since names can contain spaces.
-  // NAME_TO_TICKER is built later in this file (from COIN_ALIASES) but is
-  // already fully initialized by the time anything actually CALLS this
-  // function at runtime — function bodies resolve module-scope names at
-  // call time, not at definition time, so the later declaration is safe.
+  // Full coin-name match (e.g. "bitcoin" → BTCUSDT). NAME_TO_TICKER is
+  // defined later in this file but is fully initialized by the time any
+  // caller reaches this function at runtime — JavaScript resolves module-
+  // scope names at call time, not at definition time, so the later
+  // declaration of the const is safe here.
   const rawUpper = raw.toUpperCase().replace(/\s+/g, ' ').trim();
-  if (NAME_TO_TICKER[rawUpper]) return NAME_TO_TICKER[rawUpper] + 'USDT';
+  // Defensive: NAME_TO_TICKER may not be initialized yet in rare edge cases
+  // during module load ordering — guard with typeof to prevent ReferenceError.
+  if (typeof NAME_TO_TICKER !== 'undefined' && NAME_TO_TICKER[rawUpper]) {
+    return NAME_TO_TICKER[rawUpper] + 'USDT';
+  }
 
   const p = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (!p) return '';

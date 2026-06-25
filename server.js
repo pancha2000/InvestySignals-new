@@ -64,6 +64,10 @@ const aiAgent = require('./ai_agent');
 // NEW: reused directly by /api/deep-analysis for the news-risk check below
 // (reuses the SAME news engine the AI chat uses — no duplicate news code).
 const marketTools = require('./market_tools');
+// NEW: Rule-Engine Backtest (Step 1 of the agreed phased plan) — pure
+// code, no Groq calls. See backtest_engine.js for the full design notes.
+const backtestEngine = require('./backtest_engine');
+const BacktestRun = require('./models/BacktestRun');
 
 // ── Firebase ─────────────────────────────────────────────────
 try {
@@ -254,7 +258,7 @@ const adminLimiter = rateLimit({ windowMs: 15*60*1000, max: 1000, standardHeader
 app.use('/api/admin/', adminLimiter);
 app.use('/api/', apiLimiter);
 
-const BLOCKED_STATIC = ['.env','serviceAccount.json','package.json','.gitignore','deploy.sh','server.js','node_modules','market_tools.js','ai_agent.js'];
+const BLOCKED_STATIC = ['.env','serviceAccount.json','package.json','.gitignore','deploy.sh','server.js','node_modules','market_tools.js','ai_agent.js','backtest_engine.js'];
 
 // Block sensitive files before static serving
 app.use((req, res, next) => {
@@ -323,6 +327,7 @@ app.post('/api/agent/ask', verifyToken, aiChatLimiter, async (req, res) => {
 //    reachable at /ask-ai.html via the static middleware above, but the
 //    product spec asked for a clean /ask-ai path).
 app.get('/ask-ai', (req, res) => res.sendFile(path.join(__dirname, 'ask-ai.html')));
+app.get('/backtest', (req, res) => res.sendFile(path.join(__dirname, 'backtest.html')));
 
 // ── Auth ──────────────────────────────────────────────────────
 async function ensureAdminPromotion(uid, emailFromToken) {
@@ -1191,7 +1196,21 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     // below. It is only *awaited* right before the AI prompt is built (with
     // a hard timeout), so it can NEVER slow down the "lightning fast"
     // report — worst case it just contributes nothing, same as before.
-    const newsPromise = marketTools.getCryptoNews(coin).catch(() => null);
+    // NEWS CACHE: cache per-coin for 5 minutes — same coin analyzed twice
+    // within 5 min reuses the last result instead of hitting the news API again.
+    const newsCacheKey = `news:${coin}`;
+    const newsCached = typeof globalSettings._newsCache === 'object' && globalSettings._newsCache
+      ? globalSettings._newsCache.get(newsCacheKey) : undefined;
+    if (!globalSettings._newsCache) globalSettings._newsCache = new Map();
+    const newsPromise = newsCached
+      ? Promise.resolve(newsCached)
+      : marketTools.getCryptoNews(coin).then(result => {
+          if (result && result.success) {
+            globalSettings._newsCache.set(newsCacheKey, result);
+            setTimeout(() => globalSettings._newsCache.delete(newsCacheKey), 5 * 60 * 1000);
+          }
+          return result;
+        }).catch(() => null);
 
     // Fetch all timeframes in parallel
     const [m15c,h1c,h4c,d1c,btcH4] = await Promise.all([
@@ -2066,6 +2085,128 @@ app.get('/api/admin/stats', verifyAdmin, async (req, res) => {
     ]);
     res.json({ success: true, stats: { totalUsers, activeSignals, openReports, pendingBalReqs } });
   } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  NEW — Backtest Engine API (admin-only — Binance-intensive, compute-
+//  heavy; a regular user triggering many of these could hammer Binance
+//  and degrade the live dashboard's own rate-limit budget)
+// ═══════════════════════════════════════════════════════════════
+
+/* POST /api/backtest/run — starts a backtest job in the BACKGROUND and
+   returns immediately with a runId. The actual simulation (which can take
+   anywhere from a few seconds to a couple minutes depending on
+   candleCount) is never awaited inline in this handler — that would risk
+   an HTTP timeout on a slow VPS/proxy for larger runs. The frontend polls
+   GET /api/backtest/runs/:id until status flips to 'completed'/'failed'. */
+app.post('/api/backtest/run', verifyAdmin, async (req, res) => {
+  try {
+    const symbolRaw = (req.body.symbol || '').trim();
+    if (!symbolRaw) return res.status(400).json({ success: false, error: 'symbol is required.' });
+    const timeframe = ['15m','1h','4h','1d'].includes(req.body.timeframe) ? req.body.timeframe : '4h';
+    const candleCount = Number.isFinite(parseInt(req.body.candleCount, 10)) ? parseInt(req.body.candleCount, 10) : 1000;
+
+    const run = await BacktestRun.create({
+      symbol: symbolRaw.toUpperCase(),
+      timeframe,
+      candleCount,
+      status: 'running',
+      requestedBy: req.user?.uid || 'admin',
+    });
+
+    res.json({ success: true, runId: run._id });
+
+    // Fire-and-forget — deliberately AFTER res.json() above, so the HTTP
+    // response has already been sent. Errors here are caught and saved
+    // onto the run document itself (polled by the frontend), never thrown
+    // into the void or crashing the server process.
+    backtestEngine.runBacktest({
+      symbol: run.symbol,
+      timeframe: run.timeframe,
+      candleCount: run.candleCount,
+      onProgress: (pct) => { BacktestRun.updateOne({ _id: run._id }, { progressPct: pct }).catch(() => {}); },
+    }).then(async (result) => {
+      await BacktestRun.updateOne({ _id: run._id }, {
+        status: 'completed',
+        completedAt: new Date(),
+        progressPct: 100,
+        summary: result.summary,
+        trades: result.trades,
+      });
+    }).catch(async (err) => {
+      console.error('[backtest] run failed:', err.message);
+      await BacktestRun.updateOne({ _id: run._id }, { status: 'failed', error: err.message, completedAt: new Date() }).catch(() => {});
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/* GET /api/backtest/runs — list past runs, newest first (summary only —
+   trade-by-trade detail is fetched separately per-run to keep this light). */
+app.get('/api/backtest/runs', verifyAdmin, async (req, res) => {
+  try {
+    const runs = await BacktestRun.find({}, { trades: 0 }).sort({ createdAt: -1 }).limit(50);
+    res.json({ success: true, runs });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/* GET /api/backtest/runs/:id — full detail for one run, including the
+   complete trade list (used both for live-status polling while a run is
+   still 'running', and for viewing a completed run's full results). */
+app.get('/api/backtest/runs/:id', verifyAdmin, async (req, res) => {
+  try {
+    const run = await BacktestRun.findById(req.params.id);
+    if (!run) return res.status(404).json({ success: false, error: 'Backtest run not found.' });
+    res.json({ success: true, run });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/* POST /api/backtest/walkforward — same fire-and-forget pattern as /run,
+   but runs the walk-forward validation engine instead of the simple full-
+   history backtest. Returns a runId immediately; poll /runs/:id for status.
+   Stored in the same BacktestRun collection with mode:'walkforward'. */
+app.post('/api/backtest/walkforward', verifyAdmin, async (req, res) => {
+  try {
+    const symbolRaw = (req.body.symbol || '').trim();
+    if (!symbolRaw) return res.status(400).json({ success: false, error: 'symbol is required.' });
+    const timeframe   = ['15m','1h','4h','1d'].includes(req.body.timeframe) ? req.body.timeframe : '4h';
+    const candleCount = Number.isFinite(parseInt(req.body.candleCount, 10)) ? parseInt(req.body.candleCount, 10) : 2000;
+    const splits      = Number.isFinite(parseInt(req.body.splits, 10)) ? parseInt(req.body.splits, 10) : 4;
+    const trainRatio  = Number.isFinite(parseFloat(req.body.trainRatio)) ? parseFloat(req.body.trainRatio) : 0.7;
+
+    const run = await BacktestRun.create({
+      symbol: symbolRaw.toUpperCase(), timeframe, candleCount,
+      status: 'running', requestedBy: req.user?.uid || 'admin',
+      mode: 'walkforward',
+    });
+    res.json({ success: true, runId: run._id });
+
+    backtestEngine.runWalkForward({
+      symbol: run.symbol, timeframe: run.timeframe, candleCount: run.candleCount,
+      splits, trainRatio,
+      onProgress: (pct) => { BacktestRun.updateOne({ _id: run._id }, { progressPct: pct }).catch(() => {}); },
+    }).then(async (result) => {
+      await BacktestRun.updateOne({ _id: run._id }, {
+        status: 'completed', completedAt: new Date(), progressPct: 100,
+        summary: {
+          totalTrades: result.aggregate.totalOutTrades,
+          winRate: result.aggregate.outOfSampleWR,
+          profitFactor: result.aggregate.avgOutOfSamplePF,
+        },
+        walkForwardResult: result,
+      });
+    }).catch(async (err) => {
+      console.error('[backtest:walkforward] failed:', err.message);
+      await BacktestRun.updateOne({ _id: run._id }, { status: 'failed', error: err.message, completedAt: new Date() }).catch(() => {});
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // ═══════════════════════════════════════════════════════════════
