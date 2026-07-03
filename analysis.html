@@ -707,22 +707,39 @@ window.applyScanFilter = function() {
     const sec2 = document.getElementById('scanSection2Label');
     const list1 = document.getElementById('scanResultsList');
     const list2 = document.getElementById('earlySignalsList');
+    const empty = document.getElementById('scanEmptyState');
     if (!sec1 || !sec2) return;
+
+    // Always hide previous empty-state before evaluating
+    if (empty) empty.style.display = 'none';
+
     if (filter === 'movers') {
         sec1.style.display = scanResults.length ? 'block' : 'none';
         list1.style.display = 'block';
         sec2.style.display = 'none';
         list2.style.display = 'none';
+        if (!scanResults.length && empty) {
+            empty.innerHTML = '<div class="se-icon">🔥</div><div>No active movers found. Run a fresh scan.</div>';
+            empty.style.display = 'block';
+        }
     } else if (filter === 'early') {
         sec1.style.display = 'none';
         list1.style.display = 'none';
         sec2.style.display = earlySignalsResults.length ? 'block' : 'none';
         list2.style.display = 'block';
+        if (!earlySignalsResults.length && empty) {
+            empty.innerHTML = '<div class="se-icon">⚡</div><div>No early-stage signals right now — no coins showing Bollinger Squeeze or unusual volume relative to their own history. Try again shortly or switch to "All" to see active movers.</div>';
+            empty.style.display = 'block';
+        }
     } else {
         sec1.style.display = scanResults.length ? 'block' : 'none';
         list1.style.display = 'block';
         sec2.style.display = earlySignalsResults.length ? 'block' : 'none';
         list2.style.display = 'block';
+        if (!scanResults.length && !earlySignalsResults.length && empty) {
+            empty.innerHTML = '<div class="se-icon">📡</div><div>No active movers or early signals right now — market is quiet. Try again shortly.</div>';
+            empty.style.display = 'block';
+        }
     }
 };
 
@@ -1040,6 +1057,50 @@ function renderFullAnalysis(data, container) {
         thesisBannerHtml += '<div style="padding:8px 12px;border-radius:8px;background:rgba(255,152,0,0.06);border:1px solid rgba(255,152,0,0.2);margin-bottom:10px;">'
                           + '<div style="font-size:0.72rem;color:#ff9800;font-weight:600;">💧 ' + data.liquidityWarning.note + '</div>'
                           + '</div>';
+    }
+
+    // NEW: ICT/SMC banners ──────────────────────────────────────────────
+    if (data.ictData) {
+        const ict = data.ictData;
+
+        // Kill Zone status
+        if (ict.killZone) {
+            const kz = ict.killZone;
+            const kzColor = kz.inKillZone ? '#7cffb2' : 'var(--text-dim)';
+            thesisBannerHtml += '<div style="padding:8px 12px;border-radius:8px;background:rgba(124,255,178,0.05);border:1px solid rgba(124,255,178,0.18);margin-bottom:10px;display:flex;align-items:center;gap:10px;">'
+                              + '<span style="font-size:1rem;">' + (kz.inKillZone ? '⏰' : '🕐') + '</span>'
+                              + '<div><div style="font-size:0.72rem;font-weight:700;color:' + kzColor + ';">'
+                              + (kz.inKillZone ? 'KILL ZONE ACTIVE: ' + kz.activeZones.join(', ') : 'Outside Kill Zones')
+                              + '</div><div style="font-size:0.67rem;color:var(--text-dim);">' + kz.currentUTC
+                              + (kz.inKillZone ? '' : (kz.nextZone ? ' · Next: ' + kz.nextZone + ' in ' + kz.nextZoneInHours + 'h' : '')) + '</div></div>'
+                              + '</div>';
+        }
+
+        // Premium / Discount zone (4H + D1)
+        const pd4h = ict.premiumDiscount && ict.premiumDiscount.h4;
+        const pdd1 = ict.premiumDiscount && ict.premiumDiscount.d1;
+        if (pd4h || pdd1) {
+            const pdColor = (pd) => pd && pd.zone === 'DISCOUNT' ? '#2ecc71' : pd && pd.zone === 'PREMIUM' ? '#ff4d4f' : 'var(--text-muted)';
+            thesisBannerHtml += '<div style="padding:8px 12px;border-radius:8px;background:rgba(59,139,255,0.05);border:1px solid rgba(59,139,255,0.18);margin-bottom:10px;">'
+                              + '<div style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#3b8bff;margin-bottom:5px;">🎯 ICT Premium / Discount Zone</div>'
+                              + (pd4h ? '<div style="font-size:0.72rem;margin-bottom:2px;"><span style="color:var(--text-dim);">4H:</span> <span style="color:' + pdColor(pd4h) + ';font-weight:700;">' + pd4h.zone + '</span> (' + pd4h.positionPct + '% of range)</div>' : '')
+                              + (pdd1 ? '<div style="font-size:0.72rem;"><span style="color:var(--text-dim);">D1:</span> <span style="color:' + pdColor(pdd1) + ';font-weight:700;">' + pdd1.zone + '</span> (' + pdd1.positionPct + '% of range)</div>' : '')
+                              + '</div>';
+        }
+
+        // Liquidity Sweep alert (only if one was detected recently)
+        const ls4h = ict.liquiditySweep && ict.liquiditySweep.h4;
+        const ls1h = ict.liquiditySweep && ict.liquiditySweep.h1;
+        const activeSweep = (ls4h && ls4h.recentSweep) || (ls1h && ls1h.recentSweep);
+        if (activeSweep) {
+            const sw = (ls4h && ls4h.recentSweep) ? { tf:'4H', ...ls4h.recentSweep } : { tf:'1H', ...ls1h.recentSweep };
+            const swColor = sw.type === 'SELL_SIDE_SWEPT' ? '#2ecc71' : '#ff4d4f';
+            thesisBannerHtml += '<div style="padding:8px 12px;border-radius:8px;background:rgba(240,180,41,0.07);border:1px solid rgba(240,180,41,0.3);margin-bottom:10px;">'
+                              + '<div style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--gold);margin-bottom:4px;">⚡ LIQUIDITY SWEEP DETECTED (' + sw.tf + ')</div>'
+                              + '<div style="font-size:0.72rem;color:' + swColor + ';font-weight:600;">' + sw.type.replace(/_/g,' ') + ' at ' + sw.level + '</div>'
+                              + '<div style="font-size:0.68rem;color:var(--text-muted);margin-top:2px;">' + sw.implication + '</div>'
+                              + '</div>';
+        }
     }
 
     // ── Score ring + overall bias ──

@@ -1307,6 +1307,28 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
       }
     } catch(_) {}
 
+    // NEW: ICT / SMC enhanced data — Liquidity Sweep, Premium/Discount,
+    // Kill Zone, Fibonacci Extensions. All computed from already-fetched
+    // candles so zero additional Binance calls are needed here.
+    let ictData = {};
+    try {
+      ictData = {
+        killZone: marketTools.structure.killZoneStatus(),
+        premiumDiscount: {
+          h4: marketTools.structure.premiumDiscountZone(h4c),
+          d1: marketTools.structure.premiumDiscountZone(d1c),
+        },
+        liquiditySweep: {
+          h4: marketTools.structure.liquiditySweep(h4c),
+          h1: marketTools.structure.liquiditySweep(h1c),
+        },
+        fibExtensions: {
+          h4: marketTools.structure.fibonacciExtensions(h4c),
+          d1: marketTools.structure.fibonacciExtensions(d1c),
+        },
+      };
+    } catch (_) { /* ICT data failure is non-fatal */ }
+
     const h4rsiArr  = _da_rsiArray(h4closes);
     const h1rsiArr  = _da_rsiArray(h1closes);
     const m15rsiArr = _da_rsiArray(m15closes);
@@ -1472,6 +1494,25 @@ Rule: If confluenceScore < ${CONFLUENCE_THRESHOLD}, set overallBias to NEUTRAL.`
       ? `\n\nLIQUIDITY WARNING: ${liquidityWarning.note} Mention this briefly in keyRisk, and do not assign Grade S to a low-liquidity coin no matter how clean the technicals look.`
       : '';
 
+    // NEW: ICT context — Liquidity Sweep, Premium/Discount, Kill Zone, Fib Extensions
+    const ictLines = [];
+    const kz = ictData.killZone;
+    if (kz) ictLines.push(`ICT KILL ZONE: ${kz.currentUTC} — ${kz.inKillZone ? 'IN ZONE: ' + kz.activeZones.join(', ') : 'Outside kill zones (next: ' + (kz.nextZone || '—') + ')'}. ${kz.significance}`);
+    const pd4h = ictData.premiumDiscount?.h4;
+    const pdd1 = ictData.premiumDiscount?.d1;
+    if (pd4h) ictLines.push(`PREMIUM/DISCOUNT (4H): ${pd4h.bias}`);
+    if (pdd1) ictLines.push(`PREMIUM/DISCOUNT (D1): ${pdd1.bias}`);
+    const ls4h = ictData.liquiditySweep?.h4;
+    const ls1h = ictData.liquiditySweep?.h1;
+    if (ls4h?.recentSweep) ictLines.push(`LIQUIDITY SWEEP (4H): ${ls4h.recentSweep.type} at ${ls4h.recentSweep.level} — ${ls4h.recentSweep.implication}`);
+    if (ls1h?.recentSweep) ictLines.push(`LIQUIDITY SWEEP (1H): ${ls1h.recentSweep.type} at ${ls1h.recentSweep.level} — ${ls1h.recentSweep.implication}`);
+    if (ls4h?.buySideLiquidity?.length) ictLines.push(`BUY-SIDE LIQUIDITY (4H equal highs): ${ls4h.buySideLiquidity.join(', ')}`);
+    if (ls4h?.sellSideLiquidity?.length) ictLines.push(`SELL-SIDE LIQUIDITY (4H equal lows): ${ls4h.sellSideLiquidity.join(', ')}`);
+    const fe4h = ictData.fibExtensions?.h4;
+    if (fe4h) ictLines.push(`FIB EXTENSIONS (4H, ${fe4h.direction}): 127.2%=${fe4h.e1272}  161.8%=${fe4h.e1618}  261.8%=${fe4h.e2618} — USE THESE as preferred TP targets over arbitrary price levels`);
+    const ictContext = ictLines.length ? '\n\nICT/SMC ADVANCED DATA:\n' + ictLines.join('\n')
+      + '\n(ICT RULES: Never take a LONG in PREMIUM zone or SHORT in DISCOUNT zone unless there is a confirmed Liquidity Sweep in that direction. Fibonacci Extensions are the preferred TP targets — use them over arbitrary levels. A Liquidity Sweep on the entry timeframe adds +1 to confluenceScore and is a high-quality trigger.)' : '';
+
     // ── Groq AI Analysis ─────────────────────────────────────
     // DB ලේ key set කරලා ඇත්නම් ඒක use කරනවා, නැත්නම් .env ලේ key
     const GROQ_API_KEY = (globalSettings.groq_api_key && globalSettings.groq_api_key.trim())
@@ -1485,7 +1526,7 @@ Rule: If confluenceScore < ${CONFLUENCE_THRESHOLD}, set overallBias to NEUTRAL.`
     const earlyWarnText = earlyWarnings.length ? '\nEARLY WARNINGS (M15/H1 signals):\n' + earlyWarnings.map((w,i) => (i+1)+'. '+w).join('\n') : '';
     const prompt = `You are a professional crypto futures trader who provides institutional-grade signals. Analyze ${coin}/USDT and respond ONLY with valid JSON.
 
-${thesisContext}${earlyWarnText}${newsContext}${liquidityContext}
+${thesisContext}${earlyWarnText}${newsContext}${liquidityContext}${ictContext}
 
 MARKET DATA:
 - Price: $${price}
@@ -1737,8 +1778,9 @@ Respond with ONLY this JSON (no markdown, no explanation):
       thesisStatus,
       fibLevels,
       earlyWarnings,
-      newsRisk: newsRiskFlag, // NEW: { checked, hasNews, headlines: [{title,source,url}] }
-      liquidityWarning,       // NEW: null, or { quoteVolume, tradeCount, note }
+      newsRisk: newsRiskFlag,
+      liquidityWarning,
+      ictData,   // NEW: killZone, premiumDiscount, liquiditySweep, fibExtensions
       analysis,
       rawData,
       // Advanced indicators for frontend display

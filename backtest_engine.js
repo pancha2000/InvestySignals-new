@@ -112,20 +112,29 @@ function evaluateBar(candlesSoFar) {
   // 6. Price sitting near the 61.8% Fibonacci retracement (classic entry confluence zone)
   //    (fibonacciRetracement returns field f618, not level618)
   if (fib && fib.f618 && Math.abs(lastClose - fib.f618) <= atr * 0.75) score++;
-  // 7. Structure itself agreeing (counted again here deliberately, mirroring
-  //    the live prompt where structure alignment is its own explicit point
-  //    on top of being the gate above — a clean trend gets credit twice,
-  //    same as in production).
-  score++; // we only got here because structBias === emaBias === bias
+  // 7. Structure alignment (always present at this point since we gated on it above)
+  score++;
+  // 8. NEW — Premium/Discount Zone matches trade direction (ICT core rule)
+  //    LONG in DISCOUNT zone OR SHORT in PREMIUM zone = institutional alignment
+  const pd = structure.premiumDiscountZone(candlesSoFar, 100);
+  if (pd && ((bias === 'LONG' && pd.zone === 'DISCOUNT') || (bias === 'SHORT' && pd.zone === 'PREMIUM'))) score++;
+  // 9. NEW — Recent Liquidity Sweep in trade direction (ICT entry trigger)
+  //    A confirmed sweep on the current timeframe before the entry is a
+  //    strong institutional signal — the weak hands got stopped out, smart
+  //    money reversed.
+  const ls = structure.liquiditySweep(candlesSoFar);
+  if (ls && ls.recentSweep) {
+    const sweepMatchesBias = (bias === 'LONG' && ls.recentSweep.type === 'SELL_SIDE_SWEPT') || (bias === 'SHORT' && ls.recentSweep.type === 'BUY_SIDE_SWEPT');
+    if (sweepMatchesBias) score++;
+  }
 
   return { bias, score, rsi, adx: adx.adx, atr, lastClose };
 }
 
-/** Map a 0-7 raw score onto the same S/A/B/C grade bands the live system
- *  uses on its 0-10 scale, so backtest output reads consistently with the
- *  Dashboard's own language. */
-function scoreToGrade(raw7) {
-  const score10 = Math.round((raw7 / 7) * 10);
+/** Map a 0-9 raw score onto the same S/A/B/C grade bands the live system
+ *  uses on its 0-10 scale. Max is now 9 (7 original + 2 ICT factors). */
+function scoreToGrade(raw9) {
+  const score10 = Math.round((raw9 / 9) * 10);
   if (score10 >= 8) return 'S';
   if (score10 >= 6) return 'A';
   if (score10 >= 5) return 'B';

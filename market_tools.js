@@ -558,6 +558,132 @@ const structure = {
       f786: fmt(direction === 'BULLISH_RETRACE' ? swingHigh - range * 0.786 : swingLow + range * 0.786),
     };
   },
+
+  // ── NEW: ICT / SMC Tools ─────────────────────────────────────────────
+
+  /** Liquidity Sweep Detection (ICT core concept).
+   *  Finds buy-side liquidity (equal highs = stop-hunts above) and sell-side
+   *  liquidity (equal lows = stop-hunts below), then checks whether the
+   *  most recent candle swept through one of those levels and closed BACK
+   *  inside (the classic institutional manipulation → reversal pattern).
+   *  A recentSweep object means: longs/shorts got wiped, smart-money
+   *  reversed — this is an ICT entry trigger for the opposite direction. */
+  liquiditySweep(candles, tolerance = 0.003) {
+    const lookback = Math.min(candles.length - 1, 80);
+    const hist = candles.slice(-lookback - 1, -1); // bars BEFORE the last one
+    const last = candles[candles.length - 1];
+
+    const buySide = []; // swing highs = buy-side liquidity pools
+    const sellSide = []; // swing lows = sell-side liquidity pools
+    for (let i = 1; i < hist.length - 1; i++) {
+      if (hist[i].high > hist[i - 1].high && hist[i].high > hist[i + 1].high) buySide.push(hist[i].high);
+      if (hist[i].low < hist[i - 1].low && hist[i].low < hist[i + 1].low) sellSide.push(hist[i].low);
+    }
+
+    let recentSweep = null;
+    // Buy-side sweep: wick pushed above a swing high but closed back below → SHORT setup
+    for (const level of buySide.slice(-8)) {
+      if (last.high > level * (1 + tolerance) && last.close < level) {
+        recentSweep = { type: 'BUY_SIDE_SWEPT', level: round(level, 6), wickHigh: round(last.high, 6), closeBack: round(last.close, 6), implication: 'SHORT_SETUP — liquidity grabbed above highs, smart-money now short.' };
+        break;
+      }
+    }
+    // Sell-side sweep: wick pushed below a swing low but closed back above → LONG setup
+    if (!recentSweep) {
+      for (const level of sellSide.slice(-8)) {
+        if (last.low < level * (1 - tolerance) && last.close > level) {
+          recentSweep = { type: 'SELL_SIDE_SWEPT', level: round(level, 6), wickLow: round(last.low, 6), closeBack: round(last.close, 6), implication: 'LONG_SETUP — liquidity grabbed below lows, smart-money now long.' };
+          break;
+        }
+      }
+    }
+
+    return {
+      buySideLiquidity: buySide.slice(-6).map((l) => round(l, 6)),
+      sellSideLiquidity: sellSide.slice(-6).map((l) => round(l, 6)),
+      recentSweep, // null = no sweep on the last closed candle
+    };
+  },
+
+  /** ICT Kill Zone Status — are we inside a high-probability institutional
+   *  trading window right now? London Open, NY Open, and Asian session opens
+   *  are the times when big orders typically hit the market and create the
+   *  day's real moves. A signal firing inside a kill zone has historically
+   *  better follow-through than the same technical setup in dead hours. */
+  killZoneStatus() {
+    const now = new Date();
+    const utcH = now.getUTCHours(), utcM = now.getUTCMinutes();
+    const t = utcH + utcM / 60; // decimal UTC hour
+    const zones = [
+      { name: 'Asian Open', start: 23, end: 1, crossesMidnight: true },
+      { name: 'London Open', start: 7, end: 10, crossesMidnight: false },
+      { name: 'NY Open / London-NY Overlap', start: 13, end: 16, crossesMidnight: false },
+      { name: 'London Close', start: 15, end: 16, crossesMidnight: false },
+    ];
+    const inZone = (z) => z.crossesMidnight ? (t >= z.start || t < z.end) : (t >= z.start && t < z.end);
+    const active = zones.filter(inZone);
+    const upcoming = zones.filter((z) => !inZone(z) && (z.start > t || z.crossesMidnight)).sort((a, b) => {
+      const diff = (x) => x.start > t ? x.start - t : x.start + 24 - t;
+      return diff(a) - diff(b);
+    });
+    return {
+      currentUTC: `${String(utcH).padStart(2, '0')}:${String(utcM).padStart(2, '0')} UTC`,
+      inKillZone: active.length > 0,
+      activeZones: active.map((z) => z.name),
+      nextZone: upcoming[0] ? upcoming[0].name : null,
+      nextZoneInHours: upcoming[0] ? round((upcoming[0].start > t ? upcoming[0].start - t : upcoming[0].start + 24 - t), 1) : null,
+      significance: active.length
+        ? `HIGH — inside ${active[0].name}. Institutional orders most active; moves have historically stronger follow-through.`
+        : 'LOW — outside primary kill zones. Signals are technically valid but may resolve slower or with less conviction.',
+    };
+  },
+
+  /** ICT Premium / Discount Zone Analysis.
+   *  In ICT, the 50% level (equilibrium) of a recent swing divides space
+   *  into two zones: PREMIUM (above 50% = overpriced, smart-money SELLS here)
+   *  and DISCOUNT (below 50% = underpriced, smart-money BUYS here). Taking
+   *  LONG trades in a PREMIUM zone or SHORT trades in a DISCOUNT zone means
+   *  fighting institutional positioning — a key ICT anti-pattern to avoid. */
+  premiumDiscountZone(candles, lookback = 100) {
+    const slice = candles.slice(-Math.min(lookback, candles.length));
+    const high = Math.max(...slice.map((c) => c.high));
+    const low = Math.min(...slice.map((c) => c.low));
+    if (high === low) return null;
+    const equilibrium = (high + low) / 2;
+    const lastClose = candles[candles.length - 1].close;
+    const positionPct = round(((lastClose - low) / (high - low)) * 100, 1);
+    const zone = lastClose >= equilibrium ? 'PREMIUM' : 'DISCOUNT';
+    return {
+      zone,
+      swingHigh: round(high, 6),
+      swingLow: round(low, 6),
+      equilibrium: round(equilibrium, 6),
+      currentPrice: round(lastClose, 6),
+      positionPct, // 0 = at swing low, 100 = at swing high, 50 = equilibrium
+      premium75: round(low + (high - low) * 0.75, 6), // top 25% = deep premium
+      discount25: round(low + (high - low) * 0.25, 6), // bottom 25% = deep discount
+      bias: zone === 'PREMIUM'
+        ? `PREMIUM (${positionPct}% of range) — price is above equilibrium. Ideal for SHORT entries; LONG trades here fight institutional positioning.`
+        : `DISCOUNT (${positionPct}% of range) — price is below equilibrium. Ideal for LONG entries; SHORT trades here fight institutional positioning.`,
+    };
+  },
+
+  /** Fibonacci Extension Levels — TP targeting tool (complement to
+   *  fibonacciRetracement which handles entries/SL).
+   *  Extensions project WHERE price is likely to REACH after a retracement,
+   *  not where to enter. 127.2% and 161.8% are the primary TP targets used
+   *  by ICT and most SMC practitioners. 261.8% is used for "home run" trades
+   *  on confirmed trending structures. */
+  fibonacciExtensions(candles, lookback = 50) {
+    const fib = structure.fibonacciRetracement(candles, lookback);
+    if (!fib || !fib.swingHigh || !fib.swingLow) return null;
+    const { swingHigh, swingLow, direction } = fib;
+    const range = swingHigh - swingLow;
+    if (direction === 'BULLISH_RETRACE') {
+      return { direction: 'BULLISH', swingHigh: round(swingHigh, 6), swingLow: round(swingLow, 6), e1272: round(swingLow + range * 1.272, 6), e1414: round(swingLow + range * 1.414, 6), e1618: round(swingLow + range * 1.618, 6), e2618: round(swingLow + range * 2.618, 6) };
+    }
+    return { direction: 'BEARISH', swingHigh: round(swingHigh, 6), swingLow: round(swingLow, 6), e1272: round(swingHigh - range * 1.272, 6), e1414: round(swingHigh - range * 1.414, 6), e1618: round(swingHigh - range * 1.618, 6), e2618: round(swingHigh - range * 2.618, 6) };
+  },
 };
 
 // ════════════════════════════════════════════════════════════════════════
@@ -1092,6 +1218,11 @@ async function getMarketStructure(symbolRaw) {
     orderBlocks: { h4: structure.findOrderBlocks(c4h, 5), d1: structure.findOrderBlocks(c1d, 5), h1: structure.findOrderBlocks(c1h, 3) },
     fairValueGaps: { h4: structure.findFairValueGaps(c4h), h1: structure.findFairValueGaps(c1h), m15: structure.findFairValueGaps(c15) },
     fibonacci: { h4: structure.fibonacciRetracement(c4h), d1: structure.fibonacciRetracement(c1d) },
+    // NEW: ICT / SMC advanced tools
+    fibExtensions: { h4: structure.fibonacciExtensions(c4h), d1: structure.fibonacciExtensions(c1d) },
+    liquiditySweep: { h4: structure.liquiditySweep(c4h), h1: structure.liquiditySweep(c1h), m15: structure.liquiditySweep(c15) },
+    premiumDiscount: { h4: structure.premiumDiscountZone(c4h), d1: structure.premiumDiscountZone(c1d) },
+    killZone: structure.killZoneStatus(),
     fetchedAt: new Date().toISOString(),
   };
 }

@@ -262,9 +262,23 @@ backdrop?.addEventListener('click', () => { menu?.classList.remove('open'); if(b
 
 <script>
 async function getToken() { return window._authUser ? await window._authUser.getIdToken() : null; }
+// Wrapper that detects HTML responses (route doesn't exist / server not restarted)
+// and throws a clear, actionable error instead of a confusing JSON parse error.
 async function authFetch(url, opts = {}) {
     const tok = await getToken();
-    return fetch(url, { ...opts, headers: { 'Content-Type':'application/json', 'Authorization': tok ? 'Bearer '+tok : '', ...(opts.headers||{}) } });
+    const res = await fetch(url, { ...opts, headers: { 'Content-Type':'application/json', 'Authorization': tok ? 'Bearer '+tok : '', ...(opts.headers||{}) } });
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+        throw new Error(
+            'Backtest routes not responding (server returned a non-JSON page).\n\n' +
+            'Fix checklist:\n' +
+            '1. Copy ALL new files: server.js, backtest_engine.js, models/BacktestRun.js\n' +
+            '2. Run: pm2 restart investysignals\n' +
+            '3. Check: pm2 logs investysignals --lines 20 (look for startup errors)\n\n' +
+            'If this keeps happening after restart, make sure models/BacktestRun.js is in the models/ folder.'
+        );
+    }
+    return res;
 }
 
 // ── Start a new run ────────────────────────────────────────────
