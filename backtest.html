@@ -306,7 +306,11 @@ window.startBacktest = async function() {
         prog.style.display = 'none';
         document.getElementById('btRunBtn').disabled = false;
         document.getElementById('btWfBtn').disabled  = false;
-        alert('Error: ' + err.message);
+        // Show inline error in the progress area instead of a browser alert
+        document.getElementById('btProgressLabel').textContent = '❌ ' + (err.message.length > 120 ? err.message.slice(0, 120) + '…' : err.message);
+        document.getElementById('btProgressSub').textContent = err.message.includes('non-JSON') ? 'Make sure server.js + backtest_engine.js + models/BacktestRun.js are deployed and pm2 restarted.' : '';
+        document.getElementById('btProgressFill').style.width = '0%';
+        prog.style.display = 'block';
     }
 };
 
@@ -478,7 +482,14 @@ async function loadHistory() {
                 <span style="color:var(--text-dim);font-size:0.68rem;">${dt}</span>
             </div>`;
         }).join('');
-    } catch (_) { list.innerHTML = '<div class="bt-empty">Could not load history.</div>'; }
+    } catch (e) {
+        // Silent fail on history load — if routes aren't deployed yet, just show empty
+        // instead of alarming the user before they've even tried to run anything.
+        const isDeployMsg = e && e.message && e.message.includes('non-JSON');
+        list.innerHTML = '<div class="bt-empty">' + (isDeployMsg
+            ? '⚠️ Backtest routes not active yet — see checklist below.'
+            : 'Could not load history.') + '</div>';
+    }
 }
 
 async function loadRun(id) {
@@ -530,7 +541,10 @@ window.startWalkForward = async function() {
         prog.style.display = 'none';
         document.getElementById('btRunBtn').disabled = false;
         document.getElementById('btWfBtn').disabled  = false;
-        alert('Error: ' + err.message);
+        document.getElementById('btProgressLabel').textContent = '❌ ' + (err.message.length > 120 ? err.message.slice(0, 120) + '…' : err.message);
+        document.getElementById('btProgressSub').textContent = err.message.includes('non-JSON') ? 'Make sure server.js + backtest_engine.js + models/BacktestRun.js are deployed and pm2 restarted.' : '';
+        document.getElementById('btProgressFill').style.width = '0%';
+        prog.style.display = 'block';
     }
 };
 

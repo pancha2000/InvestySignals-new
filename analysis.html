@@ -837,11 +837,13 @@ function openCoinPanel(coin, priceStr) {
     wrap.innerHTML = '';
     const panel = document.getElementById('coinReadyPanel');
     panel.classList.add('show');
-    // On mobile: hide scan results so the analysis panel has room and bottom elements are reachable
+    // On mobile: hide ALL scan result elements so the analysis panel has
+    // full room and paper trade buttons are always reachable.
     if (window.innerWidth <= 768) {
-        const els = ['scanResultsList','scanTableHead','scanProgress'];
-        els.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
-        document.querySelectorAll('.score-filters').forEach(el => el.style.display = 'none');
+        const hideIds = ['scanResultsList','scanTableHead','scanProgress',
+                         'earlySignalsList','scanSection1Label','scanSection2Label'];
+        hideIds.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+        document.querySelectorAll('.score-filters,.scan-section-label').forEach(el => el.style.display = 'none');
     }
     setTimeout(() => panel.scrollIntoView({ behavior:'smooth', block:'start' }), 80);
 }
@@ -852,10 +854,13 @@ window.closeCoinPanel = function() {
     document.getElementById('aiResultWrap').classList.remove('show');
     document.getElementById('aiResultWrap').innerHTML = '';
     activeCoin = null;
-    // Restore scan results when panel closes
-    const els = ['scanResultsList','scanTableHead','scanProgress'];
-    els.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = ''; });
-    document.querySelectorAll('.score-filters').forEach(el => el.style.display = '');
+    // Restore ALL scan results when panel closes
+    const restoreIds = ['scanResultsList','scanTableHead','scanProgress',
+                        'earlySignalsList','scanSection1Label','scanSection2Label'];
+    restoreIds.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = ''; });
+    document.querySelectorAll('.score-filters,.scan-section-label').forEach(el => el.style.display = '');
+    // Re-apply the current filter so sections show correctly
+    applyScanFilter();
     if (scanResults.length) renderScanTable();
 };
 
@@ -1501,9 +1506,22 @@ async function getToken() {
 
 function buildPaperTradePanel(data) {
     ptCurrentData = data;
-    const overallBias     = data?.analysis?.overallBias;
+    // BUG FIX: Normalize overallBias — AI sometimes returns BULLISH/BEARISH instead of
+    // LONG/SHORT (e.g. from older prompt versions or model variance). Always convert before
+    // using as the trade direction so ptSubmit never sees a value it can't validate.
+    function normalizeDir(d) {
+        if (!d) return null;
+        if (d === 'LONG' || d === 'BULLISH' || d === 'STRONG_BULL') return 'LONG';
+        if (d === 'SHORT' || d === 'BEARISH' || d === 'STRONG_BEAR') return 'SHORT';
+        if (d === 'NEUTRAL') return 'NEUTRAL';
+        return null;
+    }
+
+    const overallBiasRaw  = data?.analysis?.overallBias;
+    const level5DirRaw    = data?.analysis?.level5?.direction || '';
+    const overallBias     = normalizeDir(overallBiasRaw);
+    const level5Dir       = normalizeDir(level5DirRaw) || level5DirRaw;
     const entryConclusion = data?.analysis?.level4?.entryConclusion || '';
-    const level5Dir       = data?.analysis?.level5?.direction || '';
     const isNeutral       = !overallBias || overallBias === 'NEUTRAL';
 
     // FIX: NEUTRAL bias does NOT block a LIMIT entry.
