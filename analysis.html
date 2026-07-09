@@ -1937,6 +1937,10 @@ async function ptSubmit() {
                 pair: normalizedPair, direction: dir, orderType: ptOrderType,
                 entry, triggerPrice: ptOrderType==='LIMIT'?trigger:entry,
                 tp1, tp2, tp3, sl, leverage: lev, size,
+                // NEW: 1H ATR from the analysis that produced this SL/TP —
+                // used server-side to give Break-Even a noise buffer instead
+                // of an exact-entry stop (see runTPSLCheck's TP1 handling).
+                entryAtr: ptCurrentData?.rawData?.atr1h || null,
             })
         });
         const d = await r.json();
