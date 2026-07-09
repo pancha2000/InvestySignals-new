@@ -739,6 +739,15 @@
                                 <span class="toggle-slider"></span>
                             </label>
                         </div>
+                        <!-- NEW: Limit Order Expiry (paper trading — "Infinite Pending" fix) -->
+                        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--surface);border-radius:var(--radius-sm);">
+                            <div>
+                                <div style="font-weight:600;font-size:0.9rem;">Limit Order Expiry (hours)</div>
+                                <div style="font-size:0.78rem;color:var(--text-muted);">Auto-cancel PENDING paper trades that never fill within this window</div>
+                            </div>
+                            <input type="number" id="limitExpiryInput" class="input-control" value="4" min="1" max="72" step="1"
+                                style="width:80px;font-family:'JetBrains Mono',monospace;">
+                        </div>
                     </div>
                 </div>
 
@@ -825,6 +834,101 @@
                             <button onclick="testAiKey()" class="btn" id="aiTestBtn"
                                 style="flex:1;min-width:120px;background:var(--surface);border:1px solid var(--border-soft);color:var(--text);">
                                 🧪 Test API Key
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ═══════════════════════════════════════════════════ -->
+                <!-- MARKET MEMORY PANEL (24/7 historical collector)     -->
+                <!-- ═══════════════════════════════════════════════════ -->
+                <div class="data-panel" style="margin-top:20px;">
+                    <div class="panel-header">
+                        <div class="panel-title">📡 Market Memory (24/7 Historical Collector)</div>
+                        <div style="font-size:0.75rem;color:var(--text-muted);">Background service — watches the market so you don't have to; feeds real history into Deep Analysis</div>
+                    </div>
+                    <div style="padding:20px;display:flex;flex-direction:column;gap:16px;">
+
+                        <div id="mmVercelWarning" style="display:none;padding:10px 14px;border-radius:var(--radius-sm);font-size:0.78rem;background:rgba(255,180,0,0.12);border:1px solid rgba(255,180,0,0.3);color:#e0a500;">
+                            ⚠️ Running on Vercel (serverless) — this collector needs an always-on process (VPS) and will not run here.
+                        </div>
+
+                        <!-- Enable toggle -->
+                        <div style="display:flex;align-items:center;justify-content:space-between;">
+                            <label style="font-size:0.85rem;font-weight:600;color:var(--text-sub);">Enable background collector</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="mmEnabledToggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+
+                        <!-- Tracked symbols -->
+                        <div>
+                            <label style="font-size:0.8rem;font-weight:600;color:var(--text-sub);display:block;margin-bottom:6px;">
+                                🎯 Tracked Symbols (comma-separated)
+                            </label>
+                            <input type="text" id="mmSymbolsInput" class="input-control"
+                                placeholder="BTCUSDT,ETHUSDT,SOLUSDT"
+                                style="width:100%;font-family:'JetBrains Mono',monospace;font-size:0.82rem;">
+                            <div style="margin-top:4px;font-size:0.7rem;color:var(--text-muted);">
+                                More symbols = more disk usage + more API calls per cycle. A few coins is plenty.
+                            </div>
+                        </div>
+
+                        <!-- Interval + Retention -->
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                            <div>
+                                <label style="font-size:0.8rem;font-weight:600;color:var(--text-sub);display:block;margin-bottom:6px;">
+                                    ⏱️ Snapshot Interval (min)
+                                </label>
+                                <input type="number" id="mmIntervalInput" class="input-control"
+                                    value="15" min="5" max="240" step="5"
+                                    style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;">
+                            </div>
+                            <div>
+                                <label style="font-size:0.8rem;font-weight:600;color:var(--text-sub);display:block;margin-bottom:6px;">
+                                    🗑️ Retention (days)
+                                </label>
+                                <input type="number" id="mmRetentionInput" class="input-control"
+                                    value="30" min="1" max="365" step="1"
+                                    style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;">
+                            </div>
+                        </div>
+
+                        <!-- Cloud sync -->
+                        <div style="display:flex;align-items:center;justify-content:space-between;">
+                            <label style="font-size:0.85rem;font-weight:600;color:var(--text-sub);">☁️ Cloud backup (via rclone)</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="mmCloudToggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div>
+                            <label style="font-size:0.8rem;font-weight:600;color:var(--text-sub);display:block;margin-bottom:6px;">
+                                Remote name (from <code>rclone config</code>, e.g. <code>mega</code> or <code>gdrive</code>)
+                            </label>
+                            <input type="text" id="mmRemoteInput" class="input-control"
+                                placeholder="mega"
+                                style="width:100%;font-family:'JetBrains Mono',monospace;font-size:0.82rem;">
+                            <div style="margin-top:4px;font-size:0.7rem;color:var(--text-muted);">
+                                rclone must be installed + configured on the VPS first (one-time, via SSH). This just tells the app which remote to use.
+                            </div>
+                        </div>
+
+                        <!-- Status -->
+                        <div id="mmStatusBox" style="padding:12px 14px;border-radius:var(--radius-sm);background:var(--surface);border:1px solid var(--border-soft);font-size:0.78rem;color:var(--text-sub);font-family:'JetBrains Mono',monospace;">
+                            Loading status...
+                        </div>
+
+                        <!-- Result message -->
+                        <div id="mmSettingsMsg" style="display:none;padding:10px 14px;border-radius:var(--radius-sm);font-size:0.82rem;font-weight:600;"></div>
+
+                        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                            <button onclick="saveMarketMemorySettings()" class="btn btn-gold" style="flex:1;min-width:120px;">
+                                💾 Save Settings
+                            </button>
+                            <button onclick="refreshMarketMemoryStatus()" class="btn" style="flex:1;min-width:120px;background:var(--surface);border:1px solid var(--border-soft);color:var(--text);">
+                                🔄 Refresh Status
                             </button>
                         </div>
                     </div>
@@ -1217,6 +1321,8 @@ window.adminSignOut = async function() {
                 if (et) et.checked = !!setR.settings.autoEngine;
                 const rt = document.getElementById('regToggle');
                 if (rt) rt.checked = !!setR.settings.allowRegistrations;
+                const le = document.getElementById('limitExpiryInput');
+                if (le && setR.settings.limitOrderExpiryHours) le.value = setR.settings.limitOrderExpiryHours;
             }
         } catch(_) {}
 
@@ -1242,6 +1348,9 @@ window.adminSignOut = async function() {
                 if (tempInput && s.groq_temperature !== undefined) tempInput.value = s.groq_temperature;
             }
         } catch(_) {}
+
+        // Load Market Memory settings + status
+        await refreshMarketMemoryStatus(true);
     }  // end loadAdminStats
 
     async function refreshStats() {
@@ -1590,6 +1699,84 @@ window.adminSignOut = async function() {
     }
     // ─────────────────────────────────────────────────────────
 
+    // ── Market Memory Functions ─────────────────────────────
+    function showMmMsg(msg, isError) {
+        const el = document.getElementById('mmSettingsMsg');
+        if (!el) return;
+        el.style.display = 'block';
+        el.style.background = isError ? 'rgba(255,59,92,0.12)' : 'rgba(16,185,129,0.12)';
+        el.style.border = '1px solid ' + (isError ? 'rgba(255,59,92,0.3)' : 'rgba(16,185,129,0.3)');
+        el.style.color = isError ? 'var(--red,#ff4d4f)' : 'var(--green,#10b981)';
+        el.textContent = msg;
+        setTimeout(() => { el.style.display = 'none'; }, 5000);
+    }
+
+    function renderMmStatus(status, vercelWarning) {
+        const box = document.getElementById('mmStatusBox');
+        const warn = document.getElementById('mmVercelWarning');
+        if (warn) warn.style.display = vercelWarning ? 'block' : 'none';
+        if (!box) return;
+        if (!status) { box.textContent = 'Status unavailable.'; return; }
+        const lastRun = status.lastRunAt ? new Date(status.lastRunAt).toLocaleString() : 'never yet';
+        box.innerHTML = `Running: <b>${status.running ? '🟢 yes' : '🔴 no'}</b> · Last run: <b>${lastRun}</b><br>`
+            + `Disk usage: <b>${status.diskUsageMB ?? 0} MB</b> (${status.fileCount ?? 0} files)`;
+    }
+
+    async function refreshMarketMemoryStatus(alsoLoadSettings) {
+        try {
+            const idToken = await getToken();
+            if (alsoLoadSettings) {
+                const r = await fetch('/api/admin/market-memory-settings', {
+                    headers: { 'Authorization': 'Bearer ' + idToken }
+                }).then(r => r.json());
+                if (r.success) {
+                    const s = r.settings;
+                    const en = document.getElementById('mmEnabledToggle'); if (en) en.checked = !!s.marketMemoryEnabled;
+                    const sy = document.getElementById('mmSymbolsInput'); if (sy) sy.value = s.marketMemorySymbols;
+                    const iv = document.getElementById('mmIntervalInput'); if (iv) iv.value = s.marketMemoryIntervalMin;
+                    const rt = document.getElementById('mmRetentionInput'); if (rt) rt.value = s.marketMemoryRetentionDays;
+                    const cs = document.getElementById('mmCloudToggle'); if (cs) cs.checked = !!s.marketMemoryCloudSyncEnabled;
+                    const cr = document.getElementById('mmRemoteInput'); if (cr) cr.value = s.marketMemoryCloudRemote;
+                    renderMmStatus(r.status, r.vercelWarning);
+                }
+            } else {
+                const r = await fetch('/api/admin/market-memory-status', {
+                    headers: { 'Authorization': 'Bearer ' + idToken }
+                }).then(r => r.json());
+                if (r.success) renderMmStatus(r.status, r.vercelWarning);
+            }
+        } catch(e) { /* non-fatal — status panel just stays as-is */ }
+    }
+
+    async function saveMarketMemorySettings() {
+        const body = {
+            marketMemoryEnabled: document.getElementById('mmEnabledToggle')?.checked,
+            marketMemorySymbols: document.getElementById('mmSymbolsInput')?.value.trim(),
+            marketMemoryIntervalMin: parseInt(document.getElementById('mmIntervalInput')?.value),
+            marketMemoryRetentionDays: parseInt(document.getElementById('mmRetentionInput')?.value),
+            marketMemoryCloudSyncEnabled: document.getElementById('mmCloudToggle')?.checked,
+            marketMemoryCloudRemote: document.getElementById('mmRemoteInput')?.value.trim(),
+        };
+        try {
+            const idToken = await getToken();
+            const res = await fetch('/api/admin/market-memory-settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+                body: JSON.stringify(body)
+            });
+            const j = await res.json();
+            if (j.success) {
+                showMmMsg('✅ Market Memory settings saved! Updated: ' + (j.updated || []).join(', '), false);
+                renderMmStatus(j.status, false);
+            } else {
+                showMmMsg('❌ ' + (j.error || 'Save failed'), true);
+            }
+        } catch(e) {
+            showMmMsg('❌ ' + e.message, true);
+        }
+    }
+    // ─────────────────────────────────────────────────────────
+
     async function saveToggleSetting(key, value) {
         try {
             const idToken = await getToken();
@@ -1612,6 +1799,13 @@ window.adminSignOut = async function() {
 
         const rt = document.getElementById('regToggle');
         if (rt) rt.addEventListener('change', () => saveToggleSetting('allowRegistrations', rt.checked));
+
+        const le = document.getElementById('limitExpiryInput');
+        if (le) le.addEventListener('change', () => {
+            const v = Math.min(Math.max(parseInt(le.value) || 4, 1), 72);
+            le.value = v;
+            saveToggleSetting('limitOrderExpiryHours', v);
+        });
     });
 
     // ── Users plan filter ───────────────────────────────────

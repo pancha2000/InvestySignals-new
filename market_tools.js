@@ -193,6 +193,8 @@ const fundingCache = new TTLCache(60 * 1000); // new: funding rate updates every
 const scanCache = new TTLCache(30 * 1000); // new: full-market scan is the heaviest call — cache it
 const newsCache = new TTLCache(10 * 60 * 1000); // new: headlines don't need second-by-second freshness
 const btcTrendCache = new TTLCache(60 * 1000); // new: avoid refetching BTC context on every tool call
+const longShortCache = new TTLCache(5 * 60 * 1000); // new: account ratio updates on Binance every few min
+const fearGreedCache = new TTLCache(30 * 60 * 1000); // new: index only updates once/day on alternative.me
 
 /** Normalize a trading pair — always ensure a USDT suffix. xlm → XLMUSDT */
 function normalizePair(pair) {
@@ -805,6 +807,50 @@ async function getOpenInterestContext(symbol, h1Candles) {
   return null;
 }
 
+// ── Long/Short Account Ratio (Binance Futures, free/no-key) ──────────────
+// % of accounts holding long vs short on a symbol. Used as a confluence
+// CONFIRMATION signal (retail positioning), never as a standalone rule —
+// e.g. extreme long skew + weakening price = classic squeeze setup.
+async function getLongShortRatio(symbol, period = '1h') {
+  const cacheKey = `${symbol}_${period}`;
+  const cached = longShortCache.get(cacheKey);
+  if (cached) return cached;
+  try {
+    const data = await fetchJSON(
+      `https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=${symbol}&period=${period}&limit=1`,
+      { retries: 2, timeoutMs: 6000 }
+    );
+    if (Array.isArray(data) && data.length) {
+      const row = data[0];
+      const longAccount = round(parseFloat(row.longAccount), 4);
+      const shortAccount = round(parseFloat(row.shortAccount), 4);
+      const longShortRatio = round(parseFloat(row.longShortRatio), 4);
+      const skewLabel = longAccount >= 0.65 ? 'LONG_HEAVY' : shortAccount >= 0.65 ? 'SHORT_HEAVY' : 'BALANCED';
+      return longShortCache.set(cacheKey, { symbol, longAccount, shortAccount, longShortRatio, skewLabel });
+    }
+  } catch (_) { /* perp may not exist for this symbol — degrade gracefully */ }
+  return { symbol, longAccount: null, shortAccount: null, longShortRatio: null, skewLabel: 'UNKNOWN' };
+}
+
+// ── Crypto Fear & Greed Index (alternative.me, free/no-key) ───────────────
+// Market-wide (not per-symbol) sentiment gauge, 0-100. Used as a contrarian
+// confirmation: extreme fear leans bullish confirmation, extreme greed
+// leans bearish confirmation — never a standalone rule on its own.
+async function getFearGreedIndex() {
+  const cached = fearGreedCache.get('global');
+  if (cached) return cached;
+  try {
+    const data = await fetchJSON('https://api.alternative.me/fng/?limit=1', { retries: 2, timeoutMs: 6000 });
+    const row = data && data.data && data.data[0];
+    if (row) {
+      const value = parseInt(row.value, 10);
+      const confluenceHint = value <= 24 ? 'BULLISH_BIAS' : value >= 76 ? 'BEARISH_BIAS' : 'NEUTRAL';
+      return fearGreedCache.set('global', { value, classification: row.value_classification, confluenceHint });
+    }
+  } catch (_) { /* best-effort only */ }
+  return { value: null, classification: 'UNKNOWN', confluenceHint: 'NEUTRAL' };
+}
+
 // ════════════════════════════════════════════════════════════════════════
 // SECTION 7 — CRYPTO NEWS (brand new — multi-provider with free fallback)
 // ════════════════════════════════════════════════════════════════════════
@@ -1254,6 +1300,8 @@ module.exports = {
     getBtcTrendContext,
     getFundingRateContext,
     getOpenInterestContext,
+    getLongShortRatio,
+    getFearGreedIndex,
   },
   infra: { TTLCache, Semaphore, fetchJSON, fetchText, round },
 };

@@ -68,6 +68,10 @@ const marketTools = require('./market_tools');
 // code, no Groq calls. See backtest_engine.js for the full design notes.
 const backtestEngine = require('./backtest_engine');
 const BacktestRun = require('./models/BacktestRun');
+// NEW: the 24/7 "always watching" historical data collector — separate
+// process-internal timer, reads/writes data/market_memory/ on disk, and
+// feeds getRecentContext() into /api/deep-analysis's AI prompt.
+const marketMemory = require('./market_memory');
 
 // ── Firebase ─────────────────────────────────────────────────
 try {
@@ -112,14 +116,48 @@ const SETTINGS_DEFAULTS = {
   groq_model: 'llama-3.3-70b-versatile',
   groq_max_tokens: 2000, // BUG FIX: 1500 too low — AI truncates JSON causing parse errors
   groq_temperature: 0.2,
+  // ── Market Memory (24/7 historical collector) — admin-configurable ──
+  marketMemoryEnabled: true,
+  marketMemorySymbols: 'BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT', // comma-separated
+  marketMemoryIntervalMin: 15,
+  marketMemoryRetentionDays: 30,
+  marketMemoryCloudSyncEnabled: false,
+  marketMemoryCloudRemote: '', // rclone remote name, e.g. 'mega' or 'gdrive'
+  // NEW: how long a LIMIT paper-trade order stays PENDING before auto-cancel
+  // (see runTPSLCheck's "Infinite Pending" fix).
+  limitOrderExpiryHours: 4,
 };
 let globalSettings = { ...SETTINGS_DEFAULTS };
+
+function getMarketMemorySymbolList() {
+  return (globalSettings.marketMemorySymbols || SETTINGS_DEFAULTS.marketMemorySymbols)
+    .split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+}
+
+// Starts (or restarts, picking up new settings) the collector. Safe to
+// call multiple times — market_memory.startCollector() clears any
+// previous timer first. NOT started on Vercel: serverless functions have
+// no persistent process for a setInterval to live in — this collector
+// only makes sense on a real always-on server (VPS).
+function applyMarketMemorySettings() {
+  if (process.env.VERCEL) return;
+  if (!globalSettings.marketMemoryEnabled) { marketMemory.stopCollector(); return; }
+  marketMemory.startCollector(getMarketMemorySymbolList, {
+    intervalMs: (globalSettings.marketMemoryIntervalMin || 15) * 60 * 1000,
+    retentionDays: globalSettings.marketMemoryRetentionDays || 30,
+    cloudSync: {
+      enabled: !!globalSettings.marketMemoryCloudSyncEnabled,
+      remote: globalSettings.marketMemoryCloudRemote,
+    },
+  });
+}
 
 async function loadSettingsFromDB() {
   try {
     const docs = await Settings.find({});
     docs.forEach(d => { globalSettings[d.key] = d.value; });
     console.log('⚙️  Settings loaded');
+    applyMarketMemorySettings(); // start/restart collector with loaded settings
   } catch(e) { console.warn('⚠️  Settings load failed:', e.message); }
 }
 async function saveSettingToDB(key, value) {
@@ -130,10 +168,17 @@ async function saveSettingToDB(key, value) {
 const klinesCache   = new Map();
 const KLINES_TTL    = 5 * 60 * 1000;  // BUG FIX: 5min TTL — 15min was too stale for fast markets
 
-async function fetchKlinesCached(symbol, interval, limit = 200, retries = 3) {
+async function fetchKlinesCached(symbol, interval, limit = 200, retries = 3, skipCacheRead = false) {
   const key    = `${symbol}_${interval}_${limit}`;
   const cached = klinesCache.get(key);
-  if (cached && Date.now() - cached.ts < KLINES_TTL) return cached.data;
+  // BUG FIX (Stale Entry Flaw): when skipCacheRead is true, we ignore any
+  // cached value and always hit Binance fresh — used for the ENTRY
+  // timeframe (M15) in /api/deep-analysis, where a 5-minute-old candle
+  // can meaningfully differ from the live market and cause bad entries.
+  // Higher timeframes (H1/H4/D1) still use the cache — a 4h/1d candle's
+  // shape does not meaningfully change within 5 minutes, and caching them
+  // avoids hammering Binance on every analysis request.
+  if (!skipCacheRead && cached && Date.now() - cached.ts < KLINES_TTL) return cached.data;
 
   // Try futures API first, fall back to spot for coins not on futures (e.g. XLM, ALGO)
   const urls = [
@@ -149,7 +194,7 @@ async function fetchKlinesCached(symbol, interval, limit = 200, retries = 3) {
         if (!r.ok) break; // try next URL
         const data = await r.json();
         if (!Array.isArray(data) || data.length < 5) break; // invalid, try spot
-        klinesCache.set(key, { data, ts: Date.now() });
+        klinesCache.set(key, { data, ts: Date.now() }); // still populate cache — other (non-entry) consumers benefit
         return data;
       } catch(e) {
         if (attempt === retries - 1) break; // try next URL
@@ -224,6 +269,22 @@ const ANALYSIS_COOLDOWN = 0; // No cooldown — removed per user request
 // Key: uid+':'+coin — stores previous analysis for flip detection
 const thesisState = new Map();
 const CONFLUENCE_THRESHOLD = 5; // score/10 — below this = NEUTRAL (5/10 now passes)
+
+// ── STABILITY UPGRADE: periodic cache/state cleanup ──────────
+// klinesCache/priceCache entries were only ever checked for staleness on
+// READ (an expired entry just gets ignored, never deleted) — on a
+// long-running VPS process this means the Map keeps growing forever with
+// every symbol/interval/limit combination ever requested. thesisState has
+// the same issue (never expired at all). None of this caused the
+// "analysis failed" errors directly, but on a small VPS it's exactly the
+// kind of slow leak that eventually causes OOM crashes / restarts, which
+// THEN show up as unrelated-looking analysis failures. Sweep every 30 min.
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of klinesCache) if (now - entry.ts > KLINES_TTL) klinesCache.delete(key);
+  for (const [key, entry] of priceCache)  if (now - entry.ts > PRICE_TTL)  priceCache.delete(key);
+  for (const [key, entry] of thesisState) if (now - entry.ts > 6 * 60 * 60 * 1000) thesisState.delete(key);
+}, 30 * 60 * 1000).unref();
 
 // ── Express ───────────────────────────────────────────────────
 const app = express();
@@ -670,6 +731,16 @@ app.post('/api/paper/trade', ptAuth, async (req, res) => {
     const statusVal  = isLimit
       ? (b.direction==='LONG' ? 'PENDING_LONG' : 'PENDING_SHORT')
       : 'OPEN';
+    // BUG FIX (Infinite Pending): LIMIT orders now expire after 4 hours
+    // instead of staying PENDING forever — by the time a stale limit order
+    // finally fills hours/days later, the original analysis and market
+    // structure it was based on may be completely invalid.
+    const LIMIT_ORDER_TTL_MS = 4 * 60 * 60 * 1000;
+    const expiresAt  = isLimit ? new Date(Date.now() + LIMIT_ORDER_TTL_MS) : null;
+    // BUG FIX (Strict Break-Even): capture the ATR this trade's SL/TP were
+    // based on, so TP1's break-even move can use a noise buffer instead of
+    // an exact-entry stop (see runTPSLCheck).
+    const entryAtr   = parseFloat(b.entryAtr) || null;
 
     // Balance check
     let pb = await PB.findOne({ uid: req.uid });
@@ -700,6 +771,7 @@ app.post('/api/paper/trade', ptAuth, async (req, res) => {
         : 0,
       remainingSize: size,
       status:   statusVal,
+      entryAtr, expiresAt,
       openTime: new Date().toISOString(),
       openedAt: new Date(),
       fillTime: isLimit ? null : new Date().toISOString(),
@@ -905,8 +977,8 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
   // CRITICAL FIX: Function declarations inside try{} blocks cause V8 block-scope
   // hoisting quirks that trigger "Cannot access 'analysis' before initialization"
   // on re-analysis of the same coin. Moving them here (handler scope) fully fixes it.
-  async function _da_klines(sym, interval, limit=200) {
-    const r = await fetchKlinesCached(sym, interval, limit);
+  async function _da_klines(sym, interval, limit=200, skipCache=false) {
+    const r = await fetchKlinesCached(sym, interval, limit, 3, skipCache);
     return sanitizeCandles(r).map(k=>({
       open:parseFloat(k[1]),high:parseFloat(k[2]),low:parseFloat(k[3]),
       close:parseFloat(k[4]),volume:parseFloat(k[5])
@@ -1214,7 +1286,12 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
 
     // Fetch all timeframes in parallel
     const [m15c,h1c,h4c,d1c,btcH4] = await Promise.all([
-      _da_klines(symbol,'15m',200),
+      // BUG FIX (Stale Entry Flaw): M15 is the ENTRY timeframe — a 5-min-old
+      // cached candle here can meaningfully differ from the live market and
+      // cause bad entries/slippage. Force it fresh every time. H1/H4/D1 stay
+      // cached (5 min staleness on those timeframes is immaterial and caching
+      // them avoids hammering Binance on every single analysis request).
+      _da_klines(symbol,'15m',200,true),
       _da_klines(symbol,'1h',300),
       _da_klines(symbol,'4h',200),
       _da_klines(symbol,'1d',250),
@@ -1261,34 +1338,16 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     const h4Fib = _da_fibonacci(h4c, 50);
     const d1Fib = _da_fibonacci(d1c, 50);
 
-    // Open Interest — Binance Futures API (live OI + 4h history for trend)
-    let oiData = null;
-    try {
-      const [oiNow, oiHist] = await Promise.all([
-        fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${symbol}`).then(r => r.json()),
-        fetch(`https://fapi.binance.com/futures/data/openInterestHist?symbol=${symbol}&period=1h&limit=6`).then(r => r.json()),
-      ]);
-      if (oiNow?.openInterest) {
-        const oiCurrent = parseFloat(oiNow.openInterest);
-        // OI trend: compare oldest vs newest in history
-        const oiTrend = Array.isArray(oiHist) && oiHist.length >= 2
-          ? parseFloat(oiHist[oiHist.length-1].sumOpenInterest) > parseFloat(oiHist[0].sumOpenInterest)
-            ? 'RISING' : 'FALLING'
-          : 'UNKNOWN';
-        // OI + Price interpretation
-        const lastClose = h1c[h1c.length-1].close;
-        const prevClose = h1c[h1c.length-7]?.close || lastClose;
-        const priceDir  = lastClose > prevClose ? 'UP' : 'DOWN';
-        // Classic OI interpretation
-        const oiSignal =
-          oiTrend === 'RISING'  && priceDir === 'UP'   ? 'BULLISH_CONTINUATION'   : // new longs entering
-          oiTrend === 'RISING'  && priceDir === 'DOWN'  ? 'BEARISH_CONTINUATION'   : // new shorts entering
-          oiTrend === 'FALLING' && priceDir === 'UP'    ? 'SHORT_SQUEEZE'          : // shorts covering → bullish
-          oiTrend === 'FALLING' && priceDir === 'DOWN'  ? 'LONG_LIQUIDATION'       : // longs exiting → bearish
-          'NEUTRAL';
-        oiData = { current: oiCurrent, trend: oiTrend, signal: oiSignal, priceDir };
-      }
-    } catch(_) {}
+    // Open Interest — now reuses market_tools.js's getOpenInterestContext:
+    // same output shape as before, but gains retry+backoff on 429/418,
+    // an 8-second timeout, a 60s cache, AND — critically — shares the same
+    // outbound-request semaphore as every other Binance call in the app
+    // (scan, scan-smart, AI agent tools). Previously this route's ~9 raw
+    // Binance fetches per request were completely uncoordinated with that
+    // limiter, which is exactly the kind of thing that trips Binance's
+    // rate-limit/soft-ban response under concurrent load — appearing to
+    // users as random "analysis failed" errors.
+    const oiData = await marketTools.data.getOpenInterestContext(symbol, h1c);
 
     // ── NEW: Liquidity Guard ───────────────────────────────────
     // The Market Scanner already filters for ≥$15M 24h volume / ≥100k
@@ -1343,16 +1402,9 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     const btcStrength=btcGapPct>1.5?'STRONG_':'';
     const btcTrend=btcPrice>btcEma20Last?btcStrength+'BULL':btcStrength+'BEAR';
 
-    // Funding rate (Binance futures)
-    let fundingRate=null,fundingBias='NEUTRAL';
-    try {
-      const fr=await fetch(`https://fapi.binance.com/fapi/v1/fundingRate?symbol=${symbol}&limit=1`);
-      const fd=await fr.json();
-      if(Array.isArray(fd)&&fd.length) {
-        fundingRate=parseFloat(fd[0].fundingRate)*100;
-        fundingBias=fundingRate>0.01?'LONGS_PAYING':fundingRate<-0.01?'SHORTS_PAYING':'NEUTRAL';
-      }
-    } catch(_){}
+    // Funding rate — now reuses market_tools.js's getFundingRateContext
+    // (same retry/backoff/shared-rate-limit benefit as Open Interest above).
+    const { fundingRate, fundingBias } = await marketTools.data.getFundingRateContext(symbol);
 
     // Build raw data object
     const rawData = {
@@ -1513,6 +1565,15 @@ Rule: If confluenceScore < ${CONFLUENCE_THRESHOLD}, set overallBias to NEUTRAL.`
     const ictContext = ictLines.length ? '\n\nICT/SMC ADVANCED DATA:\n' + ictLines.join('\n')
       + '\n(ICT RULES: Never take a LONG in PREMIUM zone or SHORT in DISCOUNT zone unless there is a confirmed Liquidity Sweep in that direction. Fibonacci Extensions are the preferred TP targets — use them over arbitrary levels. A Liquidity Sweep on the entry timeframe adds +1 to confluenceScore and is a high-quality trigger.)' : '';
 
+    // ── NEW: Market Memory — real observed history, not a live snapshot ──
+    // getRecentContext() reads snapshots collected by the 24/7 background
+    // collector (market_memory.js) over the last 7 days for this exact
+    // symbol. If the collector hasn't been running long enough yet (or is
+    // disabled), this simply returns available:false and contributes
+    // nothing — same behavior as before this feature existed.
+    const memoryContext = marketMemory.getRecentContext(symbol, 7);
+    const marketMemoryPromptBlock = memoryContext.available ? '\n\n' + memoryContext.promptLine : '';
+
     // ── Groq AI Analysis ─────────────────────────────────────
     // DB ලේ key set කරලා ඇත්නම් ඒක use කරනවා, නැත්නම් .env ලේ key
     const GROQ_API_KEY = (globalSettings.groq_api_key && globalSettings.groq_api_key.trim())
@@ -1526,7 +1587,7 @@ Rule: If confluenceScore < ${CONFLUENCE_THRESHOLD}, set overallBias to NEUTRAL.`
     const earlyWarnText = earlyWarnings.length ? '\nEARLY WARNINGS (M15/H1 signals):\n' + earlyWarnings.map((w,i) => (i+1)+'. '+w).join('\n') : '';
     const prompt = `You are a professional crypto futures trader who provides institutional-grade signals. Analyze ${coin}/USDT and respond ONLY with valid JSON.
 
-${thesisContext}${earlyWarnText}${newsContext}${liquidityContext}${ictContext}
+${thesisContext}${earlyWarnText}${newsContext}${liquidityContext}${ictContext}${marketMemoryPromptBlock}
 
 MARKET DATA:
 - Price: $${price}
@@ -1668,44 +1729,77 @@ Respond with ONLY this JSON (no markdown, no explanation):
   }
 }`;
 
-    const groqController = new AbortController();
-    const groqTimeout = setTimeout(() => groqController.abort(), 60000); // 60s timeout — Groq can be slow
-    let groqRes;
-    try {
-      groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        signal: groqController.signal,
-        headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+GROQ_API_KEY },
-        body: JSON.stringify({
-          model: GROQ_MODEL,
-          max_tokens: GROQ_MAX_TOKENS,
-          temperature: GROQ_TEMPERATURE,
-          messages: [{ role:'user', content:prompt }]
-        })
-      });
-    } catch(fetchErr) {
-      if (fetchErr.name === 'AbortError') throw new Error('Groq AI timed out (>60s) — server is overloaded. Please try again in a moment.');
-      throw new Error('Groq API unreachable: ' + fetchErr.message);
-    } finally {
-      clearTimeout(groqTimeout);
+    // ── RELIABILITY UPGRADE: Groq call + JSON parse, with repair + 1 retry ──
+    // Root cause of most "analysis failed" errors reported in production:
+    // the model occasionally (a) truncates JSON when it runs long, (b) adds
+    // a stray sentence before/after the JSON block despite instructions, or
+    // (c) the API call itself times out/errors transiently. Previously ANY
+    // of these caused an immediate hard failure and the user had to redo
+    // the whole request (re-burning the ~9 Binance calls above). Now we:
+    //   1. Try to parse the raw response.
+    //   2. If that fails, try to extract the substring between the first
+    //      '{' and the last '}' — recovers the common "extra prose around
+    //      valid JSON" case without needing another API call.
+    //   3. If that STILL fails (truly truncated/broken JSON), make exactly
+    //      ONE retry call to Groq with an explicit "reply with ONLY the
+    //      JSON object, nothing else" reminder appended.
+    //   4. Only after all of that fails do we surface an error to the user.
+    async function callGroq(promptText) {
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), 60000); // 60s — Groq can be slow
+      try {
+        const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          signal: ctrl.signal,
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_API_KEY },
+          body: JSON.stringify({
+            model: GROQ_MODEL,
+            max_tokens: GROQ_MAX_TOKENS,
+            temperature: GROQ_TEMPERATURE,
+            messages: [{ role: 'user', content: promptText }],
+          }),
+        });
+        if (!r.ok) {
+          const errText = await r.text();
+          throw new Error(`Groq API error: ${r.status} — ${errText.slice(0, 200)}`);
+        }
+        const data = await r.json();
+        return data.choices?.[0]?.message?.content || '';
+      } catch (fetchErr) {
+        if (fetchErr.name === 'AbortError') throw new Error('Groq AI timed out (>60s) — server is overloaded. Please try again in a moment.');
+        throw fetchErr;
+      } finally {
+        clearTimeout(timeout);
+      }
     }
 
-    if (!groqRes.ok) {
-      const errText = await groqRes.text();
-      throw new Error(`Groq API error: ${groqRes.status} — ${errText.slice(0,200)}`);
+    function tryParseAnalysis(rawText) {
+      const cleaned = rawText.replace(/```json|```/g, '').trim();
+      try { return JSON.parse(cleaned); } catch (_) { /* fall through to repair */ }
+      // Repair attempt: slice out the outermost { ... } block, in case the
+      // model added a leading/trailing sentence around otherwise-valid JSON.
+      const start = cleaned.indexOf('{');
+      const end = cleaned.lastIndexOf('}');
+      if (start !== -1 && end !== -1 && end > start) {
+        try { return JSON.parse(cleaned.slice(start, end + 1)); } catch (_) { /* still broken */ }
+      }
+      return null;
     }
 
-    const groqData = await groqRes.json();
-    let aiText = groqData.choices?.[0]?.message?.content || '';
-    // Strip markdown fences if present
-    aiText = aiText.replace(/```json|```/g,'').trim();
-    // analysis is declared at function scope (before try block) — no TDZ possible
-    try { analysis = JSON.parse(aiText); }
-    catch(e) { throw new Error('AI response parse failed: ' + aiText.slice(0,100)); }
+    let aiText = await callGroq(prompt);
+    analysis = tryParseAnalysis(aiText);
+
+    if (!analysis || typeof analysis !== 'object') {
+      // Single retry with a stricter reminder — cheap insurance against a
+      // one-off truncation/formatting slip, before we give up and error out.
+      console.warn('/api/deep-analysis: first Groq response failed to parse — retrying once');
+      aiText = await callGroq(prompt + '\n\nIMPORTANT: Reply with ONLY the raw JSON object. No markdown fences, no commentary before or after it.');
+      analysis = tryParseAnalysis(aiText);
+    }
 
     // FIX: Guard against null/non-object — prevents "Cannot access analysis before initialization" style errors
     if (!analysis || typeof analysis !== 'object') {
-      throw new Error('AI returned invalid response (expected JSON object). Please try again.');
+      throw new Error('AI returned invalid response after retry (expected JSON object). Please try again.');
     }
 
     // ── Enforce confluence threshold — NEUTRAL if score too low ────
@@ -1781,6 +1875,7 @@ Respond with ONLY this JSON (no markdown, no explanation):
       newsRisk: newsRiskFlag,
       liquidityWarning,
       ictData,   // NEW: killZone, premiumDiscount, liquiditySweep, fibExtensions
+      marketMemory: memoryContext.summary, // NEW: 7-day observed behavior summary (null if collector hasn't run long enough yet)
       analysis,
       rawData,
       // Advanced indicators for frontend display
@@ -2266,6 +2361,7 @@ app.get('/api/admin/settings', verifyAdmin, (req, res) => {
       highImpactMode:     globalSettings.highImpactMode     || false,
       highImpactMsg:      globalSettings.highImpactMsg      || '',
       autoEngine:         globalSettings.autoEngine         || false,
+      limitOrderExpiryHours: globalSettings.limitOrderExpiryHours || 4,
     }
   });
 });
@@ -2273,7 +2369,7 @@ app.get('/api/admin/settings', verifyAdmin, (req, res) => {
 /* PATCH /api/admin/settings — save one or more settings */
 app.patch('/api/admin/settings', verifyAdmin, async (req, res) => {
   try {
-    const allowed = ['maintenance','maintenanceMsg','allowRegistrations','highImpactMode','highImpactMsg','autoEngine'];
+    const allowed = ['maintenance','maintenanceMsg','allowRegistrations','highImpactMode','highImpactMsg','autoEngine','limitOrderExpiryHours'];
     for (const k of allowed) {
       if (req.body[k] !== undefined) {
         globalSettings[k] = req.body[k];
@@ -2287,7 +2383,7 @@ app.patch('/api/admin/settings', verifyAdmin, async (req, res) => {
 /* POST /api/admin/settings (alias) */
 app.post('/api/admin/settings', verifyAdmin, async (req, res) => {
   try {
-    const allowed = ['maintenance','maintenanceMsg','allowRegistrations','highImpactMode','highImpactMsg','autoEngine'];
+    const allowed = ['maintenance','maintenanceMsg','allowRegistrations','highImpactMode','highImpactMsg','autoEngine','limitOrderExpiryHours'];
     for (const k of allowed) {
       if (req.body[k] !== undefined) {
         globalSettings[k] = req.body[k];
@@ -2560,6 +2656,66 @@ app.post('/api/admin/ai-settings/test', verifyAdmin, async (req, res) => {
   } catch(e) { res.json({ success: false, error: 'Connection error: ' + e.message }); }
 });
 
+// ── NEW: Market Memory (24/7 historical collector) — admin settings ──
+app.get('/api/admin/market-memory-settings', verifyAdmin, (req, res) => {
+  res.json({
+    success: true,
+    settings: {
+      marketMemoryEnabled: !!globalSettings.marketMemoryEnabled,
+      marketMemorySymbols: globalSettings.marketMemorySymbols || SETTINGS_DEFAULTS.marketMemorySymbols,
+      marketMemoryIntervalMin: globalSettings.marketMemoryIntervalMin || 15,
+      marketMemoryRetentionDays: globalSettings.marketMemoryRetentionDays || 30,
+      marketMemoryCloudSyncEnabled: !!globalSettings.marketMemoryCloudSyncEnabled,
+      marketMemoryCloudRemote: globalSettings.marketMemoryCloudRemote || '',
+    },
+    status: marketMemory.getStatus(),
+    vercelWarning: !!process.env.VERCEL, // collector cannot run on serverless — surface this to the admin UI
+  });
+});
+
+app.post('/api/admin/market-memory-settings', verifyAdmin, async (req, res) => {
+  try {
+    const {
+      marketMemoryEnabled, marketMemorySymbols, marketMemoryIntervalMin,
+      marketMemoryRetentionDays, marketMemoryCloudSyncEnabled, marketMemoryCloudRemote,
+    } = req.body;
+
+    const updates = {};
+    if (marketMemoryEnabled !== undefined) { updates.marketMemoryEnabled = !!marketMemoryEnabled; }
+    if (marketMemorySymbols) {
+      const cleaned = marketMemorySymbols.toUpperCase().replace(/[^A-Z0-9,]/g, '');
+      if (!cleaned) return res.status(400).json({ success: false, error: 'symbols list is invalid.' });
+      updates.marketMemorySymbols = cleaned;
+    }
+    if (marketMemoryIntervalMin !== undefined) {
+      const v = parseInt(marketMemoryIntervalMin);
+      if (!v || v < 5 || v > 240) return res.status(400).json({ success: false, error: 'interval must be 5–240 minutes.' });
+      updates.marketMemoryIntervalMin = v;
+    }
+    if (marketMemoryRetentionDays !== undefined) {
+      const v = parseInt(marketMemoryRetentionDays);
+      if (!v || v < 1 || v > 365) return res.status(400).json({ success: false, error: 'retention must be 1–365 days.' });
+      updates.marketMemoryRetentionDays = v;
+    }
+    if (marketMemoryCloudSyncEnabled !== undefined) { updates.marketMemoryCloudSyncEnabled = !!marketMemoryCloudSyncEnabled; }
+    if (marketMemoryCloudRemote !== undefined) { updates.marketMemoryCloudRemote = marketMemoryCloudRemote.trim(); }
+
+    for (const [key, value] of Object.entries(updates)) {
+      globalSettings[key] = value;
+      await saveSettingToDB(key, value);
+    }
+    applyMarketMemorySettings(); // restart collector immediately with new settings
+
+    console.log(`[Admin] Market Memory settings updated by ${req.dbUser?.email}:`, Object.keys(updates).join(', '));
+    res.json({ success: true, message: 'Market Memory settings updated.', updated: Object.keys(updates), status: marketMemory.getStatus() });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// Lightweight status-only poll (admin dashboard can refresh this without resending settings)
+app.get('/api/admin/market-memory-status', verifyAdmin, (req, res) => {
+  res.json({ success: true, status: marketMemory.getStatus(), vercelWarning: !!process.env.VERCEL });
+});
+
 // ── HTTP Server + WebSocket ───────────────────────────────────
 const PORT   = process.env.PORT || 3000;
 const server = require('http').createServer(app);
@@ -2636,6 +2792,36 @@ if (!process.env.VERCEL) {
 // ── Auto TP/SL Check Engine ──────────────────────────────────────────────────
 let _tpslRunning = false; // concurrency lock — prevents double-trigger if a cycle takes >30s
 
+// VERIFIED BUG FIX ("Wick Miss"): getLivePrice() only returns the single
+// last-trade price at poll time. If price wicks through a TP/SL level and
+// back within the ~30s between polls, a ticker-only check misses it
+// entirely — profitable trades were being recorded as losses. Fix: fetch
+// FRESH (uncached, on purpose) 1m candles per symbol every cycle and use
+// their high/low, not just the ticker. limit=20 covers the same call
+// used for the break-even buffer below (Fix for BUG #4) — one API call
+// serves both purposes.
+async function getRecentHighLowRange(symbol) {
+  try {
+    const fr = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=1m&limit=20`);
+    let d = null;
+    if (fr.ok) { const j = await fr.json(); if (Array.isArray(j) && j.length) d = j; }
+    if (!d) {
+      const sr = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1m&limit=20`);
+      if (sr.ok) { const j = await sr.json(); if (Array.isArray(j) && j.length) d = j; }
+    }
+    if (!d) return null;
+    // Last 3 candles (~last 2-3 min) — wide enough to fully cover the 30s
+    // poll gap with overlap, so no wick between polls can be missed.
+    const recent = d.slice(-3);
+    const recentHigh = Math.max(...recent.map(k => parseFloat(k[2])));
+    const recentLow  = Math.min(...recent.map(k => parseFloat(k[3])));
+    // Simplified average-range over all 20 candles, used as the
+    // break-even SL buffer (approximates ATR without a second API call).
+    const avgRange = d.reduce((sum, k) => sum + (parseFloat(k[2]) - parseFloat(k[3])), 0) / d.length;
+    return { recentHigh, recentLow, avgRange, lastClose: parseFloat(d[d.length - 1][4]) };
+  } catch (_) { return null; }
+}
+
 async function runTPSLCheck() {
   if (_tpslRunning) return; // skip if previous cycle still running
   _tpslRunning = true;
@@ -2650,8 +2836,10 @@ async function runTPSLCheck() {
       openTrades.map(t => normalizePair(t.pair || t.symbol)).filter(Boolean)
     )];
     const priceMap = {};
+    const rangeMap = {}; // NEW: { recentHigh, recentLow, avgRange, lastClose } per symbol
     await Promise.all(uniqueSymbols.map(async sym => {
       try { const p = await getLivePrice(sym); if (p) priceMap[sym] = p; } catch(_) {}
+      try { const r = await getRecentHighLowRange(sym); if (r) rangeMap[sym] = r; } catch(_) {}
     }));
 
     for (const trade of openTrades) {
@@ -2660,6 +2848,7 @@ async function runTPSLCheck() {
         if (!symbol) continue;
         const price = priceMap[symbol];
         if (!price) continue;
+        const range = rangeMap[symbol]; // { recentHigh, recentLow, avgRange, lastClose } or undefined
 
         const isLong = trade.direction === 'LONG';
         const entry  = trade.entryPrice || trade.entry;
@@ -2670,12 +2859,35 @@ async function runTPSLCheck() {
         const lev      = trade.leverage || 1;
         const notional = size * lev; // ← always from current size
 
+        // ── VERIFIED BUG FIX #3 ("Infinite Pending"): expire stale limit orders ──
+        // Previously a PENDING_LONG/PENDING_SHORT order sat forever — if price
+        // wandered off and came back hours later, it would fill against a
+        // completely stale AI thesis. Now: cancel + refund after the
+        // configured window (default 4h, admin-adjustable).
+        if (['PENDING_LONG', 'PENDING_SHORT'].includes(trade.status)) {
+          const expiryHours = globalSettings.limitOrderExpiryHours || 4;
+          const ageMs = Date.now() - new Date(trade.openedAt || trade.openTime || Date.now()).getTime();
+          if (ageMs > expiryHours * 60 * 60 * 1000) {
+            await PT.findByIdAndUpdate(trade._id, {
+              status: 'CANCELLED', closedAt: new Date(), closeTime: new Date().toISOString(),
+            });
+            await PB.findOneAndUpdate({ uid: trade.uid }, { $inc: { balance: size } }, { upsert: true });
+            continue;
+          }
+        }
+
         // ── Fill pending limit orders ─────────────────────────────
-        if (trade.status === 'PENDING_LONG' && price <= trade.triggerPrice) {
+        // VERIFIED BUG FIX #1 ("Wick Miss"): use recent high/low, not just
+        // the ticker price, so a brief spike through the trigger/TP/SL
+        // level between 30s polls is never missed.
+        const hi = range ? range.recentHigh : price;
+        const lo = range ? range.recentLow  : price;
+
+        if (trade.status === 'PENDING_LONG' && lo <= trade.triggerPrice) {
           await PT.findByIdAndUpdate(trade._id, { status: 'OPEN', fillTime: new Date() });
           continue;
         }
-        if (trade.status === 'PENDING_SHORT' && price >= trade.triggerPrice) {
+        if (trade.status === 'PENDING_SHORT' && hi >= trade.triggerPrice) {
           await PT.findByIdAndUpdate(trade._id, { status: 'OPEN', fillTime: new Date() });
           continue;
         }
@@ -2687,15 +2899,26 @@ async function runTPSLCheck() {
         const tp2 = trade.tp2;
 
         // ── TP1 — partial close 50% ───────────────────────────────
-        if (trade.status === 'OPEN' && tp1 && (isLong ? price >= tp1 : price <= tp1)) {
+        if (trade.status === 'OPEN' && tp1 && (isLong ? hi >= tp1 : lo <= tp1)) {
           // FIX: use tp1 as fill price (not live price) — avoids gap-through distortion
           const tp1Pnl = isLong ? (tp1 - entry) / entry * notional * 0.5
                                 : (entry - tp1) / entry * notional * 0.5;
+          // VERIFIED BUG FIX #4 ("Strict Break-Even"): moving SL to the exact
+          // entry price gets clipped by ordinary post-TP1 retest noise,
+          // closing otherwise-fine trades at ~0. Prefer the ATR captured at
+          // trade-open time (trade.entryAtr — the real 1H ATR from the
+          // analysis that produced this SL/TP); fall back to the live
+          // avgRange proxy, then a flat 0.15% if neither is available.
+          const beBuffer = trade.entryAtr ? trade.entryAtr * 0.5
+            : range ? range.avgRange * 0.5
+            : entry * 0.0015;
+          const bufferedBE = isLong ? entry - beBuffer : entry + beBuffer;
           await PT.findByIdAndUpdate(trade._id, {
             status: 'TP1_HIT',
             tp1HitPrice: tp1,
             tp1Pnl,
-            currentSl: entry,          // move SL to break-even
+            currentSl: bufferedBE,      // move SL to buffered break-even, not exact entry
+            beActive: true,
             remainingSize: size * 0.5, // 50% remains open
           });
           const refund = size * 0.5 + tp1Pnl;
@@ -2704,7 +2927,7 @@ async function runTPSLCheck() {
         }
 
         // ── TP2 — full close of remaining position ────────────────
-        if (tp2 && (isLong ? price >= tp2 : price <= tp2)) {
+        if (tp2 && (isLong ? hi >= tp2 : lo <= tp2)) {
           // FIX: use tp2 as fill price for PnL accuracy
           const pnl = isLong ? (tp2 - entry) / entry * notional
                              : (entry - tp2) / entry * notional;
@@ -2714,7 +2937,7 @@ async function runTPSLCheck() {
         }
 
         // ── SL — close at stop level ──────────────────────────────
-        if (sl && (isLong ? price <= sl : price >= sl)) {
+        if (sl && (isLong ? lo <= sl : hi >= sl)) {
           // FIX: use sl as fill price (prevents gap-below SL from amplifying loss unrealistically)
           const pnl = isLong ? (sl - entry) / entry * notional
                              : (entry - sl) / entry * notional;
@@ -2726,9 +2949,12 @@ async function runTPSLCheck() {
         // ── Trailing SL — only for TP1_HIT trades ────────────────
         if (trade.status === 'TP1_HIT') {
           const trailOffset = Math.abs(trade.tp1 - entry) * 0.5;
+          // Use the recent high/low extreme (not just the last tick) so a
+          // favorable wick is locked in even if price has since pulled back.
+          const trailAnchor = isLong ? (range ? range.recentHigh : price) : (range ? range.recentLow : price);
           const newTrailSL  = isLong
-            ? Math.max(entry, price - trailOffset)  // trails up, never below BE
-            : Math.min(entry, price + trailOffset);  // trails down, never above BE
+            ? Math.max(entry, trailAnchor - trailOffset)  // trails up, never below BE
+            : Math.min(entry, trailAnchor + trailOffset);  // trails down, never above BE
           if (newTrailSL !== trade.currentSl) {
             await PT.findByIdAndUpdate(trade._id, { currentSl: newTrailSL });
           }

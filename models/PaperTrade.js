@@ -15,6 +15,13 @@ const PaperTradeSchema = new mongoose.Schema({
   leverage:      { type: Number, default: 10 },
   size:          { type: Number, default: 100 },   // USDT amount
   remainingSize: { type: Number },
+  // NEW: captured from the analysis that produced this trade's SL/TP —
+  // used to give Break-Even a sensible noise buffer instead of an exact
+  // entry-price stop (see runTPSLCheck's TP1 handling in server.js).
+  entryAtr:      { type: Number },
+  // NEW: LIMIT orders expire after this time instead of staying pending
+  // forever — set at creation time (see POST /api/paper/trade).
+  expiresAt:     { type: Date },
   // FIX BUG 1: Added 'PENDING' to enum so LIMIT orders don't fail validation
   status: {
     type: String,
