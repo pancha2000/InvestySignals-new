@@ -113,6 +113,8 @@
             <label class="layer-toggle"><input type="checkbox" id="layerFibExt"> <span class="layer-color-dot" style="background:#00D97E;"></span><span>Fibonacci Extension</span></label>
             <label class="layer-toggle"><input type="checkbox" id="layerPD"> <span class="layer-color-dot" style="background:#FF3B5C;"></span><span>ICT Premium / Discount</span></label>
             <label class="layer-toggle"><input type="checkbox" id="layerSweep"> <span class="layer-color-dot" style="background:#FFD166;"></span><span>Liquidity Sweep Markers</span></label>
+            <label class="layer-toggle"><input type="checkbox" id="layerBOS"> <span class="layer-color-dot" style="background:#3BFFCB;"></span><span>BOS / CHoCH</span></label>
+            <label class="layer-toggle"><input type="checkbox" id="layerDiv"> <span class="layer-color-dot" style="background:#FF8C42;"></span><span>RSI Divergence</span></label>
         </div>
         <div class="kz-badge inactive" id="kzBadge">⏳ Kill Zone status loading…</div>
         <div class="indicator-strip" id="indicatorStrip"></div>
@@ -305,17 +307,72 @@ function clearPriceLines(group) {
   priceLines[group] = [];
 }
 
+// ── Filled-rectangle plugin (Lightweight Charts "Series Primitives" API) ──
+// This is the real canvas-drawing plugin approach for TRUE filled zones,
+// on top of the dashed-outline lines above (which stay as a guaranteed-
+// visible fallback). Defensively wrapped end-to-end: if this browser's
+// loaded library build doesn't support attachPrimitive (older cached
+// version, CDN serving a slightly different build, etc.), every call here
+// silently no-ops and the outline-only rendering still works exactly as
+// before — a filled-box failure can never take the whole chart down.
+class FilledRectangle {
+  constructor(p1, p2, fillColor) { this._p1 = p1; this._p2 = p2; this._fillColor = fillColor; this._chart = null; this._series = null; }
+  attached({ chart, series }) { this._chart = chart; this._series = series; }
+  detached() { this._chart = null; this._series = null; }
+  updateAllViews() {}
+  paneViews() {
+    const p1 = this._p1, p2 = this._p2, fillColor = this._fillColor;
+    const chart = this._chart, series = this._series;
+    return [{
+      renderer() {
+        return {
+          draw(target) {
+            if (!chart || !series) return;
+            try {
+              target.useBitmapCoordinateSpace((scope) => {
+                const ts = chart.timeScale();
+                const x1 = ts.timeToCoordinate(p1.time), x2 = ts.timeToCoordinate(p2.time);
+                const y1 = series.priceToCoordinate(p1.price), y2 = series.priceToCoordinate(p2.price);
+                if (x1 == null || x2 == null || y1 == null || y2 == null) return;
+                const ctx = scope.context;
+                const rx = scope.horizontalPixelRatio, ry = scope.verticalPixelRatio;
+                const left = Math.min(x1, x2) * rx, right = Math.max(x1, x2) * rx;
+                const top = Math.min(y1, y2) * ry, bottom = Math.max(y1, y2) * ry;
+                ctx.fillStyle = fillColor;
+                ctx.fillRect(left, top, Math.max(1, right - left), Math.max(1, bottom - top));
+              });
+            } catch (_) { /* pixel-space API mismatch on this build — outline lines already show the zone */ }
+          },
+        };
+      },
+    }];
+  }
+}
+let activePrimitives = [];
+function clearPrimitives() {
+  activePrimitives.forEach(p => { try { candleSeries.detachPrimitive(p); } catch (_) {} });
+  activePrimitives = [];
+}
+function tryAttachFilledBox(zone, fillColor) {
+  try {
+    if (typeof candleSeries.attachPrimitive !== 'function') return; // library build too old — outline-only, no error
+    const rect = new FilledRectangle({ time: zone.time, price: zone.high }, { time: zone.endTime, price: zone.low }, fillColor);
+    candleSeries.attachPrimitive(rect);
+    activePrimitives.push(rect);
+  } catch (_) { /* never let a primitive failure break the rest of the chart */ }
+}
+
 // Time-bounded zone outlines (FVG/OB) use real line SERIES (not price
 // lines, which always span the full chart width) so they only draw across
 // the [time, endTime] window where the zone actually exists — this is
 // what fixes the "spans the whole chart" complaint.
-let boxSeries = { FVG: [], OB: [] };
+let boxSeries = { FVG: [], OB: [], DIV: [] };
 function clearBoxSeries(group) {
   (boxSeries[group] || []).forEach(s => chart.removeSeries(s));
   boxSeries[group] = [];
 }
-function drawBoxEdges(group, zone, color, labelPrefix) {
-  [zone.high, zone.low].forEach((price, i) => {
+function drawBoxEdges(group, zone, color, fillColor) {
+  [zone.high, zone.low].forEach((price) => {
     const s = chart.addLineSeries({
       color, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
       lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
@@ -323,11 +380,13 @@ function drawBoxEdges(group, zone, color, labelPrefix) {
     s.setData([{ time: zone.time, value: price }, { time: zone.endTime, value: price }]);
     boxSeries[group].push(s);
   });
+  if (fillColor) tryAttachFilledBox(zone, fillColor);
 }
 
 function redrawLayers() {
   if (!overlaysCache) return;
   const o = overlaysCache;
+  clearPrimitives(); // full redraw each time — clear old filled boxes before re-adding
 
   // Support / Resistance — BUG FIX: now color-coded by CURRENT role
   // (green=support/below price, red=resistance/above price) instead of
@@ -391,29 +450,66 @@ function redrawLayers() {
   // (findFairValueGaps filters them out), so nothing extra needed there.
   clearBoxSeries('FVG');
   if (document.getElementById('layerFVG').checked && o.fairValueGaps) {
-    o.fairValueGaps.forEach(f => drawBoxEdges('FVG', f, f.type === 'BULL' ? '#8B5CF6' : '#B18CFF'));
+    o.fairValueGaps.forEach(f => drawBoxEdges('FVG', f, f.type === 'BULL' ? '#8B5CF6' : '#B18CFF', f.type === 'BULL' ? 'rgba(139,92,246,0.15)' : 'rgba(177,140,255,0.15)'));
   }
 
   clearBoxSeries('OB');
   if (document.getElementById('layerOB').checked && o.orderBlocks) {
-    o.orderBlocks.forEach(ob => drawBoxEdges('OB', ob, ob.type === 'BULL_OB' ? '#F0B429' : '#FFD166'));
+    o.orderBlocks.forEach(ob => drawBoxEdges('OB', ob, ob.type === 'BULL_OB' ? '#F0B429' : '#FFD166', ob.type === 'BULL_OB' ? 'rgba(240,180,41,0.15)' : 'rgba(255,209,102,0.15)'));
   }
 
   // Indicator readout strip — "everything the analysis used", surfaced
   // as numbers rather than a full separate RSI/MACD sub-pane.
   renderIndicatorStrip(o.indicators);
 
-  // Liquidity Sweep — marker at the sweep candle, if one exists
+  // Markers — Liquidity Sweep + BOS/CHoCH share ONE series (Lightweight
+  // Charts only supports a single setMarkers() call per series; a second
+  // call would silently replace the first), so build one combined,
+  // time-sorted array from whichever layers are switched on.
+  let markers = [];
   if (document.getElementById('layerSweep').checked && o.liquiditySweep && o.liquiditySweep.recentSweep) {
     const sweep = o.liquiditySweep.recentSweep;
-    candleSeries.setMarkers([{
+    markers.push({
       time: allCandles.length ? allCandles[allCandles.length - 1].time : undefined,
       position: sweep.type === 'BUY_SIDE_SWEPT' ? 'aboveBar' : 'belowBar',
       color: '#FFD166', shape: sweep.type === 'BUY_SIDE_SWEPT' ? 'arrowDown' : 'arrowUp',
       text: sweep.type === 'BUY_SIDE_SWEPT' ? 'Sell-side trigger' : 'Buy-side trigger',
-    }]);
-  } else {
-    candleSeries.setMarkers([]);
+    });
+  }
+  if (document.getElementById('layerBOS').checked && o.structureEvents) {
+    o.structureEvents.forEach(ev => {
+      const bullish = ev.type.endsWith('BULLISH');
+      const isChoch = ev.type.startsWith('CHOCH');
+      markers.push({
+        time: ev.time,
+        position: bullish ? 'belowBar' : 'aboveBar',
+        color: isChoch ? '#3BFFCB' : (bullish ? '#00D97E' : '#FF3B5C'),
+        shape: bullish ? 'arrowUp' : 'arrowDown',
+        text: ev.type.replace('_', ' '),
+      });
+    });
+  }
+  markers = markers.filter(m => m.time !== undefined).sort((a, b) => a.time - b.time);
+  candleSeries.setMarkers(markers);
+
+  // RSI Divergence — drawn as a diagonal line connecting the two real
+  // price pivots that form the divergence (the standard way every
+  // charting platform shows it), not just a text verdict.
+  clearBoxSeries('DIV');
+  if (document.getElementById('layerDiv').checked && o.rsiDivergences) {
+    o.rsiDivergences.forEach(d => {
+      const color = d.type === 'BEARISH_DIV' ? '#FF3B5C' : '#00D97E';
+      const s = chart.addLineSeries({
+        color, lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Solid,
+        lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
+      });
+      s.setData([
+        { time: d.point1.time, value: d.point1.price },
+        { time: d.point2.time, value: d.point2.price },
+      ]);
+      boxSeries.DIV = boxSeries.DIV || [];
+      boxSeries.DIV.push(s);
+    });
   }
 }
 
@@ -441,11 +537,11 @@ function updateKillZoneBadge(kz) {
 }
 
 function anyLayerOn() {
-  return ['layerSR','layerFVG','layerOB','layerFibRet','layerFibExt','layerPD','layerSweep']
+  return ['layerSR','layerFVG','layerOB','layerFibRet','layerFibExt','layerPD','layerSweep','layerBOS','layerDiv']
     .some(id => document.getElementById(id).checked);
 }
 
-['layerSR','layerFVG','layerOB','layerFibRet','layerFibExt','layerPD','layerSweep'].forEach(id => {
+['layerSR','layerFVG','layerOB','layerFibRet','layerFibExt','layerPD','layerSweep','layerBOS','layerDiv'].forEach(id => {
   document.getElementById(id).addEventListener('change', async () => {
     if (!overlaysCache && anyLayerOn()) await loadOverlays();
     else redrawLayers();

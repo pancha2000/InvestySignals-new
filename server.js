@@ -625,6 +625,20 @@ app.get('/api/chart/overlays', async (req, res) => {
     const liquiditySweep = marketTools.structure.liquiditySweep(candles);
     const killZone = marketTools.structure.killZoneStatus();
 
+    // NEW: positioned BOS/CHoCH events (new detectStructureEvents — see
+    // market_tools.js for why this is separate from the existing
+    // detectStructure() the AI prompt uses).
+    const structureEvents = marketTools.structure.detectStructureEvents(candles);
+
+    // NEW: positioned RSI divergence pairs. rsiSeries() starts at index
+    // `period` of `closes` (it needs `period` candles of warm-up before
+    // the first RSI value exists) — left-pad with nulls so rsiAligned[i]
+    // lines up with candles[i] directly.
+    const RSI_PERIOD = 14;
+    const rsiRaw = marketTools.indicators.rsiSeries(closes, RSI_PERIOD);
+    const rsiAligned = new Array(candles.length - rsiRaw.length).fill(null).concat(rsiRaw);
+    const rsiDivergences = marketTools.candleReading.findRsiDivergences(candles, rsiAligned);
+
     // NEW: numeric indicator snapshot — same values the AI analysis prompt
     // itself sees, surfaced here so the chart page can show "everything
     // the analysis used" without needing a separate RSI/MACD sub-pane.
@@ -647,6 +661,8 @@ app.get('/api/chart/overlays', async (req, res) => {
         premiumDiscount,              // {equilibrium, premium75, discount25, zone} — draw as horizontal lines + label
         liquiditySweep,               // {buySideLiquidity[], sellSideLiquidity[], recentSweep} — draw as markers
         killZone,                     // {inKillZone, activeZones, significance} — draw as a badge, not a chart line
+        structureEvents,              // NEW: [{type: BOS_BULLISH|BOS_BEARISH|CHOCH_BULLISH|CHOCH_BEARISH, time, price}] — draw as markers
+        rsiDivergences,                // NEW: [{type: BULLISH_DIV|BEARISH_DIV, point1:{time,price}, point2:{time,price}}] — draw as connecting lines
         indicators: indicatorSnapshot,// NEW: RSI/MACD/ADX/EMA — same numbers the AI analysis prompt used
       },
     });

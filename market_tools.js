@@ -457,6 +457,57 @@ const structure = {
     return 'NEUTRAL';
   },
 
+  /**
+   * NEW — POSITIONED BOS/CHoCH events for the chart's "BOS / CHoCH" layer.
+   * detectStructure() (above) only returns the CURRENT state as a string,
+   * with no notion of WHERE it happened — fine for the AI prompt, useless
+   * for drawing a marker. This walks the whole candle set, finds swing
+   * highs/lows (a candle whose high/low is the extreme within a
+   * `lookback`-candle window on both sides), and records each time price
+   * breaks through the most recent confirmed swing — BOS if that break
+   * continues the prevailing trend, CHoCH if it reverses it.
+   * candles must already have a `.time` field (as built in /api/chart/*).
+   */
+  detectStructureEvents(candles, lookback = 5, maxResults = 15) {
+    if (candles.length < lookback * 2 + 5) return [];
+    const swings = [];
+    for (let i = lookback; i < candles.length - lookback; i++) {
+      const win = candles.slice(i - lookback, i + lookback + 1);
+      if (candles[i].high === Math.max(...win.map(c => c.high))) swings.push({ idx: i, type: 'HIGH', price: candles[i].high });
+      if (candles[i].low === Math.min(...win.map(c => c.low))) swings.push({ idx: i, type: 'LOW', price: candles[i].low });
+    }
+    const events = [];
+    let trend = 'NEUTRAL';
+    // pendingHigh/pendingLow = the swing currently acting as the breakout
+    // reference. A `swingPtr` walking `swings` in order (already idx-sorted
+    // since built that way above) means each swing is absorbed into
+    // pending exactly once — after a level breaks and fires an event, it's
+    // nulled and can only be replaced by a genuinely NEWER swing, never by
+    // itself again. (An earlier version of this function re-selected the
+    // same already-broken swing on every subsequent candle until a new one
+    // appeared, firing a duplicate BOS event on every candle in between —
+    // caught via a synthetic-data test before shipping.)
+    let pendingHigh = null, pendingLow = null, swingPtr = 0;
+    for (let i = lookback; i < candles.length; i++) {
+      while (swingPtr < swings.length && swings[swingPtr].idx <= i - lookback) {
+        const s = swings[swingPtr];
+        if (s.type === 'HIGH') pendingHigh = s; else pendingLow = s;
+        swingPtr++;
+      }
+      if (pendingHigh && candles[i].close > pendingHigh.price) {
+        events.push({ type: trend === 'BEARISH' ? 'CHOCH_BULLISH' : 'BOS_BULLISH', time: candles[i].time, price: pendingHigh.price });
+        trend = 'BULLISH';
+        pendingHigh = null;
+      }
+      if (pendingLow && candles[i].close < pendingLow.price) {
+        events.push({ type: trend === 'BULLISH' ? 'CHOCH_BEARISH' : 'BOS_BEARISH', time: candles[i].time, price: pendingLow.price });
+        trend = 'BEARISH';
+        pendingLow = null;
+      }
+    }
+    return events.slice(-maxResults);
+  },
+
   /** Fair Value Gaps — unmitigated 3-candle imbalances, most recent 5. */
   findFairValueGaps(candles) {
     const result = [];
@@ -738,6 +789,41 @@ const candleReading = {
     if (currPriceHigh > prevPriceHigh && currRsiHigh < prevRsiHigh) return 'BEARISH_DIV';
     if (currPriceLow < prevPriceLow && currRsiLow > prevRsiLow) return 'BULLISH_DIV';
     return 'NONE';
+  },
+
+  /**
+   * NEW — POSITIONED RSI divergence pairs for the chart's "RSI Divergence"
+   * layer. rsiDivergence() (above) only returns a verdict for the whole
+   * trailing window — this finds actual swing-high/swing-low PAIRS where
+   * price and RSI disagree, so the chart can draw a connecting line
+   * between the two real pivot points (the standard way divergence is
+   * shown on any charting platform).
+   * `rsiArr` must be ALIGNED to `candles` (same length, same indices) —
+   * see the /api/chart/overlays route for how the raw rsiSeries() output
+   * (which starts partway through) gets left-padded to line up.
+   */
+  findRsiDivergences(candles, rsiArr, lookback = 5, maxResults = 5) {
+    const n = Math.min(candles.length, rsiArr.length);
+    if (n < lookback * 2 + 5) return [];
+    const swings = [];
+    for (let i = lookback; i < n - lookback; i++) {
+      if (rsiArr[i] == null) continue; // skip the RSI warm-up period
+      const winC = candles.slice(i - lookback, i + lookback + 1);
+      if (candles[i].high === Math.max(...winC.map(c => c.high))) swings.push({ idx: i, type: 'HIGH', price: candles[i].high, rsi: rsiArr[i], time: candles[i].time });
+      if (candles[i].low === Math.min(...winC.map(c => c.low))) swings.push({ idx: i, type: 'LOW', price: candles[i].low, rsi: rsiArr[i], time: candles[i].time });
+    }
+    const highs = swings.filter(s => s.type === 'HIGH');
+    const lows = swings.filter(s => s.type === 'LOW');
+    const results = [];
+    for (let i = 1; i < highs.length; i++) {
+      const a = highs[i - 1], b = highs[i];
+      if (b.price > a.price && b.rsi < a.rsi) results.push({ type: 'BEARISH_DIV', point1: a, point2: b });
+    }
+    for (let i = 1; i < lows.length; i++) {
+      const a = lows[i - 1], b = lows[i];
+      if (b.price < a.price && b.rsi > a.rsi) results.push({ type: 'BULLISH_DIV', point1: a, point2: b });
+    }
+    return results.slice(-maxResults);
   },
 };
 
