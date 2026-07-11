@@ -195,12 +195,29 @@ let priceLines = { SR: [], FibRet: [], FibExt: [], PD: [], FVG: [], OB: [] };
 let overlaysCache = null;
 
 // ── Data loading ─────────────────────────────────────────────
+// Safe JSON fetch — distinguishes a real API error (JSON body) from a
+// route-not-found/server-error HTML page (the classic "Unexpected token
+// '<'" symptom, which really means "the new route isn't live on the
+// server yet — redeploy/restart needed", not a data problem).
+async function fetchJSON(url) {
+  const r = await fetch(url);
+  const contentType = r.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    const text = await r.text();
+    if (text.trim().startsWith('<')) {
+      throw new Error(`Server returned an HTML page instead of JSON (status ${r.status}). This usually means the server hasn't been restarted since this feature was deployed — restart the Node process (e.g. "pm2 restart all") and hard-refresh this page.`);
+    }
+    throw new Error(`Unexpected response (status ${r.status}): ${text.slice(0,150)}`);
+  }
+  return r.json();
+}
+
 async function loadInitial() {
   noMoreHistory = false;
   document.getElementById('chartLoading').style.display = 'none';
   document.getElementById('chartErrBox').style.display = 'none';
   try {
-    const r = await fetch(`/api/chart/candles?symbol=${currentSymbol}&interval=${currentInterval}&limit=500`).then(r => r.json());
+    const r = await fetchJSON(`/api/chart/candles?symbol=${currentSymbol}&interval=${currentInterval}&limit=500`);
     if (!r.success) { showErr(r.error); return; }
     candleSeries.setData(r.candles);
     volSeries.setData(r.volume);
@@ -229,7 +246,7 @@ async function maybeLoadOlder(range) {
   document.getElementById('chartLoading').style.display = 'block';
   try {
     const endTime = (oldestLoadedTime * 1000) - 1;
-    const r = await fetch(`/api/chart/candles?symbol=${currentSymbol}&interval=${currentInterval}&limit=500&endTime=${endTime}`).then(r => r.json());
+    const r = await fetchJSON(`/api/chart/candles?symbol=${currentSymbol}&interval=${currentInterval}&limit=500&endTime=${endTime}`);
     if (r.success && r.candles.length) {
       prependData(r.candles, r.volume);
       oldestLoadedTime = r.oldestTime;
@@ -270,7 +287,7 @@ function showErr(msg) {
 // ── Overlays (ICT / SMC / Fibonacci) ────────────────────────
 async function loadOverlays() {
   try {
-    const r = await fetch(`/api/chart/overlays?symbol=${currentSymbol}&interval=${currentInterval}`).then(r => r.json());
+    const r = await fetchJSON(`/api/chart/overlays?symbol=${currentSymbol}&interval=${currentInterval}`);
     if (!r.success || !r.overlays) return;
     overlaysCache = r.overlays;
     redrawLayers();
