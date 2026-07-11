@@ -606,7 +606,17 @@ app.get('/api/chart/overlays', async (req, res) => {
     const timeAt = (idxFromEnd) => candles[idxFromEnd] ? candles[idxFromEnd].time : candles[candles.length-1].time;
     const lastTime = candles[candles.length - 1].time;
 
-    const sr = marketTools.structure.findSupportResistanceLevels(candles);
+    const closes = candles.map(c => c.close);
+    const lastClose = closes[closes.length - 1];
+    const sr = marketTools.structure.findSupportResistanceLevels(candles)
+      // BUG FIX: previously returned as a flat, unlabeled price array — the
+      // chart drew every level identically, so a level that flipped from
+      // support to resistance (price broke through it) looked visually
+      // unchanged. Label each level fresh, every request, against the
+      // CURRENT close — a broken support automatically becomes labeled
+      // "resistance" here since it's recomputed from live price, not a
+      // stored/stale role.
+      .map(level => ({ price: level, role: level <= lastClose ? 'SUPPORT' : 'RESISTANCE' }));
     const fvgs = marketTools.structure.findFairValueGaps(candles).map(f => ({ ...f, time: timeAt(f.idx), endTime: lastTime }));
     const obs = marketTools.structure.findOrderBlocks(candles, 5).map(o => ({ ...o, time: timeAt(o.idx), endTime: lastTime }));
     const fibRetracement = marketTools.structure.fibonacciRetracement(candles);
@@ -615,10 +625,21 @@ app.get('/api/chart/overlays', async (req, res) => {
     const liquiditySweep = marketTools.structure.liquiditySweep(candles);
     const killZone = marketTools.structure.killZoneStatus();
 
+    // NEW: numeric indicator snapshot — same values the AI analysis prompt
+    // itself sees, surfaced here so the chart page can show "everything
+    // the analysis used" without needing a separate RSI/MACD sub-pane.
+    const indicatorSnapshot = {
+      rsi: marketTools.indicators.rsiValue(closes),
+      macd: marketTools.indicators.macd(closes),
+      adx: marketTools.indicators.adx(candles),
+      ema20: marketTools.indicators.ema(closes, 20).slice(-1)[0],
+      ema50: marketTools.indicators.ema(closes, 50).slice(-1)[0],
+    };
+
     res.json({
       success: true, symbol, interval,
       overlays: {
-        supportResistance: sr,        // array of price levels — draw as horizontal lines
+        supportResistance: sr,        // [{price, role: SUPPORT|RESISTANCE}] — labeled fresh vs current price every request
         fairValueGaps: fvgs,          // [{type, low, high, time, endTime}] — draw as boxes
         orderBlocks: obs,             // [{type, low, high, bodyLow, bodyHigh, time, endTime}] — draw as boxes
         fibonacciRetracement: fibRetracement, // {swingHigh, swingLow, f236..f786} — draw as horizontal lines
@@ -626,6 +647,7 @@ app.get('/api/chart/overlays', async (req, res) => {
         premiumDiscount,              // {equilibrium, premium75, discount25, zone} — draw as horizontal lines + label
         liquiditySweep,               // {buySideLiquidity[], sellSideLiquidity[], recentSweep} — draw as markers
         killZone,                     // {inKillZone, activeZones, significance} — draw as a badge, not a chart line
+        indicators: indicatorSnapshot,// NEW: RSI/MACD/ADX/EMA — same numbers the AI analysis prompt used
       },
     });
   } catch (err) {

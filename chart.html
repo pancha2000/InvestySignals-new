@@ -45,6 +45,10 @@
   .kz-badge { margin-top:12px; padding:10px 14px; border-radius:var(--radius-sm); font-size:0.78rem; font-family:'JetBrains Mono',monospace; }
   .kz-badge.active { background:rgba(0,217,126,0.08); border:1px solid rgba(0,217,126,0.3); color:var(--green); }
   .kz-badge.inactive { background:var(--surface); border:1px solid var(--border-soft); color:var(--text-muted); }
+  .indicator-strip { margin-top:10px; display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:8px; }
+  .indicator-chip { background:var(--surface); border:1px solid var(--border-soft); border-radius:var(--radius-xs); padding:8px 10px; text-align:center; }
+  .indicator-chip .lbl { font-size:0.65rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; }
+  .indicator-chip .val { font-family:'JetBrains Mono',monospace; font-size:0.9rem; font-weight:700; color:var(--text); margin-top:2px; }
 
   .chart-err { position:absolute; top:0; left:0; right:0; bottom:0; display:none; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:14px; text-align:center; color:var(--red); font-size:0.85rem; background:var(--bg2,#0c0f18); z-index:6; }
   .chart-err button { background:var(--gold-subtle); border:1px solid var(--gold); color:var(--gold); border-radius:var(--radius-xs); padding:8px 16px; font-size:0.8rem; cursor:pointer; font-weight:600; }
@@ -111,6 +115,7 @@
             <label class="layer-toggle"><input type="checkbox" id="layerSweep"> <span class="layer-color-dot" style="background:#FFD166;"></span><span>Liquidity Sweep Markers</span></label>
         </div>
         <div class="kz-badge inactive" id="kzBadge">⏳ Kill Zone status loading…</div>
+        <div class="indicator-strip" id="indicatorStrip"></div>
     </div>
 
 </div>
@@ -300,17 +305,43 @@ function clearPriceLines(group) {
   priceLines[group] = [];
 }
 
+// Time-bounded zone outlines (FVG/OB) use real line SERIES (not price
+// lines, which always span the full chart width) so they only draw across
+// the [time, endTime] window where the zone actually exists — this is
+// what fixes the "spans the whole chart" complaint.
+let boxSeries = { FVG: [], OB: [] };
+function clearBoxSeries(group) {
+  (boxSeries[group] || []).forEach(s => chart.removeSeries(s));
+  boxSeries[group] = [];
+}
+function drawBoxEdges(group, zone, color, labelPrefix) {
+  [zone.high, zone.low].forEach((price, i) => {
+    const s = chart.addLineSeries({
+      color, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
+      lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
+    });
+    s.setData([{ time: zone.time, value: price }, { time: zone.endTime, value: price }]);
+    boxSeries[group].push(s);
+  });
+}
+
 function redrawLayers() {
   if (!overlaysCache) return;
   const o = overlaysCache;
 
-  // Support / Resistance
+  // Support / Resistance — BUG FIX: now color-coded by CURRENT role
+  // (green=support/below price, red=resistance/above price) instead of
+  // one generic blue "S/R" label for everything. Since the backend
+  // recomputes role fresh against the live close on every request, a
+  // broken support automatically shows as resistance here — no stale state.
   clearPriceLines('SR');
   if (document.getElementById('layerSR').checked && o.supportResistance) {
     o.supportResistance.forEach(level => {
+      const isSupport = level.role === 'SUPPORT';
       priceLines.SR.push(candleSeries.createPriceLine({
-        price: level, color: '#3B8BFF', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
-        axisLabelVisible: true, title: 'S/R',
+        price: level.price, color: isSupport ? '#00D97E' : '#FF3B5C', lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true, title: isSupport ? 'Support' : 'Resistance',
       }));
     });
   }
@@ -348,26 +379,29 @@ function redrawLayers() {
     priceLines.PD.push(candleSeries.createPriceLine({ price: p.discount25, color: '#00D97E', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'Discount 25%' }));
   }
 
-  // FVG / Order Blocks — Lightweight Charts has no native filled-rectangle
-  // primitive, so zones are drawn as a top+bottom dashed price-line pair
-  // (a clear "zone boundary" visual without needing a canvas plugin).
-  clearPriceLines('FVG');
+  // FVG / Order Blocks — BUG FIX: previously drawn with createPriceLine,
+  // which ALWAYS spans the entire chart width regardless of the zone's
+  // actual time range — that's why every FVG looked like "one long line
+  // across everything". Now drawn as real line series bounded to
+  // [zone.time, zone.endTime] — only visible where the zone actually
+  // exists. Still an outline (top+bottom edges), not a filled rectangle —
+  // Lightweight Charts has no native filled-box primitive without a
+  // canvas plugin (a real next-step if a solid fill is wanted later).
+  // Already-filled/mitigated FVGs are NOT sent by the backend at all
+  // (findFairValueGaps filters them out), so nothing extra needed there.
+  clearBoxSeries('FVG');
   if (document.getElementById('layerFVG').checked && o.fairValueGaps) {
-    o.fairValueGaps.forEach((f, i) => {
-      const color = f.type === 'BULL' ? '#8B5CF6' : '#B18CFF';
-      priceLines.FVG.push(candleSeries.createPriceLine({ price: f.high, color, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: false, title: 'FVG' + (i+1) + ' top' }));
-      priceLines.FVG.push(candleSeries.createPriceLine({ price: f.low, color, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: false, title: 'FVG' + (i+1) + ' bot' }));
-    });
+    o.fairValueGaps.forEach(f => drawBoxEdges('FVG', f, f.type === 'BULL' ? '#8B5CF6' : '#B18CFF'));
   }
 
-  clearPriceLines('OB');
+  clearBoxSeries('OB');
   if (document.getElementById('layerOB').checked && o.orderBlocks) {
-    o.orderBlocks.forEach((ob, i) => {
-      const color = ob.type === 'BULL_OB' ? '#F0B429' : '#FFD166';
-      priceLines.OB.push(candleSeries.createPriceLine({ price: ob.high, color, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: false, title: 'OB' + (i+1) + ' top' }));
-      priceLines.OB.push(candleSeries.createPriceLine({ price: ob.low, color, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: false, title: 'OB' + (i+1) + ' bot' }));
-    });
+    o.orderBlocks.forEach(ob => drawBoxEdges('OB', ob, ob.type === 'BULL_OB' ? '#F0B429' : '#FFD166'));
   }
+
+  // Indicator readout strip — "everything the analysis used", surfaced
+  // as numbers rather than a full separate RSI/MACD sub-pane.
+  renderIndicatorStrip(o.indicators);
 
   // Liquidity Sweep — marker at the sweep candle, if one exists
   if (document.getElementById('layerSweep').checked && o.liquiditySweep && o.liquiditySweep.recentSweep) {
@@ -381,6 +415,20 @@ function redrawLayers() {
   } else {
     candleSeries.setMarkers([]);
   }
+}
+
+function renderIndicatorStrip(ind) {
+  const el = document.getElementById('indicatorStrip');
+  if (!ind || !el) return;
+  const rsiColor = ind.rsi >= 70 ? 'var(--red)' : ind.rsi <= 30 ? 'var(--green)' : 'var(--text)';
+  const macdColor = ind.macd && ind.macd.histogram >= 0 ? 'var(--green)' : 'var(--red)';
+  const chip = (label, value, color) => `<div class="indicator-chip"><div class="lbl">${label}</div><div class="val" style="color:${color||'var(--text)'};">${value}</div></div>`;
+  el.innerHTML =
+    chip('RSI (14)', ind.rsi != null ? ind.rsi.toFixed(1) : '—', rsiColor) +
+    chip('MACD Hist', ind.macd ? ind.macd.histogram.toFixed(4) : '—', macdColor) +
+    chip('ADX', ind.adx ? ind.adx.adx.toFixed(1) : '—') +
+    chip('EMA20', ind.ema20 != null ? ind.ema20.toFixed(4) : '—') +
+    chip('EMA50', ind.ema50 != null ? ind.ema50.toFixed(4) : '—');
 }
 
 function updateKillZoneBadge(kz) {
