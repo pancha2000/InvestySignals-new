@@ -205,6 +205,37 @@ async function fetchKlinesCached(symbol, interval, limit = 200, retries = 3, ski
   throw new Error(`fetchKlines failed: ${symbol} ${interval} — not found on futures or spot`);
 }
 
+// ── Chart pagination fetch (View Chart feature) ───────────────
+// Historical CLOSED candles never change once formed, so pages that
+// specify an endTime are cached FOREVER (unbounded key growth here is
+// fine — a user scrolling back through a coin's whole history only ever
+// generates a bounded number of unique (symbol,interval,endTime) pages).
+// The "latest" page (no endTime = live edge of the chart) is NOT cached
+// long, same reasoning as the live-price cache below.
+const chartPageCache = new Map();
+async function fetchKlinesRange(symbol, interval, limit = 500, endTime = null) {
+  const key = `${symbol}_${interval}_${limit}_${endTime || 'latest'}`;
+  const cached = chartPageCache.get(key);
+  if (cached && (endTime || Date.now() - cached.ts < 15000)) return cached.data; // historical: forever, latest: 15s
+
+  const endParam = endTime ? `&endTime=${endTime}` : '';
+  const urls = [
+    `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}${endParam}`,
+    `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}${endParam}`,
+  ];
+  for (const url of urls) {
+    try {
+      const r = await fetch(url);
+      if (!r.ok) continue;
+      const data = await r.json();
+      if (!Array.isArray(data) || data.length === 0) continue;
+      chartPageCache.set(key, { data, ts: Date.now() });
+      return data;
+    } catch (_) { /* try next URL */ }
+  }
+  throw new Error(`fetchKlinesRange failed: ${symbol} ${interval}`);
+}
+
 // ── [F3] Live price cache ────────────────────────────────────
 const priceCache = new Map();
 const PRICE_TTL  = 10 * 1000; // 10 seconds
@@ -512,6 +543,91 @@ app.get('/api/scan-smart', async (req, res) => {
   try {
     const result = await marketTools.scanMarketSmart();
     res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  CHART — candles + overlay data for the "View Chart" feature
+//  Public (no verifyToken), same as /api/scan — read-only market data.
+//  Deliberately does NOT call Groq — this must be fast/cheap since a
+//  user can flip timeframes and scroll history repeatedly.
+// ═══════════════════════════════════════════════════════════════
+
+app.get('/api/chart/candles', async (req, res) => {
+  try {
+    const symbol = marketTools.data.normalizePair((req.query.symbol || 'BTCUSDT').toUpperCase());
+    const interval = req.query.interval || '1h';
+    const validIntervals = ['1m','5m','15m','1h','4h','1d','1w'];
+    if (!validIntervals.includes(interval)) {
+      return res.status(400).json({ success:false, error:'Invalid interval. Use one of: ' + validIntervals.join(', ') });
+    }
+    const limit = Math.min(parseInt(req.query.limit) || 500, 1000); // Binance hard cap is 1000/request
+    const endTime = req.query.endTime ? parseInt(req.query.endTime) : null;
+
+    const raw = await fetchKlinesRange(symbol, interval, limit, endTime);
+    // Lightweight Charts wants { time (seconds), open, high, low, close } — and
+    // volume as a separate series { time, value, color }.
+    const candles = raw.map(k => ({
+      time: Math.floor(k[0] / 1000),
+      open: parseFloat(k[1]), high: parseFloat(k[2]), low: parseFloat(k[3]), close: parseFloat(k[4]),
+    }));
+    const volume = raw.map(k => ({
+      time: Math.floor(k[0] / 1000),
+      value: parseFloat(k[5]),
+      color: parseFloat(k[4]) >= parseFloat(k[1]) ? 'rgba(0,217,126,0.5)' : 'rgba(255,59,92,0.5)',
+    }));
+    res.json({ success: true, symbol, interval, candles, volume, oldestTime: candles[0]?.time || null });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/chart/overlays', async (req, res) => {
+  try {
+    const symbol = marketTools.data.normalizePair((req.query.symbol || 'BTCUSDT').toUpperCase());
+    const interval = req.query.interval || '1h';
+    const validIntervals = ['1m','5m','15m','1h','4h','1d','1w'];
+    if (!validIntervals.includes(interval)) {
+      return res.status(400).json({ success:false, error:'Invalid interval. Use one of: ' + validIntervals.join(', ') });
+    }
+
+    // Reuse the SAME structure/indicator functions the AI analysis is built
+    // on (market_tools.js) — the chart shows exactly what the AI actually
+    // saw, not a separately-maintained approximation.
+    const raw = await fetchKlinesRange(symbol, interval, 300, null);
+    const candles = raw.map(k => ({
+      time: Math.floor(k[0] / 1000),
+      open: parseFloat(k[1]), high: parseFloat(k[2]), low: parseFloat(k[3]), close: parseFloat(k[4]), volume: parseFloat(k[5]),
+    }));
+    if (candles.length < 20) return res.json({ success:true, symbol, interval, overlays: null, note: 'Not enough candles for overlays yet.' });
+
+    const timeAt = (idxFromEnd) => candles[idxFromEnd] ? candles[idxFromEnd].time : candles[candles.length-1].time;
+    const lastTime = candles[candles.length - 1].time;
+
+    const sr = marketTools.structure.findSupportResistanceLevels(candles);
+    const fvgs = marketTools.structure.findFairValueGaps(candles).map(f => ({ ...f, time: timeAt(f.idx), endTime: lastTime }));
+    const obs = marketTools.structure.findOrderBlocks(candles, 5).map(o => ({ ...o, time: timeAt(o.idx), endTime: lastTime }));
+    const fibRetracement = marketTools.structure.fibonacciRetracement(candles);
+    const fibExtensions = marketTools.structure.fibonacciExtensions(candles);
+    const premiumDiscount = marketTools.structure.premiumDiscountZone(candles);
+    const liquiditySweep = marketTools.structure.liquiditySweep(candles);
+    const killZone = marketTools.structure.killZoneStatus();
+
+    res.json({
+      success: true, symbol, interval,
+      overlays: {
+        supportResistance: sr,        // array of price levels — draw as horizontal lines
+        fairValueGaps: fvgs,          // [{type, low, high, time, endTime}] — draw as boxes
+        orderBlocks: obs,             // [{type, low, high, bodyLow, bodyHigh, time, endTime}] — draw as boxes
+        fibonacciRetracement: fibRetracement, // {swingHigh, swingLow, f236..f786} — draw as horizontal lines
+        fibonacciExtensions: fibExtensions,   // {swingHigh, swingLow, e1272..e2618} — draw as horizontal lines
+        premiumDiscount,              // {equilibrium, premium75, discount25, zone} — draw as horizontal lines + label
+        liquiditySweep,               // {buySideLiquidity[], sellSideLiquidity[], recentSweep} — draw as markers
+        killZone,                     // {inKillZone, activeZones, significance} — draw as a badge, not a chart line
+      },
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

@@ -1635,6 +1635,15 @@ function buildPaperTradePanel(data) {
         ${isLong?'📈 OPEN LONG':'📉 OPEN SHORT'} — PAPER TRADE
     </button>
 
+    <button onclick="window.location.href='chart.html?symbol=${(data.coin||'BTC').toUpperCase()}USDT'"
+        style="width:100%;margin-top:10px;padding:12px;background:var(--surface);border:1px solid var(--border-soft);
+        border-radius:var(--radius-sm);color:var(--text);font-weight:600;font-size:0.85rem;cursor:pointer;
+        display:flex;align-items:center;justify-content:center;gap:8px;transition:var(--transition);"
+        onmouseover="this.style.borderColor='var(--gold)';this.style.color='var(--gold)';"
+        onmouseout="this.style.borderColor='var(--border-soft)';this.style.color='var(--text)';">
+        📊 View Chart (ICT/SMC/Fibonacci overlays)
+    </button>
+
     <hr class="pt-divider">
 
     <div style="display:flex;gap:8px;align-items:center;">

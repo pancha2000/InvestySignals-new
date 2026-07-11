@@ -140,6 +140,43 @@ wick is wide enough to touch both a TP and the SL in the same 3-candle
 window, the code checks TP before SL (optimistic order) — true tick-by-tick
 ordering isn't knowable from 1m candles alone.
 
+## 5b. View Chart Feature (TradingView-style candlestick chart, self-hosted)
+
+New `chart.html` page — a candlestick chart **inside your own site** (not
+an embed of tradingview.com — we have no way to inject into that site;
+this uses TradingView's open-source **Lightweight Charts** library, self-
+hosted, drawing our own candles + our own overlay data).
+
+**How to reach it:** "📊 View Chart" button next to the "Open Paper Trade"
+button in `analysis.html`.
+
+**What it does:**
+- Full candlestick + volume chart, timeframe switcher (1m/5m/15m/1H/4H/1D)
+- Lazy-loads older history as you scroll left (stops automatically once
+  it hits the coin's Binance listing date — Binance has no data before that)
+- Toggleable overlay layers, each independently switchable: Support/
+  Resistance, Fair Value Gaps, Order Blocks, Fibonacci Retracement,
+  Fibonacci Extension, ICT Premium/Discount zone, Liquidity Sweep markers
+  — plus a live Kill Zone status badge
+- All overlay data comes from the **same `market_tools.js` functions the
+  AI analysis itself uses** — the chart shows exactly what the AI saw,
+  not a separately-maintained approximation
+
+**New backend routes** (`server.js`, public/no-auth, same as `/api/scan`
+— deliberately do NOT call Groq, so flipping timeframes/layers stays fast
+and free):
+- `GET /api/chart/candles?symbol=&interval=&limit=&endTime=` — paginated
+  klines (historical closed candles are cached forever since they never
+  change; the live/latest page is cached 15s)
+- `GET /api/chart/overlays?symbol=&interval=` — computed ICT/SMC/Fibonacci
+  data for the current view
+
+**Known simplification (disclosed):** Lightweight Charts has no native
+filled-rectangle primitive without a canvas plugin. FVG/Order Block
+"zones" are drawn as a dashed top+bottom price-line pair rather than a
+shaded box. Visually clear, but not a true filled rectangle — a canvas
+overlay plugin could add that later if wanted.
+
 ## 5. What was NOT changed
 
 - Your ICT/SMC rule engine (Kill Zones, Premium/Discount, Liquidity

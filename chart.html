@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Chart | InvestySignals</title>
+<link rel="stylesheet" href="style.css">
+<!-- TradingView's own open-source charting library — this is a self-hosted
+     chart INSIDE our site, not an embed of tradingview.com. We draw our
+     own candles + our own ICT/SMC/Fibonacci overlays from our own data. -->
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  .page-wrap { padding: 88px 12px 40px; max-width: 1200px; margin: 0 auto; }
+  .chart-header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
+  .chart-symbol { font-family:'Space Grotesk',sans-serif; font-size:1.3rem; font-weight:700; color:var(--text); display:flex; align-items:center; gap:10px; }
+  .chart-price { font-family:'JetBrains Mono',monospace; font-size:1rem; color:var(--gold); }
+  .symbol-switch { display:flex; gap:8px; align-items:center; }
+  .symbol-switch input { background:var(--surface); border:1px solid var(--border-soft); color:var(--text); border-radius:var(--radius-xs); padding:8px 10px; font-family:'JetBrains Mono',monospace; font-size:0.85rem; width:130px; text-transform:uppercase; }
+  .symbol-switch button { background:var(--gold-subtle); border:1px solid var(--border); color:var(--gold); border-radius:var(--radius-xs); padding:8px 12px; font-size:0.8rem; cursor:pointer; font-weight:600; }
+
+  .tf-row { display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap; }
+  .tf-btn { background:var(--surface); border:1px solid var(--border-soft); color:var(--text-muted); border-radius:var(--radius-xs); padding:7px 14px; font-size:0.8rem; font-family:'JetBrains Mono',monospace; cursor:pointer; transition:var(--transition); }
+  .tf-btn:hover { border-color:var(--border); color:var(--text); }
+  .tf-btn.active { background:var(--gold-subtle); border-color:var(--gold); color:var(--gold); font-weight:700; }
+
+  .chart-shell { background:var(--bg2,#0c0f18); border:1px solid var(--border-soft); border-radius:var(--radius); overflow:hidden; position:relative; }
+  #chartContainer { width:100%; height:460px; }
+  #volContainer { width:100%; height:90px; }
+  .chart-loading { position:absolute; top:10px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.6); color:var(--text-muted); font-size:0.75rem; padding:4px 12px; border-radius:20px; font-family:'JetBrains Mono',monospace; display:none; z-index:5; }
+
+  .layers-panel { margin-top:14px; background:var(--bg2,#0c0f18); border:1px solid var(--border-soft); border-radius:var(--radius); padding:16px; }
+  .layers-title { font-size:0.8rem; font-weight:700; color:var(--text-sub,#a8b0d0); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+  .layers-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:10px; }
+  .layer-toggle { display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--border-soft); border-radius:var(--radius-xs); padding:9px 12px; cursor:pointer; user-select:none; }
+  .layer-toggle input { accent-color:var(--gold); width:16px; height:16px; cursor:pointer; }
+  .layer-toggle span { font-size:0.8rem; color:var(--text); }
+  .layer-color-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+
+  .kz-badge { margin-top:12px; padding:10px 14px; border-radius:var(--radius-sm); font-size:0.78rem; font-family:'JetBrains Mono',monospace; }
+  .kz-badge.active { background:rgba(0,217,126,0.08); border:1px solid rgba(0,217,126,0.3); color:var(--green); }
+  .kz-badge.inactive { background:var(--surface); border:1px solid var(--border-soft); color:var(--text-muted); }
+
+  .chart-err { padding:14px; text-align:center; color:var(--red); font-size:0.85rem; }
+</style>
+</head>
+<body>
+<div class="nav-backdrop" id="navBackdrop" style="pointer-events:none;"></div>
+<nav class="auth-nav">
+    <div class="auth-nav-left">
+        <button class="auth-hamburger" id="authHamburger">☰</button>
+        <a href="index.html" class="logo" style="font-size:0.9rem;">
+            <div class="logo-icon" style="width:26px;height:26px;font-size:0.85rem;">◈</div>
+            <span>INVESTY<span class="logo-accent">SIGNALS</span></span>
+        </a>
+        <span class="page-title">CHART</span>
+    </div>
+    <nav class="auth-nav-menu" id="authNavMenu">
+        <a href="dashboard.html" class="auth-nav-link">📊 Dashboard</a>
+        <a href="analysis.html" class="auth-nav-link">🧠 Analysis</a>
+        <a href="live-signals.html" class="auth-nav-link">📝 Paper Trades</a>
+        <a href="ask-ai.html" class="auth-nav-link">🤖 Ask AI</a>
+        <a href="backtest.html" class="auth-nav-link">🔬 Backtest</a>
+    </nav>
+</nav>
+
+<div class="page-wrap">
+
+    <div class="chart-header">
+        <div class="chart-symbol">
+            📊 <span id="symLabel">BTC/USDT</span>
+            <span class="chart-price" id="priceLabel">—</span>
+        </div>
+        <div class="symbol-switch">
+            <input type="text" id="symInput" placeholder="e.g. ETHUSDT">
+            <button onclick="switchSymbol()">Load</button>
+        </div>
+    </div>
+
+    <div class="tf-row" id="tfRow">
+        <button class="tf-btn" data-tf="1m">1m</button>
+        <button class="tf-btn" data-tf="5m">5m</button>
+        <button class="tf-btn" data-tf="15m">15m</button>
+        <button class="tf-btn active" data-tf="1h">1H</button>
+        <button class="tf-btn" data-tf="4h">4H</button>
+        <button class="tf-btn" data-tf="1d">1D</button>
+    </div>
+
+    <div class="chart-shell">
+        <div class="chart-loading" id="chartLoading">Loading older candles…</div>
+        <div id="chartContainer"></div>
+        <div id="volContainer"></div>
+    </div>
+
+    <div class="layers-panel">
+        <div class="layers-title">🗂️ Analysis Layers — toggle what you want to see</div>
+        <div class="layers-grid">
+            <label class="layer-toggle"><input type="checkbox" id="layerSR"> <span class="layer-color-dot" style="background:#3B8BFF;"></span><span>Support / Resistance</span></label>
+            <label class="layer-toggle"><input type="checkbox" id="layerFVG"> <span class="layer-color-dot" style="background:#8B5CF6;"></span><span>Fair Value Gaps</span></label>
+            <label class="layer-toggle"><input type="checkbox" id="layerOB"> <span class="layer-color-dot" style="background:#F0B429;"></span><span>Order Blocks</span></label>
+            <label class="layer-toggle"><input type="checkbox" id="layerFibRet"> <span class="layer-color-dot" style="background:#06B6D4;"></span><span>Fibonacci Retracement</span></label>
+            <label class="layer-toggle"><input type="checkbox" id="layerFibExt"> <span class="layer-color-dot" style="background:#00D97E;"></span><span>Fibonacci Extension</span></label>
+            <label class="layer-toggle"><input type="checkbox" id="layerPD"> <span class="layer-color-dot" style="background:#FF3B5C;"></span><span>ICT Premium / Discount</span></label>
+            <label class="layer-toggle"><input type="checkbox" id="layerSweep"> <span class="layer-color-dot" style="background:#FFD166;"></span><span>Liquidity Sweep Markers</span></label>
+        </div>
+        <div class="kz-badge inactive" id="kzBadge">⏳ Kill Zone status loading…</div>
+    </div>
+
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+//  VIEW CHART — candlestick chart with lazy-loaded history and
+//  toggleable ICT/SMC/Fibonacci overlays, drawn from our own
+//  /api/chart/candles and /api/chart/overlays endpoints.
+// ══════════════════════════════════════════════════════════════
+
+const params = new URLSearchParams(location.search);
+let currentSymbol = (params.get('symbol') || 'BTCUSDT').toUpperCase();
+let currentInterval = '1h';
+let oldestLoadedTime = null;   // seconds — used as the lazy-load cursor
+let loadingOlder = false;
+let noMoreHistory = false;
+
+document.getElementById('symLabel').textContent = currentSymbol.replace('USDT','') + '/USDT';
+document.getElementById('symInput').value = currentSymbol;
+
+// ── Chart setup ──────────────────────────────────────────────
+const chartOptions = {
+  layout: { background: { color: 'transparent' }, textColor: '#5C6490', fontFamily: 'JetBrains Mono, monospace' },
+  grid: { vertLines: { color: 'rgba(255,255,255,0.03)' }, horzLines: { color: 'rgba(255,255,255,0.03)' } },
+  rightPriceScale: { borderColor: 'rgba(255,255,255,0.06)' },
+  timeScale: { borderColor: 'rgba(255,255,255,0.06)', timeVisible: true, secondsVisible: false },
+  crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+};
+
+const chart = LightweightCharts.createChart(document.getElementById('chartContainer'), {
+  ...chartOptions,
+  width: document.getElementById('chartContainer').clientWidth,
+  height: 460,
+});
+const candleSeries = chart.addCandlestickSeries({
+  upColor: '#00D97E', downColor: '#FF3B5C', borderVisible: false,
+  wickUpColor: '#00D97E', wickDownColor: '#FF3B5C',
+});
+
+const volChart = LightweightCharts.createChart(document.getElementById('volContainer'), {
+  ...chartOptions,
+  width: document.getElementById('volContainer').clientWidth,
+  height: 90,
+  timeScale: { ...chartOptions.timeScale, visible: false },
+});
+const volSeries = volChart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: '' });
+
+// Keep the two charts' visible time ranges in sync
+chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+  if (range) volChart.timeScale().setVisibleLogicalRange(range);
+  maybeLoadOlder(range);
+});
+
+window.addEventListener('resize', () => {
+  chart.applyOptions({ width: document.getElementById('chartContainer').clientWidth });
+  volChart.applyOptions({ width: document.getElementById('volContainer').clientWidth });
+});
+
+// Price lines currently drawn, so we can clear them when toggling layers off
+let priceLines = { SR: [], FibRet: [], FibExt: [], PD: [], FVG: [], OB: [] };
+let overlaysCache = null;
+
+// ── Data loading ─────────────────────────────────────────────
+async function loadInitial() {
+  noMoreHistory = false;
+  document.getElementById('chartLoading').style.display = 'none';
+  try {
+    const r = await fetch(`/api/chart/candles?symbol=${currentSymbol}&interval=${currentInterval}&limit=500`).then(r => r.json());
+    if (!r.success) { showErr(r.error); return; }
+    candleSeries.setData(r.candles);
+    volSeries.setData(r.volume);
+    oldestLoadedTime = r.oldestTime;
+    if (r.candles.length) {
+      const last = r.candles[r.candles.length - 1].close;
+      document.getElementById('priceLabel').textContent = '$' + last;
+    }
+    chart.timeScale().fitContent();
+  } catch (e) { showErr(e.message); }
+
+  // Layers reset on symbol/timeframe change — refetch if any were on
+  overlaysCache = null;
+  if (anyLayerOn()) await loadOverlays();
+}
+
+async function maybeLoadOlder(range) {
+  if (!range || loadingOlder || noMoreHistory || oldestLoadedTime === null) return;
+  // Lightweight Charts logical range: when the visible window's left edge
+  // gets close to index 0 (start of currently-loaded data), fetch further
+  // back in history and prepend it — this is the "scroll back to when the
+  // coin started" behavior.
+  if (range.from > 10) return;
+
+  loadingOlder = true;
+  document.getElementById('chartLoading').style.display = 'block';
+  try {
+    const endTime = (oldestLoadedTime * 1000) - 1;
+    const r = await fetch(`/api/chart/candles?symbol=${currentSymbol}&interval=${currentInterval}&limit=500&endTime=${endTime}`).then(r => r.json());
+    if (r.success && r.candles.length) {
+      prependData(r.candles, r.volume);
+      oldestLoadedTime = r.oldestTime;
+    } else {
+      noMoreHistory = true; // reached the symbol's listing date on Binance
+    }
+  } catch (e) { /* silent — user can keep scrolling, next attempt may succeed */ }
+  loadingOlder = false;
+  document.getElementById('chartLoading').style.display = 'none';
+}
+
+// Lightweight Charts v4 has no native "prepend" API on setData without
+// resending everything, so we keep our own running arrays.
+let allCandles = [], allVolume = [];
+function prependData(newCandles, newVolume) {
+  allCandles = [...newCandles, ...allCandles];
+  allVolume = [...newVolume, ...allVolume];
+  candleSeries.setData(allCandles);
+  volSeries.setData(allVolume);
+}
+// Wrap loadInitial's setData calls to also seed allCandles/allVolume
+const _origSetData = candleSeries.setData.bind(candleSeries);
+candleSeries.setData = (d) => { allCandles = d; _origSetData(d); };
+const _origVolSetData = volSeries.setData.bind(volSeries);
+volSeries.setData = (d) => { allVolume = d; _origVolSetData(d); };
+
+function showErr(msg) {
+  document.getElementById('chartLoading').style.display = 'none';
+  console.error('Chart error:', msg);
+}
+
+// ── Overlays (ICT / SMC / Fibonacci) ────────────────────────
+async function loadOverlays() {
+  try {
+    const r = await fetch(`/api/chart/overlays?symbol=${currentSymbol}&interval=${currentInterval}`).then(r => r.json());
+    if (!r.success || !r.overlays) return;
+    overlaysCache = r.overlays;
+    redrawLayers();
+    updateKillZoneBadge(r.overlays.killZone);
+  } catch (e) { /* overlays are optional — chart still works without them */ }
+}
+
+function clearPriceLines(group) {
+  (priceLines[group] || []).forEach(l => candleSeries.removePriceLine(l));
+  priceLines[group] = [];
+}
+
+function redrawLayers() {
+  if (!overlaysCache) return;
+  const o = overlaysCache;
+
+  // Support / Resistance
+  clearPriceLines('SR');
+  if (document.getElementById('layerSR').checked && o.supportResistance) {
+    o.supportResistance.forEach(level => {
+      priceLines.SR.push(candleSeries.createPriceLine({
+        price: level, color: '#3B8BFF', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true, title: 'S/R',
+      }));
+    });
+  }
+
+  // Fibonacci Retracement
+  clearPriceLines('FibRet');
+  if (document.getElementById('layerFibRet').checked && o.fibonacciRetracement) {
+    const f = o.fibonacciRetracement;
+    [['f236','0.236'],['f382','0.382'],['f500','0.5'],['f618','0.618'],['f786','0.786']].forEach(([k,label]) => {
+      if (f[k] !== undefined) priceLines.FibRet.push(candleSeries.createPriceLine({
+        price: f[k], color: '#06B6D4', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted,
+        axisLabelVisible: true, title: 'Fib ' + label,
+      }));
+    });
+  }
+
+  // Fibonacci Extension
+  clearPriceLines('FibExt');
+  if (document.getElementById('layerFibExt').checked && o.fibonacciExtensions) {
+    const f = o.fibonacciExtensions;
+    [['e1272','1.272'],['e1414','1.414'],['e1618','1.618'],['e2618','2.618']].forEach(([k,label]) => {
+      if (f[k] !== undefined) priceLines.FibExt.push(candleSeries.createPriceLine({
+        price: f[k], color: '#00D97E', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted,
+        axisLabelVisible: true, title: 'Ext ' + label,
+      }));
+    });
+  }
+
+  // ICT Premium / Discount
+  clearPriceLines('PD');
+  if (document.getElementById('layerPD').checked && o.premiumDiscount) {
+    const p = o.premiumDiscount;
+    priceLines.PD.push(candleSeries.createPriceLine({ price: p.equilibrium, color: '#FF3B5C', lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Solid, axisLabelVisible: true, title: 'EQ 50%' }));
+    priceLines.PD.push(candleSeries.createPriceLine({ price: p.premium75, color: '#FF3B5C', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'Premium 75%' }));
+    priceLines.PD.push(candleSeries.createPriceLine({ price: p.discount25, color: '#00D97E', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'Discount 25%' }));
+  }
+
+  // FVG / Order Blocks — Lightweight Charts has no native filled-rectangle
+  // primitive, so zones are drawn as a top+bottom dashed price-line pair
+  // (a clear "zone boundary" visual without needing a canvas plugin).
+  clearPriceLines('FVG');
+  if (document.getElementById('layerFVG').checked && o.fairValueGaps) {
+    o.fairValueGaps.forEach((f, i) => {
+      const color = f.type === 'BULL' ? '#8B5CF6' : '#B18CFF';
+      priceLines.FVG.push(candleSeries.createPriceLine({ price: f.high, color, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: false, title: 'FVG' + (i+1) + ' top' }));
+      priceLines.FVG.push(candleSeries.createPriceLine({ price: f.low, color, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: false, title: 'FVG' + (i+1) + ' bot' }));
+    });
+  }
+
+  clearPriceLines('OB');
+  if (document.getElementById('layerOB').checked && o.orderBlocks) {
+    o.orderBlocks.forEach((ob, i) => {
+      const color = ob.type === 'BULL_OB' ? '#F0B429' : '#FFD166';
+      priceLines.OB.push(candleSeries.createPriceLine({ price: ob.high, color, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: false, title: 'OB' + (i+1) + ' top' }));
+      priceLines.OB.push(candleSeries.createPriceLine({ price: ob.low, color, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: false, title: 'OB' + (i+1) + ' bot' }));
+    });
+  }
+
+  // Liquidity Sweep — marker at the sweep candle, if one exists
+  if (document.getElementById('layerSweep').checked && o.liquiditySweep && o.liquiditySweep.recentSweep) {
+    const sweep = o.liquiditySweep.recentSweep;
+    candleSeries.setMarkers([{
+      time: allCandles.length ? allCandles[allCandles.length - 1].time : undefined,
+      position: sweep.type === 'BUY_SIDE_SWEPT' ? 'aboveBar' : 'belowBar',
+      color: '#FFD166', shape: sweep.type === 'BUY_SIDE_SWEPT' ? 'arrowDown' : 'arrowUp',
+      text: sweep.type === 'BUY_SIDE_SWEPT' ? 'Sell-side trigger' : 'Buy-side trigger',
+    }]);
+  } else {
+    candleSeries.setMarkers([]);
+  }
+}
+
+function updateKillZoneBadge(kz) {
+  const el = document.getElementById('kzBadge');
+  if (!kz) { el.textContent = 'Kill Zone status unavailable'; return; }
+  el.className = 'kz-badge ' + (kz.inKillZone ? 'active' : 'inactive');
+  el.textContent = kz.inKillZone
+    ? `🟢 IN KILL ZONE — ${kz.activeZones.join(', ')} (${kz.currentUTC})`
+    : `⚪ Outside kill zones — next: ${kz.nextZone || 'N/A'} in ~${kz.nextZoneInHours ?? '?'}h (${kz.currentUTC})`;
+}
+
+function anyLayerOn() {
+  return ['layerSR','layerFVG','layerOB','layerFibRet','layerFibExt','layerPD','layerSweep']
+    .some(id => document.getElementById(id).checked);
+}
+
+['layerSR','layerFVG','layerOB','layerFibRet','layerFibExt','layerPD','layerSweep'].forEach(id => {
+  document.getElementById(id).addEventListener('change', async () => {
+    if (!overlaysCache && anyLayerOn()) await loadOverlays();
+    else redrawLayers();
+  });
+});
+
+// ── Timeframe switcher ───────────────────────────────────────
+document.getElementById('tfRow').addEventListener('click', (e) => {
+  const btn = e.target.closest('.tf-btn');
+  if (!btn) return;
+  document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentInterval = btn.dataset.tf;
+  loadInitial();
+});
+
+// ── Symbol switcher ──────────────────────────────────────────
+function switchSymbol() {
+  const v = document.getElementById('symInput').value.trim().toUpperCase();
+  if (!v) return;
+  currentSymbol = v.endsWith('USDT') ? v : v + 'USDT';
+  document.getElementById('symLabel').textContent = currentSymbol.replace('USDT','') + '/USDT';
+  history.replaceState(null, '', `chart.html?symbol=${currentSymbol}`);
+  loadInitial();
+}
+
+// ── Init ──────────────────────────────────────────────────────
+loadInitial();
+
+// Hamburger menu (same pattern as other pages)
+document.getElementById('authHamburger')?.addEventListener('click', () => {
+  document.getElementById('authNavMenu')?.classList.toggle('open');
+  document.getElementById('navBackdrop')?.classList.toggle('open');
+});
+</script>
+</body>
+</html>
