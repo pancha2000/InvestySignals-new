@@ -7,8 +7,14 @@
 <link rel="stylesheet" href="style.css">
 <!-- TradingView's own open-source charting library — this is a self-hosted
      chart INSIDE our site, not an embed of tradingview.com. We draw our
-     own candles + our own ICT/SMC/Fibonacci overlays from our own data. -->
-<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+     own candles + our own ICT/SMC/Fibonacci overlays from our own data.
+     Using jsdelivr, NOT unpkg — unpkg has a known intermittent-outage
+     issue with this library (returns 520s under load; see
+     github.com/tradingview/lightweight-charts/issues/1559). jsdelivr has
+     been reliable for this exact file in the community's own testing. -->
+<script>window.__chartLibFailed = false;</script>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"
+        onerror="window.__chartLibFailed = true;"></script>
 <style>
   .page-wrap { padding: 88px 12px 40px; max-width: 1200px; margin: 0 auto; }
   .chart-header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
@@ -40,7 +46,8 @@
   .kz-badge.active { background:rgba(0,217,126,0.08); border:1px solid rgba(0,217,126,0.3); color:var(--green); }
   .kz-badge.inactive { background:var(--surface); border:1px solid var(--border-soft); color:var(--text-muted); }
 
-  .chart-err { padding:14px; text-align:center; color:var(--red); font-size:0.85rem; }
+  .chart-err { position:absolute; top:0; left:0; right:0; bottom:0; display:none; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:14px; text-align:center; color:var(--red); font-size:0.85rem; background:var(--bg2,#0c0f18); z-index:6; }
+  .chart-err button { background:var(--gold-subtle); border:1px solid var(--gold); color:var(--gold); border-radius:var(--radius-xs); padding:8px 16px; font-size:0.8rem; cursor:pointer; font-weight:600; }
 </style>
 </head>
 <body>
@@ -87,6 +94,7 @@
 
     <div class="chart-shell">
         <div class="chart-loading" id="chartLoading">Loading older candles…</div>
+        <div class="chart-err" id="chartErrBox" style="display:none;"></div>
         <div id="chartContainer"></div>
         <div id="volContainer"></div>
     </div>
@@ -123,6 +131,26 @@ let noMoreHistory = false;
 
 document.getElementById('symLabel').textContent = currentSymbol.replace('USDT','') + '/USDT';
 document.getElementById('symInput').value = currentSymbol;
+
+// Hamburger menu (same pattern as other pages) — wired BEFORE the library
+// guard below so navigation still works even if the chart library itself
+// fails to load.
+document.getElementById('authHamburger')?.addEventListener('click', () => {
+  document.getElementById('authNavMenu')?.classList.toggle('open');
+  document.getElementById('navBackdrop')?.classList.toggle('open');
+});
+
+// ── Guard: chart library must actually be loaded before we touch it ──
+// (jsdelivr is reliable, but any CDN can have an outage — this turns a
+// silent blank box into a clear message with a one-click retry instead
+// of failing invisibly.)
+if (window.__chartLibFailed || typeof LightweightCharts === 'undefined') {
+  document.getElementById('chartErrBox').style.display = 'flex';
+  document.getElementById('chartErrBox').innerHTML =
+    '⚠️ Chart library failed to load (CDN issue).<br>Check your connection and try again.' +
+    '<br><button onclick="location.reload()">🔄 Retry</button>';
+  throw new Error('LightweightCharts failed to load — aborting chart init.');
+}
 
 // ── Chart setup ──────────────────────────────────────────────
 const chartOptions = {
@@ -170,6 +198,7 @@ let overlaysCache = null;
 async function loadInitial() {
   noMoreHistory = false;
   document.getElementById('chartLoading').style.display = 'none';
+  document.getElementById('chartErrBox').style.display = 'none';
   try {
     const r = await fetch(`/api/chart/candles?symbol=${currentSymbol}&interval=${currentInterval}&limit=500`).then(r => r.json());
     if (!r.success) { showErr(r.error); return; }
@@ -229,6 +258,12 @@ volSeries.setData = (d) => { allVolume = d; _origVolSetData(d); };
 
 function showErr(msg) {
   document.getElementById('chartLoading').style.display = 'none';
+  const box = document.getElementById('chartErrBox');
+  box.style.display = 'flex';
+  box.innerHTML = `⚠️ Couldn't load chart data for <b>${currentSymbol}</b>.<br>`
+    + `<span style="font-size:0.75rem;color:var(--text-muted);">${(msg||'').slice(0,150)}</span>`
+    + `<br>This symbol may not exist on Binance, or the connection dropped.`
+    + `<br><button onclick="document.getElementById('chartErrBox').style.display='none';loadInitial();">🔄 Retry</button>`;
   console.error('Chart error:', msg);
 }
 
@@ -375,11 +410,6 @@ function switchSymbol() {
 // ── Init ──────────────────────────────────────────────────────
 loadInitial();
 
-// Hamburger menu (same pattern as other pages)
-document.getElementById('authHamburger')?.addEventListener('click', () => {
-  document.getElementById('authNavMenu')?.classList.toggle('open');
-  document.getElementById('navBackdrop')?.classList.toggle('open');
-});
 </script>
 </body>
 </html>
