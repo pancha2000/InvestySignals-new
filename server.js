@@ -2374,6 +2374,51 @@ app.get('/api/admin/users', verifyAdmin, async (req, res) => {
   } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
+/* POST /api/admin/users — admin manually registers a user (works even when
+   public self-registration is turned off). Creates the Firebase Auth account
+   AND the matching MongoDB user in one step. */
+app.post('/api/admin/users', verifyAdmin, async (req, res) => {
+  try {
+    const email       = (req.body.email || '').trim().toLowerCase();
+    const password    = req.body.password || '';
+    const displayName = (req.body.displayName || '').trim();
+    const plan        = ['free','pro','elite'].includes(req.body.plan) ? req.body.plan : 'free';
+
+    if (!email) return res.status(400).json({ success: false, error: 'Email is required.' });
+    if (!password || password.length < 8) return res.status(400).json({ success: false, error: 'Password must be at least 8 characters.' });
+
+    // Create the Firebase Auth account
+    let fbUser;
+    try {
+      fbUser = await admin.auth().createUser({ email, password, displayName: displayName || undefined });
+    } catch(fbErr) {
+      const msg = fbErr.code === 'auth/email-already-exists'
+        ? 'This email is already registered.'
+        : (fbErr.message || 'Failed to create account.');
+      return res.status(400).json({ success: false, error: msg });
+    }
+
+    // Create the matching MongoDB user document
+    let dbUser;
+    try {
+      dbUser = await User.create({
+        uid: fbUser.uid,
+        email,
+        displayName: displayName || '',
+        role: ADMIN_EMAILS.includes(email) ? 'admin' : 'user',
+        plan,
+        paperBalance: 1000,
+      });
+    } catch(dbErr) {
+      // Roll back the Firebase account if DB write fails, so we don't leave an orphaned auth user
+      try { await admin.auth().deleteUser(fbUser.uid); } catch(_) {}
+      return res.status(500).json({ success: false, error: 'Failed to save user: ' + dbErr.message });
+    }
+
+    res.json({ success: true, user: dbUser });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
 /* PATCH /api/admin/users/:uid — update user (suspend, plan, etc.) */
 app.patch('/api/admin/users/:uid', verifyAdmin, async (req, res) => {
   try {
