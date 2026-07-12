@@ -1496,6 +1496,19 @@ function renderFullAnalysis(data, container) {
 //  PAPER TRADE SYSTEM
 // ══════════════════════════════════════════
 let ptCurrentData  = null;
+
+// Passes the ALREADY-COMPUTED analysis (ptCurrentData) to chart.html via
+// sessionStorage, so the chart page can show the AI's actual verdict
+// (confluence score, entry/SL/TP, thesis, risk) without re-running the
+// Groq call — that stays a paid/rate-limited action the user explicitly
+// triggers on this page, not something the chart page does on its own.
+function openChartWithAnalysis(coin) {
+  const symbol = coin.toUpperCase() + 'USDT';
+  try {
+    sessionStorage.setItem('chartAnalysis_' + symbol, JSON.stringify(ptCurrentData));
+  } catch (e) { /* storage full/unavailable — chart still works, just without the AI report panel */ }
+  window.location.href = 'chart.html?symbol=' + symbol;
+}
 let ptOrderType    = 'MARKET';
 let ptOpenTrades   = [];
 let ptBalance      = 0;
@@ -1635,7 +1648,7 @@ function buildPaperTradePanel(data) {
         ${isLong?'📈 OPEN LONG':'📉 OPEN SHORT'} — PAPER TRADE
     </button>
 
-    <button onclick="window.location.href='chart.html?symbol=${(data.coin||'BTC').toUpperCase()}USDT'"
+    <button onclick="openChartWithAnalysis('${(data.coin||'BTC').toUpperCase()}')"
         style="width:100%;margin-top:10px;padding:12px;background:var(--surface);border:1px solid var(--border-soft);
         border-radius:var(--radius-sm);color:var(--text);font-weight:600;font-size:0.85rem;cursor:pointer;
         display:flex;align-items:center;justify-content:center;gap:8px;transition:var(--transition);"

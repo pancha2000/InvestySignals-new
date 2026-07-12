@@ -49,6 +49,34 @@
   .indicator-chip { background:var(--surface); border:1px solid var(--border-soft); border-radius:var(--radius-xs); padding:8px 10px; text-align:center; }
   .indicator-chip .lbl { font-size:0.65rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; }
   .indicator-chip .val { font-family:'JetBrains Mono',monospace; font-size:0.9rem; font-weight:700; color:var(--text); margin-top:2px; }
+  .layer-count { margin-left:auto; font-size:0.7rem; font-family:'JetBrains Mono',monospace; color:var(--text-muted); padding:1px 7px; background:rgba(255,255,255,0.04); border-radius:10px; }
+  .layer-count.has-data { color:var(--gold); background:rgba(240,180,41,0.1); }
+  .ctx-panel { margin-top:14px; background:var(--bg2,#0c0f18); border:1px solid var(--border-soft); border-radius:var(--radius); padding:16px; }
+  .ctx-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; margin-bottom:12px; }
+  .ctx-chip .lbl { font-size:0.65rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; }
+  .ctx-chip .val { font-family:'JetBrains Mono',monospace; font-size:0.85rem; font-weight:700; margin-top:2px; }
+  .ctx-news { font-size:0.78rem; color:var(--text-sub,#a8b0d0); line-height:1.6; }
+  .ctx-news li { margin-bottom:4px; }
+  .ctx-warn { margin-top:10px; padding:8px 12px; border-radius:var(--radius-sm); background:rgba(255,59,92,0.08); border:1px solid rgba(255,59,92,0.25); color:var(--red); font-size:0.78rem; }
+
+  .ai-score-row { display:flex; align-items:center; gap:16px; margin-bottom:14px; }
+  .ai-score-dial { width:64px; height:64px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-family:'JetBrains Mono',monospace; font-weight:700; font-size:1.1rem; border:3px solid var(--gold); color:var(--gold); }
+  .ai-bias { font-family:'Space Grotesk',sans-serif; font-size:1.1rem; font-weight:700; }
+  .ai-bias.long { color:var(--green); }
+  .ai-bias.short { color:var(--red); }
+  .ai-bias.neutral { color:var(--text-muted); }
+  .ai-summary { font-size:0.85rem; color:var(--text-sub,#a8b0d0); line-height:1.6; margin-bottom:12px; }
+  .ai-risk { padding:10px 14px; border-radius:var(--radius-sm); background:rgba(255,59,92,0.08); border:1px solid rgba(255,59,92,0.25); color:var(--red); font-size:0.8rem; margin-bottom:12px; }
+  .ai-levels { display:grid; grid-template-columns:repeat(auto-fill,minmax(100px,1fr)); gap:8px; }
+  .ai-level-chip { text-align:center; background:var(--surface); border:1px solid var(--border-soft); border-radius:var(--radius-xs); padding:8px; }
+  .ai-level-chip .lbl { font-size:0.65rem; color:var(--text-muted); text-transform:uppercase; }
+  .ai-level-chip .val { font-family:'JetBrains Mono',monospace; font-weight:700; font-size:0.85rem; margin-top:2px; }
+  .ai-stale-note { font-size:0.72rem; color:var(--text-muted); margin-top:10px; font-style:italic; }
+
+  .mtf-tabs { display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap; }
+  .mtf-tab { background:var(--surface); border:1px solid var(--border-soft); color:var(--text-muted); border-radius:var(--radius-xs); padding:6px 14px; font-size:0.78rem; cursor:pointer; font-family:'JetBrains Mono',monospace; }
+  .mtf-tab.active { background:var(--gold-subtle); border-color:var(--gold); color:var(--gold); font-weight:700; }
+  .mtf-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:8px; }
 
   .chart-err { position:absolute; top:0; left:0; right:0; bottom:0; display:none; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:14px; text-align:center; color:var(--red); font-size:0.85rem; background:var(--bg2,#0c0f18); z-index:6; }
   .chart-err button { background:var(--gold-subtle); border:1px solid var(--gold); color:var(--gold); border-radius:var(--radius-xs); padding:8px 16px; font-size:0.8rem; cursor:pointer; font-weight:600; }
@@ -106,18 +134,33 @@
     <div class="layers-panel">
         <div class="layers-title">🗂️ Analysis Layers — toggle what you want to see</div>
         <div class="layers-grid">
-            <label class="layer-toggle"><input type="checkbox" id="layerSR"> <span class="layer-color-dot" style="background:#3B8BFF;"></span><span>Support / Resistance</span></label>
-            <label class="layer-toggle"><input type="checkbox" id="layerFVG"> <span class="layer-color-dot" style="background:#8B5CF6;"></span><span>Fair Value Gaps</span></label>
-            <label class="layer-toggle"><input type="checkbox" id="layerOB"> <span class="layer-color-dot" style="background:#F0B429;"></span><span>Order Blocks</span></label>
+            <label class="layer-toggle"><input type="checkbox" id="layerSR"> <span class="layer-color-dot" style="background:#3B8BFF;"></span><span>Support / Resistance</span><span class="layer-count" id="cnt-layerSR"></span></label>
+            <label class="layer-toggle"><input type="checkbox" id="layerFVG"> <span class="layer-color-dot" style="background:#8B5CF6;"></span><span>Fair Value Gaps</span><span class="layer-count" id="cnt-layerFVG"></span></label>
+            <label class="layer-toggle"><input type="checkbox" id="layerOB"> <span class="layer-color-dot" style="background:#F0B429;"></span><span>Order Blocks</span><span class="layer-count" id="cnt-layerOB"></span></label>
             <label class="layer-toggle"><input type="checkbox" id="layerFibRet"> <span class="layer-color-dot" style="background:#06B6D4;"></span><span>Fibonacci Retracement</span></label>
             <label class="layer-toggle"><input type="checkbox" id="layerFibExt"> <span class="layer-color-dot" style="background:#00D97E;"></span><span>Fibonacci Extension</span></label>
             <label class="layer-toggle"><input type="checkbox" id="layerPD"> <span class="layer-color-dot" style="background:#FF3B5C;"></span><span>ICT Premium / Discount</span></label>
-            <label class="layer-toggle"><input type="checkbox" id="layerSweep"> <span class="layer-color-dot" style="background:#FFD166;"></span><span>Liquidity Sweep Markers</span></label>
-            <label class="layer-toggle"><input type="checkbox" id="layerBOS"> <span class="layer-color-dot" style="background:#3BFFCB;"></span><span>BOS / CHoCH</span></label>
-            <label class="layer-toggle"><input type="checkbox" id="layerDiv"> <span class="layer-color-dot" style="background:#FF8C42;"></span><span>RSI Divergence</span></label>
+            <label class="layer-toggle"><input type="checkbox" id="layerSweep"> <span class="layer-color-dot" style="background:#FFD166;"></span><span>Liquidity Sweep Markers</span><span class="layer-count" id="cnt-layerSweep"></span></label>
+            <label class="layer-toggle"><input type="checkbox" id="layerBOS"> <span class="layer-color-dot" style="background:#3BFFCB;"></span><span>BOS / CHoCH</span><span class="layer-count" id="cnt-layerBOS"></span></label>
+            <label class="layer-toggle"><input type="checkbox" id="layerDiv"> <span class="layer-color-dot" style="background:#FF8C42;"></span><span>RSI Divergence</span><span class="layer-count" id="cnt-layerDiv"></span></label>
         </div>
         <div class="kz-badge inactive" id="kzBadge">⏳ Kill Zone status loading…</div>
         <div class="indicator-strip" id="indicatorStrip"></div>
+    </div>
+
+    <div class="ctx-panel" id="ctxPanel" style="display:none;">
+        <div class="layers-title">🌐 Market Context — everything else the analysis uses</div>
+        <div class="ctx-grid" id="ctxGrid"></div>
+        <div id="ctxNews"></div>
+        <div id="ctxWarn"></div>
+    </div>
+
+    <div class="ctx-panel" id="aiReportPanel" style="display:none;"></div>
+
+    <div class="ctx-panel" id="mtfPanel">
+        <div class="layers-title">📊 Multi-Timeframe Indicators — 15m / 1H / 4H / 1D</div>
+        <div id="mtfTabs" class="mtf-tabs"></div>
+        <div id="mtfBody"></div>
     </div>
 
 </div>
@@ -222,6 +265,7 @@ async function fetchJSON(url) {
 async function loadInitial() {
   noMoreHistory = false;
   document.getElementById('chartLoading').style.display = 'none';
+  renderAiReport(); // depends on currentSymbol — check on every symbol/timeframe load
   document.getElementById('chartErrBox').style.display = 'none';
   try {
     const r = await fetchJSON(`/api/chart/candles?symbol=${currentSymbol}&interval=${currentInterval}&limit=500`);
@@ -236,9 +280,11 @@ async function loadInitial() {
     chart.timeScale().fitContent();
   } catch (e) { showErr(e.message); }
 
-  // Layers reset on symbol/timeframe change — refetch if any were on
+  // Overlays now always load (not gated behind a toggle) — Market Context
+  // panel and the "N found" layer-count badges should be visible right
+  // away, before the user has to guess which toggle to try first.
   overlaysCache = null;
-  if (anyLayerOn()) await loadOverlays();
+  await loadOverlays();
 }
 
 async function maybeLoadOlder(range) {
@@ -299,6 +345,8 @@ async function loadOverlays() {
     overlaysCache = r.overlays;
     redrawLayers();
     updateKillZoneBadge(r.overlays.killZone);
+    renderMarketContext(r.overlays.marketContext); // always shown once loaded — not gated by a zone toggle
+    renderMultiTimeframe(r.overlays.multiTimeframe);
   } catch (e) { /* overlays are optional — chart still works without them */ }
 }
 
@@ -387,6 +435,7 @@ function redrawLayers() {
   if (!overlaysCache) return;
   const o = overlaysCache;
   clearPrimitives(); // full redraw each time — clear old filled boxes before re-adding
+  updateLayerCounts(o); // refresh "N found" badges every redraw, regardless of which toggles are on
 
   // Support / Resistance — BUG FIX: now color-coded by CURRENT role
   // (green=support/below price, red=resistance/above price) instead of
@@ -511,6 +560,139 @@ function redrawLayers() {
       boxSeries.DIV.push(s);
     });
   }
+}
+
+function renderMarketContext(ctx) {
+  const panel = document.getElementById('ctxPanel');
+  if (!ctx) { panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+
+  const chip = (label, value, color) => `<div class="ctx-chip"><div class="lbl">${label}</div><div class="val" style="color:${color||'var(--text)'};">${value}</div></div>`;
+  const grid = document.getElementById('ctxGrid');
+  let html = '';
+
+  if (ctx.funding) html += chip('Funding Rate', ctx.funding.fundingRate != null ? ctx.funding.fundingRate.toFixed(4) + '%' : '—', ctx.funding.fundingBias === 'LONGS_PAYING' ? 'var(--red)' : ctx.funding.fundingBias === 'SHORTS_PAYING' ? 'var(--green)' : 'var(--text)');
+  if (ctx.openInterest) html += chip('Open Interest', ctx.openInterest.trend + ' · ' + ctx.openInterest.signal, ctx.openInterest.signal && ctx.openInterest.signal.includes('BULLISH') ? 'var(--green)' : ctx.openInterest.signal && ctx.openInterest.signal.includes('BEARISH') ? 'var(--red)' : 'var(--text)');
+  if (ctx.btcTrend) html += chip('BTC Trend (4H)', typeof ctx.btcTrend === 'string' ? ctx.btcTrend : (ctx.btcTrend.trend || JSON.stringify(ctx.btcTrend)), 'var(--text)');
+  if (ctx.candlePattern) html += chip('Candle Pattern', ctx.candlePattern.replace(/_/g,' '), 'var(--text)');
+  if (ctx.volumeRatio) html += chip('Volume vs Avg', ctx.volumeRatio.ratio + 'x' + (ctx.volumeRatio.spike ? ' 🔥' : ''), ctx.volumeRatio.spike ? 'var(--gold)' : 'var(--text)');
+  if (ctx.atr != null) html += chip('ATR (14)', typeof ctx.atr === 'number' ? ctx.atr.toFixed(4) : ctx.atr, 'var(--text)');
+  if (ctx.marketMemory) html += chip('7d Long/Short Skew', `${ctx.marketMemory.longHeavyPct}% long-heavy`, 'var(--text)');
+  else html += chip('7d Market Memory', 'not enough history yet', 'var(--text-muted)');
+  grid.innerHTML = html || '<span style="color:var(--text-muted);font-size:0.8rem;">No context data available.</span>';
+
+  const newsEl = document.getElementById('ctxNews');
+  if (ctx.news && ctx.news.length) {
+    newsEl.innerHTML = '<div class="lbl" style="font-size:0.65rem;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;">Recent Headlines</div><ul class="ctx-news">' + ctx.news.map(n => `<li>• ${n}</li>`).join('') + '</ul>';
+  } else newsEl.innerHTML = '';
+
+  const warnEl = document.getElementById('ctxWarn');
+  warnEl.innerHTML = ctx.liquidityWarning ? `<div class="ctx-warn">⚠️ ${ctx.liquidityWarning.replace(/_/g,' ')} — this symbol may have thin order flow right now.</div>` : '';
+}
+
+// Layer toggle count badges — makes it visible when a toggle is genuinely
+// ON but the pattern just doesn't exist in the current view (e.g. no RSI
+// divergence right now) vs looking like the toggle silently did nothing.
+function updateLayerCounts(o) {
+  const set = (id, count) => {
+    const el = document.getElementById('cnt-' + id);
+    if (!el) return;
+    el.textContent = count === null ? '' : (count > 0 ? String(count) : 'none in view');
+    el.classList.toggle('has-data', count > 0);
+  };
+  set('layerSR', o.supportResistance ? o.supportResistance.length : 0);
+  set('layerFVG', o.fairValueGaps ? o.fairValueGaps.length : 0);
+  set('layerOB', o.orderBlocks ? o.orderBlocks.length : 0);
+  set('layerSweep', (o.liquiditySweep && o.liquiditySweep.recentSweep) ? 1 : 0);
+  set('layerBOS', o.structureEvents ? o.structureEvents.length : 0);
+  set('layerDiv', o.rsiDivergences ? o.rsiDivergences.length : 0);
+}
+
+let mtfData = null, mtfActiveTab = '1h';
+function renderMultiTimeframe(tfData) {
+  if (!tfData) { document.getElementById('mtfPanel').style.display = 'none'; return; }
+  mtfData = tfData;
+  document.getElementById('mtfPanel').style.display = 'block';
+  const tabs = document.getElementById('mtfTabs');
+  const order = ['15m', '1h', '4h', '1d'];
+  tabs.innerHTML = order.filter(tf => tfData[tf]).map(tf =>
+    `<button class="mtf-tab${tf === mtfActiveTab ? ' active' : ''}" data-tf="${tf}">${tf.toUpperCase()}</button>`
+  ).join('');
+  renderMtfBody(tfData[mtfActiveTab]);
+}
+function renderMtfBody(d) {
+  const body = document.getElementById('mtfBody');
+  if (!d) { body.innerHTML = '<span style="color:var(--text-muted);font-size:0.8rem;">No data for this timeframe.</span>'; return; }
+  const chip = (label, value, color) => `<div class="indicator-chip"><div class="lbl">${label}</div><div class="val" style="color:${color||'var(--text)'};">${value}</div></div>`;
+  const rsiColor = d.rsi >= 70 ? 'var(--red)' : d.rsi <= 30 ? 'var(--green)' : 'var(--text)';
+  const structColor = d.structure && d.structure.includes('BULLISH') ? 'var(--green)' : d.structure && d.structure.includes('BEARISH') ? 'var(--red)' : 'var(--text)';
+  body.innerHTML = '<div class="mtf-grid">' +
+    chip('RSI', d.rsi != null ? d.rsi.toFixed(1) : '—', rsiColor) +
+    chip('RSI Div', (d.rsiDivergence || 'NONE').replace('_DIV','').replace('_',' ')) +
+    chip('MACD Hist', d.macd ? d.macd.histogram.toFixed(4) : '—', d.macd && d.macd.histogram >= 0 ? 'var(--green)' : 'var(--red)') +
+    chip('Structure', (d.structure || 'NEUTRAL').replace('_',' '), structColor) +
+    chip('ADX', d.adx ? d.adx.adx.toFixed(1) + ' (' + d.adx.strength + ')' : '—') +
+    chip('EMA20', d.ema ? d.ema.ema20 : '—') +
+    chip('EMA50', d.ema ? d.ema.ema50 : '—') +
+    chip('EMA200', d.ema ? d.ema.ema200 : '—') +
+    chip('ATR', d.atr != null ? (typeof d.atr === 'number' ? d.atr.toFixed(4) : d.atr) : '—') +
+    chip('Candle', (d.candlePattern || '—').replace(/_/g,' ')) +
+    chip('Volume', d.volume ? d.volume.ratio + 'x' + (d.volume.spike ? ' 🔥' : '') : '—', d.volume && d.volume.spike ? 'var(--gold)' : 'var(--text)') +
+    chip('Last Close', d.lastClose ?? '—') +
+  '</div>';
+}
+document.getElementById('mtfTabs').addEventListener('click', (e) => {
+  const btn = e.target.closest('.mtf-tab');
+  if (!btn || !mtfData) return;
+  mtfActiveTab = btn.dataset.tf;
+  document.querySelectorAll('.mtf-tab').forEach(b => b.classList.toggle('active', b.dataset.tf === mtfActiveTab));
+  renderMtfBody(mtfData[mtfActiveTab]);
+});
+
+// ── AI Analysis Report — only appears if the user arrived here via
+// analysis.html's "View Chart" button (which stashes its already-computed
+// result in sessionStorage). This page never calls Groq itself — running
+// the AI analysis stays a deliberate, rate-limited action on the analysis
+// page, not something that happens automatically just from viewing a chart.
+function renderAiReport() {
+  const panel = document.getElementById('aiReportPanel');
+  let stored;
+  try { stored = sessionStorage.getItem('chartAnalysis_' + currentSymbol); } catch (e) { return; }
+  if (!stored) { panel.style.display = 'none'; return; }
+  let data;
+  try { data = JSON.parse(stored); } catch (e) { panel.style.display = 'none'; return; }
+  const a = data && data.analysis;
+  if (!a) { panel.style.display = 'none'; return; }
+
+  const bias = (a.overallBias || 'NEUTRAL').toUpperCase();
+  const biasClass = bias.includes('LONG') || bias.includes('BULL') ? 'long' : bias.includes('SHORT') || bias.includes('BEAR') ? 'short' : 'neutral';
+  const score = a.confluenceScore ?? '—';
+  const level5 = a.level5 || {};
+
+  const levelChip = (label, val) => val != null ? `<div class="ai-level-chip"><div class="lbl">${label}</div><div class="val">${val}</div></div>` : '';
+
+  panel.style.display = 'block';
+  panel.innerHTML = `
+    <div class="layers-title">🧠 AI Analysis Report — ${data.coin || currentSymbol.replace('USDT','')}/USDT</div>
+    <div class="ai-score-row">
+      <div class="ai-score-dial">${score}/10</div>
+      <div>
+        <div class="ai-bias ${biasClass}">${bias.replace(/_/g,' ')}</div>
+        <div style="font-size:0.7rem;color:var(--text-muted);">Confluence Grade</div>
+      </div>
+    </div>
+    ${a.summary ? `<div class="ai-summary">${a.summary}</div>` : ''}
+    ${a.keyRisk ? `<div class="ai-risk">⚠️ ${a.keyRisk}</div>` : ''}
+    <div class="ai-levels">
+      ${levelChip('Entry High', level5.entryHigh)}
+      ${levelChip('Entry Low', level5.entryLow)}
+      ${levelChip('Stop Loss', level5.sl)}
+      ${levelChip('TP1', level5.tp1)}
+      ${levelChip('TP2', level5.tp2)}
+      ${levelChip('TP3', level5.tp3)}
+    </div>
+    <div class="ai-stale-note">📌 This is the analysis from when you clicked "View Chart" — price may have moved since. Re-run analysis on the Analysis page for a fresh read.</div>
+  `;
 }
 
 function renderIndicatorStrip(ind) {

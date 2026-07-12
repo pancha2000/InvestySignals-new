@@ -650,6 +650,40 @@ app.get('/api/chart/overlays', async (req, res) => {
       ema50: marketTools.indicators.ema(closes, 50).slice(-1)[0],
     };
 
+    // NEW: "Market Context" — everything /api/deep-analysis feeds the AI
+    // BEYOND pure price-action indicators (funding, OI, BTC trend, news,
+    // candle anatomy, volume anomaly, ATR, liquidity, and — if the 24/7
+    // collector has been running long enough — recent market-memory
+    // history). Fetched in parallel; each piece degrades gracefully to
+    // null on its own if that particular call fails, rather than the
+    // whole /api/chart/overlays request failing.
+    const lastCandle = candles[candles.length - 1];
+    const [fundingCtx, oiCtx, btcTrendCtx, newsCtx, memoryCtx, multiTf] = await Promise.all([
+      marketTools.data.getFundingRateContext(symbol).catch(() => null),
+      marketTools.data.getOpenInterestContext(symbol, candles).catch(() => null),
+      marketTools.data.getBtcTrendContext().catch(() => null),
+      marketTools.getCryptoNews(symbol).catch(() => null),
+      Promise.resolve().then(() => marketMemory.getRecentContext(symbol, 7)).catch(() => null),
+      // NEW: full 15m/1h/4h/1d indicator bundle — the SAME multi-timeframe
+      // breakdown analysis.html's "Live Indicator Values" section shows
+      // (RSI/MACD/EMA/BB/ATR/ADX/Structure/Pattern/Volume per timeframe).
+      // Reuses getTechnicalIndicators() as-is — no AI/Groq call involved,
+      // purely computed from candles, so this stays free and fast.
+      marketTools.getTechnicalIndicators(symbol, 'multi').catch(() => null),
+    ]);
+    const volInfo = marketTools.candleReading.volumeRatio(candles);
+    const marketContext = {
+      funding: fundingCtx,                                   // {fundingRate, fundingBias}
+      openInterest: oiCtx,                                    // {current, trend, signal, priceDir}
+      btcTrend: btcTrendCtx,                                   // BTC 4H trend context
+      candlePattern: marketTools.candleReading.candlePattern(lastCandle), // e.g. 'BULL_CANDLE', 'PIN_BAR_BULL'
+      volumeRatio: volInfo,                                    // {ratio, spike} — current vs 20-period average
+      atr: marketTools.indicators.atr(candles),                // same ATR used for SL sizing in deep-analysis
+      liquidityWarning: (lastCandle.volume === 0 || (oiCtx && oiCtx.current === 0)) ? 'LOW_LIQUIDITY' : null,
+      news: (newsCtx && Array.isArray(newsCtx.articles)) ? newsCtx.articles.slice(0, 3).map(a => a.title) : [],
+      marketMemory: (memoryCtx && memoryCtx.available) ? memoryCtx.summary : null, // null if collector hasn't run long enough yet
+    };
+
     res.json({
       success: true, symbol, interval,
       overlays: {
@@ -664,6 +698,8 @@ app.get('/api/chart/overlays', async (req, res) => {
         structureEvents,              // NEW: [{type: BOS_BULLISH|BOS_BEARISH|CHOCH_BULLISH|CHOCH_BEARISH, time, price}] — draw as markers
         rsiDivergences,                // NEW: [{type: BULLISH_DIV|BEARISH_DIV, point1:{time,price}, point2:{time,price}}] — draw as connecting lines
         indicators: indicatorSnapshot,// NEW: RSI/MACD/ADX/EMA — same numbers the AI analysis prompt used
+        marketContext,                 // NEW: funding/OI/BTC-trend/news/candle-pattern/volume/ATR/liquidity/market-memory
+        multiTimeframe: (multiTf && multiTf.success) ? multiTf.timeframes : null, // NEW: full 15m/1h/4h/1d breakdown
       },
     });
   } catch (err) {
