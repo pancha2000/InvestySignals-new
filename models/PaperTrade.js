@@ -15,6 +15,8 @@ const PaperTradeSchema = new mongoose.Schema({
   leverage:      { type: Number, default: 10 },
   size:          { type: Number, default: 100 },   // USDT amount
   remainingSize: { type: Number },
+  sizingMethod:  { type: String, enum: ['MANUAL', 'RISK_BASED'], default: 'MANUAL' }, // NEW
+  riskPct:       { type: Number }, // NEW — % of balance risked, only set when sizingMethod=RISK_BASED
   // NEW: captured from the analysis that produced this trade's SL/TP —
   // used to give Break-Even a sensible noise buffer instead of an exact
   // entry-price stop (see runTPSLCheck's TP1 handling in server.js).

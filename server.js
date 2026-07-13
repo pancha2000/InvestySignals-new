@@ -115,7 +115,7 @@ const SETTINGS_DEFAULTS = {
   groq_api_key: '',      // overrides .env GROQ_API_KEY if set
   groq_model: 'llama-3.3-70b-versatile',
   groq_max_tokens: 2000, // BUG FIX: 1500 too low — AI truncates JSON causing parse errors
-  groq_temperature: 0.2,
+  groq_temperature: 0, // FIX: was 0.2 — same input could give slightly different output; 0 = deterministic
   // ── Market Memory (24/7 historical collector) — admin-configurable ──
   marketMemoryEnabled: true,
   marketMemorySymbols: 'BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT', // comma-separated
@@ -126,6 +126,7 @@ const SETTINGS_DEFAULTS = {
   // NEW: how long a LIMIT paper-trade order stays PENDING before auto-cancel
   // (see runTPSLCheck's "Infinite Pending" fix).
   limitOrderExpiryHours: 4,
+  confluenceThreshold: 5, // admin-configurable version of the const below
 };
 let globalSettings = { ...SETTINGS_DEFAULTS };
 
@@ -158,6 +159,7 @@ async function loadSettingsFromDB() {
     docs.forEach(d => { globalSettings[d.key] = d.value; });
     console.log('⚙️  Settings loaded');
     applyMarketMemorySettings(); // start/restart collector with loaded settings
+    CONFLUENCE_THRESHOLD = parseInt(globalSettings.confluenceThreshold) || 5;
   } catch(e) { console.warn('⚠️  Settings load failed:', e.message); }
 }
 async function saveSettingToDB(key, value) {
@@ -299,7 +301,7 @@ const ANALYSIS_COOLDOWN = 0; // No cooldown — removed per user request
 // ── Thesis Tracking (per user per coin) ──────────────────────
 // Key: uid+':'+coin — stores previous analysis for flip detection
 const thesisState = new Map();
-const CONFLUENCE_THRESHOLD = 5; // score/10 — below this = NEUTRAL (5/10 now passes)
+let CONFLUENCE_THRESHOLD = 5; // score/10 — below this = NEUTRAL. Now admin-configurable (see SETTINGS_DEFAULTS.confluenceThreshold), this is just the fallback default.
 
 // ── STABILITY UPGRADE: periodic cache/state cleanup ──────────
 // klinesCache/priceCache entries were only ever checked for staleness on
@@ -515,6 +517,7 @@ app.get('/api/analysis', async (req, res) => {
 });
 
 const STABLECOINS = new Set(['USDCUSDT','FDUSDUSDT','TUSDUSDT','BUSDUSDT','EURUSDT','DAIUSDT','USDPUSDT','AEURUSDT']);
+function round2(v) { return Math.round(v * 100) / 100; }
 app.get('/api/scan', async (req, res) => {
   try {
     const ctrl=new AbortController();
@@ -522,13 +525,41 @@ app.get('/api/scan', async (req, res) => {
     const r=await fetch('https://api.binance.com/api/v3/ticker/24hr',{signal:ctrl.signal});
     if (!r.ok) throw new Error(`Binance error: ${r.status}`);
     const data=await r.json();
+    // NEW: BTC-relative strength — cheap, comes from this SAME ticker
+    // snapshot (no extra API calls). Separates "this coin actually has its
+    // own momentum" from "the whole market moved together, including BTC".
+    const btcTicker = data.find(c => c.symbol === 'BTCUSDT');
+    const btcChange = btcTicker ? parseFloat(btcTicker.priceChangePercent) : 0;
+
     const results=data
       .filter(c=>c.symbol.endsWith('USDT')&&!STABLECOINS.has(c.symbol))
       .filter(c=>parseFloat(c.quoteVolume)>=15_000_000&&parseInt(c.count)>=100_000)
       .filter(c=>{const ch=parseFloat(c.priceChangePercent);return ch>=3||ch<=-3;})
       .sort((a,b)=>parseFloat(b.quoteVolume)-parseFloat(a.quoteVolume)).slice(0,20)
-      .map(c=>({symbol:c.symbol,change:parseFloat(c.priceChangePercent),volume:parseFloat(c.quoteVolume),price:parseFloat(c.lastPrice),trades:parseInt(c.count)}));
-    res.json({ success:true, count:results.length, coins:results });
+      .map(c=>({
+        symbol:c.symbol,change:parseFloat(c.priceChangePercent),volume:parseFloat(c.quoteVolume),
+        price:parseFloat(c.lastPrice),trades:parseInt(c.count),
+        relativeStrengthVsBtc: round2(parseFloat(c.priceChangePercent) - btcChange), // NEW
+      }));
+
+    // NEW: RVOL (Relative Volume) — today's volume vs this coin's OWN
+    // 20-day average, computed only for the already-shortlisted top-20 (not
+    // the full ~500-market universe) to keep this bounded to ~20 extra
+    // klines calls, reusing the existing 5-min cache so repeat scans within
+    // that window don't refetch. A fixed $15M threshold treats a coin whose
+    // normal volume is $200M the same as one whose normal volume is $16M —
+    // RVOL tells you which of those a $20M day actually means something for.
+    await Promise.all(results.map(async (coin) => {
+      try {
+        const daily = await fetchKlinesCached(coin.symbol, '1d', 21); // 20 prior days + today
+        const vols = daily.map(k => parseFloat(k[7])); // quote asset volume
+        const priorDays = vols.slice(0, -1); // exclude today (still forming)
+        const avgVol = priorDays.length ? priorDays.reduce((a,b)=>a+b,0) / priorDays.length : null;
+        coin.rvol = avgVol ? round2(coin.volume / avgVol) : null;
+      } catch (_) { coin.rvol = null; } // best-effort — a failed RVOL lookup doesn't remove the coin from results
+    }));
+
+    res.json({ success:true, count:results.length, coins:results, btcChange });
   } catch(err) { res.status(500).json({ success:false, error:err.message }); }
 });
 
@@ -624,6 +655,8 @@ app.get('/api/chart/overlays', async (req, res) => {
     const premiumDiscount = marketTools.structure.premiumDiscountZone(candles);
     const liquiditySweep = marketTools.structure.liquiditySweep(candles);
     const killZone = marketTools.structure.killZoneStatus();
+    const oteZone = marketTools.structure.getOteZoneStatus(candles);       // NEW
+    const equalHighsLows = marketTools.structure.findEqualHighsLows(candles); // NEW
 
     // NEW: positioned BOS/CHoCH events (new detectStructureEvents — see
     // market_tools.js for why this is separate from the existing
@@ -697,6 +730,8 @@ app.get('/api/chart/overlays', async (req, res) => {
         killZone,                     // {inKillZone, activeZones, significance} — draw as a badge, not a chart line
         structureEvents,              // NEW: [{type: BOS_BULLISH|BOS_BEARISH|CHOCH_BULLISH|CHOCH_BEARISH, time, price}] — draw as markers
         rsiDivergences,                // NEW: [{type: BULLISH_DIV|BEARISH_DIV, point1:{time,price}, point2:{time,price}}] — draw as connecting lines
+        oteZone,                       // NEW: {direction, zoneLow, zoneHigh, inZone} — ICT Optimal Trade Entry (Fib 61.8-78.6%)
+        equalHighsLows,                 // NEW: [{type: EQH|EQL, price, firstTime, lastTime, count}] — resting liquidity levels
         indicators: indicatorSnapshot,// NEW: RSI/MACD/ADX/EMA — same numbers the AI analysis prompt used
         marketContext,                 // NEW: funding/OI/BTC-trend/news/candle-pattern/volume/ATR/liquidity/market-memory
         multiTimeframe: (multiTf && multiTf.success) ? multiTf.timeframes : null, // NEW: full 15m/1h/4h/1d breakdown
@@ -915,8 +950,32 @@ app.post('/api/paper/trade', ptAuth, async (req, res) => {
       return res.status(400).json({ success:false, error:'Invalid pair or direction.' });
 
     const entryPrice = parseFloat(b.entry || b.entryPrice) || 0;
-    const size       = parseFloat(b.size  || b.amount)     || 100;
     const lev        = Math.min(Math.max(parseInt(b.leverage)||10, 1), 125);
+    const slPrice     = parseFloat(b.sl) || null;
+
+    // NEW: Risk-based position sizing. If the client sends riskPct (e.g. 2
+    // for "risk 2% of my balance on this trade") AND we have both entry
+    // and SL, size is DERIVED from actual risk distance instead of being a
+    // flat manual number — a tight SL gets a bigger size, a wide SL gets a
+    // smaller size, so the DOLLAR risk is what stays constant, not the
+    // position size. Falls back to the manual `size`/`amount` field
+    // exactly as before if riskPct isn't sent (fully backward-compatible).
+    let size = parseFloat(b.size || b.amount) || 100;
+    let sizingMethod = 'MANUAL';
+    const riskPct = parseFloat(b.riskPct);
+    if (riskPct > 0 && entryPrice > 0 && slPrice > 0) {
+      let pb0 = await PB.findOne({ uid: req.uid });
+      if (!pb0) pb0 = await PB.create({ uid: req.uid, balance: 1000 });
+      const slDistancePct = Math.abs(entryPrice - slPrice) / entryPrice; // e.g. 0.02 = 2% away
+      if (slDistancePct > 0) {
+        const riskDollars = pb0.balance * (Math.min(riskPct, 10) / 100); // hard-cap 10% risk/trade regardless of what's sent
+        const computedSize = riskDollars / (slDistancePct * lev);
+        // Sanity bounds: never below $10, never above the account balance itself
+        size = Math.max(10, Math.min(computedSize, pb0.balance));
+        sizingMethod = 'RISK_BASED';
+      }
+    }
+
     const isLimit    = (b.orderType||'MARKET') === 'LIMIT';
     const statusVal  = isLimit
       ? (b.direction==='LONG' ? 'PENDING_LONG' : 'PENDING_SHORT')
@@ -925,7 +984,7 @@ app.post('/api/paper/trade', ptAuth, async (req, res) => {
     // instead of staying PENDING forever — by the time a stale limit order
     // finally fills hours/days later, the original analysis and market
     // structure it was based on may be completely invalid.
-    const LIMIT_ORDER_TTL_MS = 4 * 60 * 60 * 1000;
+    const LIMIT_ORDER_TTL_MS = (globalSettings.limitOrderExpiryHours || 4) * 60 * 60 * 1000;
     const expiresAt  = isLimit ? new Date(Date.now() + LIMIT_ORDER_TTL_MS) : null;
     // BUG FIX (Strict Break-Even): capture the ATR this trade's SL/TP were
     // based on, so TP1's break-even move can use a noise buffer instead of
@@ -937,6 +996,26 @@ app.post('/api/paper/trade', ptAuth, async (req, res) => {
     if (!pb) pb = await PB.create({ uid: req.uid, balance: 1000 });
     if (pb.balance < size)
       return res.json({ success:false, error:`Insufficient balance ($${pb.balance.toFixed(2)} available).` });
+
+    // NEW: Duplicate trade protection — warns/blocks a second OPEN/PENDING
+    // trade on the same symbol for the same user, to avoid accidental
+    // double-entry (double-click) or unintentionally stacking exposure on
+    // one coin. Client can pass allowDuplicate:true to proceed anyway
+    // (e.g. an intentional scale-in) — default is to block.
+    if (!b.allowDuplicate) {
+      const existing = await PT.findOne({
+        uid: req.uid,
+        symbol: normalizePair(b.pair),
+        status: { $in: ['OPEN', 'PENDING_LONG', 'PENDING_SHORT', 'TP1_HIT'] },
+      });
+      if (existing) {
+        return res.json({
+          success: false,
+          error: `You already have an active ${existing.direction} trade on ${normalizePair(b.pair)} (status: ${existing.status}). Close it first, or resend with allowDuplicate:true to add another position anyway.`,
+          duplicateTradeId: existing.id,
+        });
+      }
+    }
 
     const trade = await PT.create({
       uid:        req.uid,
@@ -951,8 +1030,9 @@ app.post('/api/paper/trade', ptAuth, async (req, res) => {
       entry:      entryPrice,
       triggerPrice: parseFloat(b.triggerPrice) || entryPrice,
       tp1: parseFloat(b.tp1)||null, tp2: parseFloat(b.tp2)||null,
-      tp3: parseFloat(b.tp3)||null, sl: parseFloat(b.sl)||null,
+      tp3: parseFloat(b.tp3)||null, sl: slPrice,
       amount:   size, size, leverage: lev,
+      sizingMethod, riskPct: sizingMethod === 'RISK_BASED' ? Math.min(riskPct, 10) : null, // NEW
       notional: entryPrice ? parseFloat((size * lev).toFixed(4)) : 0,
       liqPrice: entryPrice
         ? parseFloat((b.direction === 'LONG'
@@ -1575,6 +1655,13 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
           h4: marketTools.structure.fibonacciExtensions(h4c),
           d1: marketTools.structure.fibonacciExtensions(d1c),
         },
+        // NEW: Optimal Trade Entry zone (ICT's 61.8-78.6% Fib retracement
+        // "best entry pocket") — checked on the entry timeframe (M15) and
+        // 1H, since OTE is meant for near-term entries, not the daily swing.
+        oteZone: {
+          m15: marketTools.structure.getOteZoneStatus(m15c),
+          h1: marketTools.structure.getOteZoneStatus(h1c),
+        },
       };
     } catch (_) { /* ICT data failure is non-fatal */ }
 
@@ -1596,9 +1683,19 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     // (same retry/backoff/shared-rate-limit benefit as Open Interest above).
     const { fundingRate, fundingBias } = await marketTools.data.getFundingRateContext(symbol);
 
+    // NEW: Long/Short Ratio + Fear & Greed Index — same reliability pattern
+    // (retry/backoff/cache) as everything else in market_tools.js. Used as
+    // CONFIRMATION factors in confluence scoring only, never a standalone
+    // trigger — see the ICT/SMC context block below for the exact rule.
+    const [longShortCtx, fearGreedCtx] = await Promise.all([
+      marketTools.data.getLongShortRatio(symbol).catch(() => null),
+      marketTools.data.getFearGreedIndex().catch(() => null),
+    ]);
+
     // Build raw data object
     const rawData = {
       price, btcTrend, fundingRate, fundingBias,
+      longShort: longShortCtx, fearGreed: fearGreedCtx, // NEW
       m15RSI, h1RSI, h4RSI,
       h4Div, h1Div, m15Div,
       h1MACD:h1MACDv, m15MACD:m15MACDv,
@@ -1752,8 +1849,12 @@ Rule: If confluenceScore < ${CONFLUENCE_THRESHOLD}, set overallBias to NEUTRAL.`
     if (ls4h?.sellSideLiquidity?.length) ictLines.push(`SELL-SIDE LIQUIDITY (4H equal lows): ${ls4h.sellSideLiquidity.join(', ')}`);
     const fe4h = ictData.fibExtensions?.h4;
     if (fe4h) ictLines.push(`FIB EXTENSIONS (4H, ${fe4h.direction}): 127.2%=${fe4h.e1272}  161.8%=${fe4h.e1618}  261.8%=${fe4h.e2618} — USE THESE as preferred TP targets over arbitrary price levels`);
+    const ote15 = ictData.oteZone?.m15;
+    const ote1h = ictData.oteZone?.h1;
+    if (ote15?.inZone) ictLines.push(`OPTIMAL TRADE ENTRY (M15): price IS INSIDE the OTE zone (${ote15.zoneLow}-${ote15.zoneHigh}, ${ote15.direction}) — ICT's highest-probability entry pocket on the entry timeframe.`);
+    if (ote1h?.inZone) ictLines.push(`OPTIMAL TRADE ENTRY (1H): price IS INSIDE the OTE zone (${ote1h.zoneLow}-${ote1h.zoneHigh}, ${ote1h.direction}).`);
     const ictContext = ictLines.length ? '\n\nICT/SMC ADVANCED DATA:\n' + ictLines.join('\n')
-      + '\n(ICT RULES: Never take a LONG in PREMIUM zone or SHORT in DISCOUNT zone unless there is a confirmed Liquidity Sweep in that direction. Fibonacci Extensions are the preferred TP targets — use them over arbitrary levels. A Liquidity Sweep on the entry timeframe adds +1 to confluenceScore and is a high-quality trigger.)' : '';
+      + '\n(ICT RULES: Never take a LONG in PREMIUM zone or SHORT in DISCOUNT zone unless there is a confirmed Liquidity Sweep in that direction. Fibonacci Extensions are the preferred TP targets — use them over arbitrary levels. A Liquidity Sweep on the entry timeframe adds +1 to confluenceScore and is a high-quality trigger. Price being INSIDE the OTE zone on M15 or 1H adds +1 to confluenceScore — it is ICT\'s preferred entry pocket, not just another Fib level.)' : '';
 
     // ── NEW: Market Memory — real observed history, not a live snapshot ──
     // getRecentContext() reads snapshots collected by the 24/7 background
@@ -1783,6 +1884,8 @@ MARKET DATA:
 - Price: $${price}
 - BTC Trend (4H EMA20): ${btcTrend}
 - Funding: ${fundingRate!=null?fundingRate.toFixed(4)+'%':'-'} (${fundingBias})
+- Long/Short Ratio: ${longShortCtx && longShortCtx.longAccount!=null ? (longShortCtx.longAccount*100).toFixed(1)+'% long / '+(longShortCtx.shortAccount*100).toFixed(1)+'% short ('+longShortCtx.skewLabel+')' : 'N/A'}
+- Fear & Greed Index: ${fearGreedCtx && fearGreedCtx.value!=null ? fearGreedCtx.value+'/100 ('+fearGreedCtx.classification+')' : 'N/A'}
 - RSI: 15m=${m15RSI} | 1H=${h1RSI} | 4H=${h4RSI}
 - RSI Div: 4H=${h4Div} | 1H=${h1Div} | 15m=${m15Div}
 - MACD 1H: hist=${h1MACDv.histogram} (prev=${h1MACDv.prevHistogram})
@@ -1846,8 +1949,11 @@ RULE 5 — CONFLUENCE MINIMUM:
     +1 OB confluence (price near valid OB)  |  +1 FVG confluence
     +1 Fibonacci 61.8% confluence  |  +1 ADX > 25 (trending, not ranging)
     +1 OI signal confirms direction (BULLISH_CONTINUATION or SHORT_SQUEEZE for LONG, etc.)
+    +1 Long/Short ratio confirms (e.g. SHORT_HEAVY skew + LONG bias = contrarian squeeze setup)
+    +1 Fear & Greed extreme confirms (Extreme Fear ≤24 + LONG bias, or Extreme Greed ≥76 + SHORT bias — contrarian confirmation)
   - ADX RULE: if h4ADX.adx < 20 (RANGING), reduce score by 1 — range-bound markets have low follow-through
   - OI RULE: if oiData.signal is LONG_LIQUIDATION and bias=LONG, reduce score by 1
+  - CROWDED TRADE RULE: if Long/Short ratio is LONG_HEAVY (65%+) AND bias=LONG, reduce score by 1 — you'd be adding to an already-crowded, squeeze-vulnerable side. Same logic for SHORT_HEAVY + SHORT bias.
   - If score < ${CONFLUENCE_THRESHOLD}: set overallBias=NEUTRAL, still provide valid numeric levels
 
 Respond with ONLY this JSON (no markdown, no explanation):
@@ -2597,6 +2703,7 @@ app.get('/api/admin/settings', verifyAdmin, (req, res) => {
       highImpactMsg:      globalSettings.highImpactMsg      || '',
       autoEngine:         globalSettings.autoEngine         || false,
       limitOrderExpiryHours: globalSettings.limitOrderExpiryHours || 4,
+      confluenceThreshold: globalSettings.confluenceThreshold || 5,
     }
   });
 });
@@ -2604,12 +2711,15 @@ app.get('/api/admin/settings', verifyAdmin, (req, res) => {
 /* PATCH /api/admin/settings — save one or more settings */
 app.patch('/api/admin/settings', verifyAdmin, async (req, res) => {
   try {
-    const allowed = ['maintenance','maintenanceMsg','allowRegistrations','highImpactMode','highImpactMsg','autoEngine','limitOrderExpiryHours'];
+    const allowed = ['maintenance','maintenanceMsg','allowRegistrations','highImpactMode','highImpactMsg','autoEngine','limitOrderExpiryHours','confluenceThreshold'];
     for (const k of allowed) {
       if (req.body[k] !== undefined) {
         globalSettings[k] = req.body[k];
         await saveSettingToDB(k, req.body[k]);
       }
+    }
+    if (req.body.confluenceThreshold !== undefined) {
+      CONFLUENCE_THRESHOLD = parseInt(req.body.confluenceThreshold) || 5; // live-apply, no restart needed
     }
     res.json({ success: true, settings: globalSettings });
   } catch(e) { res.status(500).json({ success: false, error: e.message }); }
@@ -2618,12 +2728,15 @@ app.patch('/api/admin/settings', verifyAdmin, async (req, res) => {
 /* POST /api/admin/settings (alias) */
 app.post('/api/admin/settings', verifyAdmin, async (req, res) => {
   try {
-    const allowed = ['maintenance','maintenanceMsg','allowRegistrations','highImpactMode','highImpactMsg','autoEngine','limitOrderExpiryHours'];
+    const allowed = ['maintenance','maintenanceMsg','allowRegistrations','highImpactMode','highImpactMsg','autoEngine','limitOrderExpiryHours','confluenceThreshold'];
     for (const k of allowed) {
       if (req.body[k] !== undefined) {
         globalSettings[k] = req.body[k];
         await saveSettingToDB(k, req.body[k]);
       }
+    }
+    if (req.body.confluenceThreshold !== undefined) {
+      CONFLUENCE_THRESHOLD = parseInt(req.body.confluenceThreshold) || 5; // live-apply, no restart needed
     }
     res.json({ success: true, settings: globalSettings });
   } catch(e) { res.status(500).json({ success: false, error: e.message }); }

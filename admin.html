@@ -400,7 +400,7 @@
                     <h2>Manage Users</h2>
                     <p>View, edit, and manage platform user accounts and permissions.</p>
                 </div>
-                <button class="btn btn-gold btn-sm" onclick="openAddUserModal()">+ Add User</button>
+                <button class="btn btn-gold btn-sm">+ Add User</button>
             </div>
             <div class="stats-grid-4" style="grid-template-columns:repeat(4,1fr);margin-bottom:20px;">
                 <div class="stat-box sb-gold"><div class="stat-box-lbl">Total</div><div class="stat-box-val text-gold" id="userTotal">—</div></div>
@@ -432,56 +432,18 @@
                                 <th>User / Email</th>
                                 <th>Plan</th>
                                 <th>Joined</th>
-                                <th>Last Seen</th>
                                 <th>Status</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody id="userTableBody">
                             <tr>
-                                <td colspan="7" style="text-align:center;padding:32px;color:var(--text-muted);">
+                                <td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted);">
                                     Loading users from database...
                                 </td>
                             </tr>
                         </tbody>
                     </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- ── ADD USER MODAL ── -->
-        <div id="addUserModal" style="display:none;position:fixed;inset:0;z-index:9999;align-items:center;justify-content:center;background:rgba(0,0,0,0.75);backdrop-filter:blur(6px);">
-            <div style="background:var(--bg2);border:1px solid rgba(212,175,55,0.3);border-radius:16px;padding:32px;max-width:420px;width:90%;">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
-                    <h3 style="margin:0;">➕ Add New User</h3>
-                    <button onclick="closeAddUserModal()" style="background:none;border:none;color:var(--text-muted);font-size:1.4rem;cursor:pointer;line-height:1;">×</button>
-                </div>
-                <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 18px;">
-                    Creates the account directly — works even while public registration is turned off.
-                </p>
-                <div style="display:flex;flex-direction:column;gap:14px;">
-                    <div class="input-group">
-                        <label>Full Name</label>
-                        <input type="text" class="input-control" id="addUserName" placeholder="Jane Doe">
-                    </div>
-                    <div class="input-group">
-                        <label>Email</label>
-                        <input type="email" class="input-control" id="addUserEmail" placeholder="user@example.com">
-                    </div>
-                    <div class="input-group">
-                        <label>Password</label>
-                        <input type="password" class="input-control" id="addUserPassword" placeholder="Min. 8 characters">
-                    </div>
-                    <div class="input-group">
-                        <label>Plan</label>
-                        <select class="input-control" id="addUserPlan">
-                            <option value="free" selected>Free</option>
-                            <option value="pro">Pro</option>
-                            <option value="elite">Elite</option>
-                        </select>
-                    </div>
-                    <div id="addUserMsg" style="display:none;font-size:0.82rem;padding:10px;border-radius:8px;"></div>
-                    <button class="btn btn-gold" style="margin-top:6px;" onclick="submitAddUser()" id="addUserSubmitBtn">Create User</button>
                 </div>
             </div>
         </div>
@@ -784,6 +746,15 @@
                                 <div style="font-size:0.78rem;color:var(--text-muted);">Auto-cancel PENDING paper trades that never fill within this window</div>
                             </div>
                             <input type="number" id="limitExpiryInput" class="input-control" value="4" min="1" max="72" step="1"
+                                style="width:80px;font-family:'JetBrains Mono',monospace;">
+                        </div>
+                        <!-- NEW: Confluence Threshold (was hardcoded CONFLUENCE_THRESHOLD=5) -->
+                        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--surface);border-radius:var(--radius-sm);">
+                            <div>
+                                <div style="font-weight:600;font-size:0.9rem;">Confluence Threshold (/10)</div>
+                                <div style="font-size:0.78rem;color:var(--text-muted);">Score below this forces overallBias to NEUTRAL</div>
+                            </div>
+                            <input type="number" id="confluenceThresholdInput" class="input-control" value="5" min="1" max="10" step="1"
                                 style="width:80px;font-family:'JetBrains Mono',monospace;">
                         </div>
                     </div>
@@ -1169,33 +1140,17 @@ window.adminSignOut = async function() {
         return window._adminUser ? await window._adminUser.getIdToken() : '';
     }
 
-    // ── Relative "last seen" formatter ──────────────────────────
-    function formatLastSeen(dateStr) {
-        if (!dateStr) return 'Never';
-        const then = new Date(dateStr).getTime();
-        if (isNaN(then)) return 'Never';
-        const diffMs = Date.now() - then;
-        const mins = Math.floor(diffMs / 60000);
-        if (mins < 1)   return 'Just now';
-        if (mins < 60)  return mins + 'm ago';
-        const hrs = Math.floor(mins / 60);
-        if (hrs < 24)   return hrs + 'h ago';
-        const days = Math.floor(hrs / 24);
-        if (days < 30)  return days + 'd ago';
-        return new Date(dateStr).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
-    }
-
     // ── Load Users ──────────────────────────────────────────────
     async function loadUsers() {
         const tbody = document.getElementById('userTableBody');
         if (!tbody) return;
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text-muted);">Loading users…</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted);">Loading users…</td></tr>';
         try {
             const idToken = await getToken();
             const res  = await fetch('/api/admin/users', { headers: { 'Authorization': 'Bearer ' + idToken } });
             const data = await res.json();
             if (!data.success || !Array.isArray(data.users)) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--red);">Failed to load users. Check console.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--red);">Failed to load users. Check console.</td></tr>';
                 return;
             }
             const users = data.users;
@@ -1206,7 +1161,7 @@ window.adminSignOut = async function() {
             set('userPro',    users.filter(u => u.plan==='pro'||u.plan==='elite').length);
             set('userBanned', users.filter(u => u.suspended).length);
             if (!users.length) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text-muted);">No users registered yet.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted);">No users registered yet.</td></tr>';
                 return;
             }
             tbody.innerHTML = users.map((u, i) => {
@@ -1226,7 +1181,6 @@ window.adminSignOut = async function() {
                     </td>
                     <td><span class="badge badge-${planColor}" style="font-size:0.68rem;text-transform:uppercase;">${u.plan||'free'}</span></td>
                     <td style="font-size:0.8rem;color:var(--text-muted);">${joined}</td>
-                    <td style="font-size:0.8rem;color:var(--text-muted);">${formatLastSeen(u.lastLogin)}</td>
                     <td>${statusBadge}</td>
                     <td>
                         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
@@ -1247,7 +1201,7 @@ window.adminSignOut = async function() {
             }).join('');
         } catch(e) {
             console.error('[Admin] loadUsers error:', e);
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--red);">Error: ' + e.message + '</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--red);">Error: ' + e.message + '</td></tr>';
         }
     }
 
@@ -1292,64 +1246,6 @@ window.adminSignOut = async function() {
             if (j.success) { loadUsers(); loadAdminStats(); }
             else alert('❌ ' + (j.error || 'Failed to delete user'));
         } catch(e) { alert('❌ ' + e.message); }
-    }
-
-    // ── Add User Modal ──────────────────────────────────────────
-    function openAddUserModal() {
-        document.getElementById('addUserName').value = '';
-        document.getElementById('addUserEmail').value = '';
-        document.getElementById('addUserPassword').value = '';
-        document.getElementById('addUserPlan').value = 'free';
-        const msg = document.getElementById('addUserMsg');
-        msg.style.display = 'none';
-        document.getElementById('addUserModal').style.display = 'flex';
-    }
-
-    function closeAddUserModal() {
-        document.getElementById('addUserModal').style.display = 'none';
-    }
-
-    function showAddUserMsg(text, isError) {
-        const msg = document.getElementById('addUserMsg');
-        msg.style.display = 'block';
-        msg.style.background = isError ? 'rgba(255,59,92,0.12)' : 'rgba(16,185,129,0.12)';
-        msg.style.border = '1px solid ' + (isError ? 'rgba(255,59,92,0.3)' : 'rgba(16,185,129,0.3)');
-        msg.style.color = isError ? 'var(--red,#ff4d4f)' : 'var(--green,#10b981)';
-        msg.textContent = text;
-    }
-
-    async function submitAddUser() {
-        const displayName = document.getElementById('addUserName').value.trim();
-        const email       = document.getElementById('addUserEmail').value.trim();
-        const password    = document.getElementById('addUserPassword').value;
-        const plan        = document.getElementById('addUserPlan').value;
-        const btn         = document.getElementById('addUserSubmitBtn');
-
-        if (!email) { showAddUserMsg('Email is required.', true); return; }
-        if (!password || password.length < 8) { showAddUserMsg('Password must be at least 8 characters.', true); return; }
-
-        btn.textContent = 'Creating...'; btn.style.opacity = '0.7'; btn.style.pointerEvents = 'none';
-        try {
-            const idToken = await getToken();
-            const res = await fetch('/api/admin/users', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
-                body: JSON.stringify({ email, password, displayName, plan })
-            });
-            const j = await res.json();
-            if (j.success) {
-                showAddUserMsg('✅ User created successfully.', false);
-                loadUsers();
-                loadAdminStats();
-                setTimeout(closeAddUserModal, 900);
-            } else {
-                showAddUserMsg('❌ ' + (j.error || 'Failed to create user.'), true);
-            }
-        } catch(e) {
-            showAddUserMsg('❌ ' + e.message, true);
-        } finally {
-            btn.textContent = 'Create User'; btn.style.opacity = ''; btn.style.pointerEvents = '';
-        }
     }
 
     // ── Load Stats ──────────────────────────────────────────────
@@ -1436,6 +1332,8 @@ window.adminSignOut = async function() {
                 if (rt) rt.checked = !!setR.settings.allowRegistrations;
                 const le = document.getElementById('limitExpiryInput');
                 if (le && setR.settings.limitOrderExpiryHours) le.value = setR.settings.limitOrderExpiryHours;
+                const ct = document.getElementById('confluenceThresholdInput');
+                if (ct && setR.settings.confluenceThreshold) ct.value = setR.settings.confluenceThreshold;
             }
         } catch(_) {}
 
@@ -1918,6 +1816,13 @@ window.adminSignOut = async function() {
             const v = Math.min(Math.max(parseInt(le.value) || 4, 1), 72);
             le.value = v;
             saveToggleSetting('limitOrderExpiryHours', v);
+        });
+
+        const ct = document.getElementById('confluenceThresholdInput');
+        if (ct) ct.addEventListener('change', () => {
+            const v = Math.min(Math.max(parseInt(ct.value) || 5, 1), 10);
+            ct.value = v;
+            saveToggleSetting('confluenceThreshold', v);
         });
     });
 

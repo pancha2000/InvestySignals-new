@@ -143,6 +143,8 @@
             <label class="layer-toggle"><input type="checkbox" id="layerSweep"> <span class="layer-color-dot" style="background:#FFD166;"></span><span>Liquidity Sweep Markers</span><span class="layer-count" id="cnt-layerSweep"></span></label>
             <label class="layer-toggle"><input type="checkbox" id="layerBOS"> <span class="layer-color-dot" style="background:#3BFFCB;"></span><span>BOS / CHoCH</span><span class="layer-count" id="cnt-layerBOS"></span></label>
             <label class="layer-toggle"><input type="checkbox" id="layerDiv"> <span class="layer-color-dot" style="background:#FF8C42;"></span><span>RSI Divergence</span><span class="layer-count" id="cnt-layerDiv"></span></label>
+            <label class="layer-toggle"><input type="checkbox" id="layerOTE"> <span class="layer-color-dot" style="background:#C77DFF;"></span><span>ICT Optimal Trade Entry</span><span class="layer-count" id="cnt-layerOTE"></span></label>
+            <label class="layer-toggle"><input type="checkbox" id="layerEQ"> <span class="layer-color-dot" style="background:#7DDBFF;"></span><span>Equal Highs / Lows</span><span class="layer-count" id="cnt-layerEQ"></span></label>
         </div>
         <div class="kz-badge inactive" id="kzBadge">⏳ Kill Zone status loading…</div>
         <div class="indicator-strip" id="indicatorStrip"></div>
@@ -241,7 +243,7 @@ window.addEventListener('resize', () => {
 });
 
 // Price lines currently drawn, so we can clear them when toggling layers off
-let priceLines = { SR: [], FibRet: [], FibExt: [], PD: [], FVG: [], OB: [] };
+let priceLines = { SR: [], FibRet: [], FibExt: [], PD: [], FVG: [], OB: [], OTE: [] };
 let overlaysCache = null;
 
 // ── Data loading ─────────────────────────────────────────────
@@ -414,7 +416,7 @@ function tryAttachFilledBox(zone, fillColor) {
 // lines, which always span the full chart width) so they only draw across
 // the [time, endTime] window where the zone actually exists — this is
 // what fixes the "spans the whole chart" complaint.
-let boxSeries = { FVG: [], OB: [], DIV: [] };
+let boxSeries = { FVG: [], OB: [], DIV: [], EQ: [] };
 function clearBoxSeries(group) {
   (boxSeries[group] || []).forEach(s => chart.removeSeries(s));
   boxSeries[group] = [];
@@ -485,6 +487,32 @@ function redrawLayers() {
     priceLines.PD.push(candleSeries.createPriceLine({ price: p.equilibrium, color: '#FF3B5C', lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Solid, axisLabelVisible: true, title: 'EQ 50%' }));
     priceLines.PD.push(candleSeries.createPriceLine({ price: p.premium75, color: '#FF3B5C', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'Premium 75%' }));
     priceLines.PD.push(candleSeries.createPriceLine({ price: p.discount25, color: '#00D97E', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'Discount 25%' }));
+  }
+
+  // ICT Optimal Trade Entry zone (61.8%-78.6% Fib pocket) — two horizontal
+  // boundary lines, highlighted gold when price is currently inside it.
+  clearPriceLines('OTE');
+  if (document.getElementById('layerOTE').checked && o.oteZone) {
+    const z = o.oteZone;
+    const color = z.inZone ? '#F0B429' : '#C77DFF';
+    priceLines.OTE.push(candleSeries.createPriceLine({ price: z.zoneHigh, color, lineWidth: z.inZone ? 2 : 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'OTE ' + (z.inZone ? '(ACTIVE) ' : '') + 'top' }));
+    priceLines.OTE.push(candleSeries.createPriceLine({ price: z.zoneLow, color, lineWidth: z.inZone ? 2 : 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'OTE ' + (z.inZone ? '(ACTIVE) ' : '') + 'bottom' }));
+  }
+
+  // Equal Highs / Equal Lows — short bounded line segments across the
+  // span where the equal-price swings actually occurred (same
+  // time-bounded technique as FVG/OB, not a full-chart-width line).
+  clearBoxSeries('EQ');
+  if (document.getElementById('layerEQ').checked && o.equalHighsLows) {
+    o.equalHighsLows.forEach(eq => {
+      const s = chart.addLineSeries({
+        color: eq.type === 'EQH' ? '#7DDBFF' : '#7DFFB0', lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dotted,
+        lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
+      });
+      s.setData([{ time: eq.firstTime, value: eq.price }, { time: eq.lastTime, value: eq.price }]);
+      boxSeries.EQ = boxSeries.EQ || [];
+      boxSeries.EQ.push(s);
+    });
   }
 
   // FVG / Order Blocks — BUG FIX: previously drawn with createPriceLine,
@@ -606,6 +634,8 @@ function updateLayerCounts(o) {
   set('layerSweep', (o.liquiditySweep && o.liquiditySweep.recentSweep) ? 1 : 0);
   set('layerBOS', o.structureEvents ? o.structureEvents.length : 0);
   set('layerDiv', o.rsiDivergences ? o.rsiDivergences.length : 0);
+  set('layerOTE', (o.oteZone && o.oteZone.inZone) ? 1 : 0);
+  set('layerEQ', o.equalHighsLows ? o.equalHighsLows.length : 0);
 }
 
 let mtfData = null, mtfActiveTab = '1h';
@@ -719,11 +749,11 @@ function updateKillZoneBadge(kz) {
 }
 
 function anyLayerOn() {
-  return ['layerSR','layerFVG','layerOB','layerFibRet','layerFibExt','layerPD','layerSweep','layerBOS','layerDiv']
+  return ['layerSR','layerFVG','layerOB','layerFibRet','layerFibExt','layerPD','layerSweep','layerBOS','layerDiv','layerOTE','layerEQ']
     .some(id => document.getElementById(id).checked);
 }
 
-['layerSR','layerFVG','layerOB','layerFibRet','layerFibExt','layerPD','layerSweep','layerBOS','layerDiv'].forEach(id => {
+['layerSR','layerFVG','layerOB','layerFibRet','layerFibExt','layerPD','layerSweep','layerBOS','layerDiv','layerOTE','layerEQ'].forEach(id => {
   document.getElementById(id).addEventListener('change', async () => {
     if (!overlaysCache && anyLayerOn()) await loadOverlays();
     else redrawLayers();

@@ -612,6 +612,82 @@ const structure = {
     };
   },
 
+  /**
+   * NEW — ICT "Optimal Trade Entry" (OTE) zone: the 61.8%–78.6% Fibonacci
+   * retracement band, which ICT treats as the highest-probability entry
+   * pocket (deep enough to confirm the pullback is real, shallow enough
+   * that the original swing hasn't invalidated). Built on the SAME
+   * fibonacciRetracement() above — this just names/flags the zone and
+   * checks whether current price is inside it right now, for a chart
+   * layer + a confluence-score bonus.
+   */
+  getOteZoneStatus(candles, lookback = 50) {
+    const fib = structure.fibonacciRetracement(candles, lookback);
+    if (!fib) return null;
+    const lastClose = candles[candles.length - 1].close;
+    const low = Math.min(fib.f618, fib.f786);
+    const high = Math.max(fib.f618, fib.f786);
+    const inZone = lastClose >= low && lastClose <= high;
+    return {
+      direction: fib.direction, // BULLISH_RETRACE = price pulled back down into a discount, expect continuation up
+      zoneLow: round(low, 4),
+      zoneHigh: round(high, 4),
+      inZone,
+      note: inZone
+        ? `Price is INSIDE the OTE zone (${fib.direction === 'BULLISH_RETRACE' ? 'favor LONG' : 'favor SHORT'}) — ICT's highest-probability entry pocket.`
+        : 'Price is outside the OTE zone right now.',
+    };
+  },
+
+  /**
+   * NEW — Equal Highs / Equal Lows (EQH/EQL): the specific liquidity
+   * levels ICT traders watch for stop-hunt sweeps. liquiditySweep() above
+   * already computes the underlying swing highs/lows internally but only
+   * returns bare price numbers (enough for its own sweep-detection logic,
+   * not enough to plot on a chart). This is a separate, additive function
+   * that returns the same kind of levels WITH time/candle position, and
+   * groups genuinely-close swings (within `tolerance`) as "equal" — the
+   * classic EQH/EQL pattern that signals resting liquidity.
+   */
+  findEqualHighsLows(candles, tolerance = 0.0015, lookback = 80) {
+    const win = candles.slice(-Math.min(lookback, candles.length - 1));
+    const swingHighs = [], swingLows = [];
+    for (let i = 1; i < win.length - 1; i++) {
+      if (win[i].high > win[i - 1].high && win[i].high > win[i + 1].high) swingHighs.push({ idx: i, price: win[i].high, time: win[i].time });
+      if (win[i].low < win[i - 1].low && win[i].low < win[i + 1].low) swingLows.push({ idx: i, price: win[i].low, time: win[i].time });
+    }
+    // Group swings whose prices are within `tolerance` of each other — 2+
+    // in a group means "equal highs/lows" (real resting liquidity), a lone
+    // swing with no nearby match isn't a genuine EQH/EQL and is dropped.
+    function groupEquals(swings) {
+      const groups = [];
+      const used = new Set();
+      for (let i = 0; i < swings.length; i++) {
+        if (used.has(i)) continue;
+        const group = [swings[i]];
+        used.add(i);
+        for (let j = i + 1; j < swings.length; j++) {
+          if (used.has(j)) continue;
+          if (Math.abs(swings[j].price - swings[i].price) / swings[i].price <= tolerance) {
+            group.push(swings[j]);
+            used.add(j);
+          }
+        }
+        if (group.length >= 2) groups.push(group);
+      }
+      return groups;
+    }
+    const eqh = groupEquals(swingHighs).map(g => ({
+      type: 'EQH', price: round(g.reduce((s, p) => s + p.price, 0) / g.length, 6),
+      firstTime: g[0].time, lastTime: g[g.length - 1].time, count: g.length,
+    }));
+    const eql = groupEquals(swingLows).map(g => ({
+      type: 'EQL', price: round(g.reduce((s, p) => s + p.price, 0) / g.length, 6),
+      firstTime: g[0].time, lastTime: g[g.length - 1].time, count: g.length,
+    }));
+    return [...eqh, ...eql].slice(-10); // cap — a busy range can otherwise produce a lot of noise
+  },
+
   // ── NEW: ICT / SMC Tools ─────────────────────────────────────────────
 
   /** Liquidity Sweep Detection (ICT core concept).

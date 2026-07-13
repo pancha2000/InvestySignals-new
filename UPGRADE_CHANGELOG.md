@@ -140,6 +140,139 @@ wick is wide enough to touch both a TP and the SL in the same 3-candle
 window, the code checks TP before SL (optimistic order) — true tick-by-tick
 ordering isn't knowable from 1m candles alone.
 
+## 5f. Large batch — OTE/EQH-EQL, Long-Short & Fear-Greed in scoring, risk sizing, duplicate protection, scan RVOL/BTC-strength, consistency fixes
+
+**ICT/SMC additions:**
+- `structure.getOteZoneStatus()` — Optimal Trade Entry zone (61.8-78.6% Fib retracement), additive to existing `fibonacciRetracement()`. Wired into both the chart (new layer) and the deep-analysis AI prompt (+1 confluence score when price is inside it).
+- `structure.findEqualHighsLows()` — EQH/EQL detection with time-bounded output, additive to existing `liquiditySweep()`. Chart layer only (the underlying levels were already in the AI prompt via `liquiditySweep`'s buySideLiquidity/sellSideLiquidity).
+- Both tested with synthetic data before shipping.
+
+**Long/Short Ratio + Fear & Greed → production:** Both functions already
+existed in `market_tools.js` (built earlier for `market_memory.js`). Now
+also fetched in `/api/deep-analysis`, added to the AI prompt, and used in
+two new confluence rules: standard confirmation (+1) and a new "CROWDED
+TRADE" rule (-1 if adding to an already-crowded side, e.g. LONG bias when
+retail is already 65%+ long — squeeze-vulnerable).
+
+**Risk-based position sizing:** `/api/paper/trade` now accepts an optional
+`riskPct` — when sent (with an SL set), size is computed from
+`(balance × riskPct%) / (SL distance % × leverage)` instead of requiring a
+flat manual dollar amount. Hard-capped at 10% risk/trade and the account
+balance itself regardless of what's requested. `PaperTrade` model gained
+`sizingMethod`/`riskPct` fields. `analysis.html` gained a toggle to switch
+between manual $ size and risk-%-based size.
+
+**Duplicate trade protection:** `/api/paper/trade` now blocks a second
+OPEN/PENDING/TP1_HIT trade on the same symbol for the same user by
+default, returning `duplicateTradeId` in the response. Client can resend
+with `allowDuplicate:true` to proceed anyway (intentional scale-in).
+`analysis.html` shows a confirm dialog and retries automatically if the
+user confirms.
+
+**Scan quality (`/api/scan`):**
+- BTC-relative strength (`change - btcChange`) — free, computed from the
+  same 24hr ticker snapshot already being fetched, no extra API calls.
+- RVOL (Relative Volume) — today's volume vs the coin's own 20-day average,
+  computed only for the already-shortlisted top-20 results (not the full
+  ~500-market universe) to keep this to ~20 extra (cached) klines calls
+  per scan, not hundreds.
+
+**Consistency fixes:**
+- Groq `temperature`: 0.2 → 0 (deterministic — same input now gives the
+  same output, directly addressing "why does re-analyzing the same coin
+  an hour later give a different entry").
+- `CONFLUENCE_THRESHOLD`: was a hardcoded `const` — now a `let` driven by
+  `globalSettings.confluenceThreshold`, admin-configurable (Platform
+  Settings panel), live-applied without a server restart.
+- Thesis Status banner: verified it was ALREADY rendered first in
+  analysis.html's output order — no change needed, just confirmed.
+
+## 5e. Full Analysis Report on the chart page
+
+**Multi-Timeframe Indicators panel** — `/api/chart/overlays` now also
+calls the existing `getTechnicalIndicators(symbol, 'multi')` (no AI/Groq
+cost — purely computed from candles, same function the AI agent's tools
+already use) and returns the full 15m/1H/4H/1D breakdown: RSI + RSI
+divergence verdict, MACD, EMA20/50/200, ATR, ADX, Structure (BOS/CHoCH
+verdict), candle pattern, volume ratio — per timeframe, with tab buttons
+to switch between them. This is the same multi-timeframe view
+analysis.html's "Live Indicator Values" accordion shows.
+
+**AI Analysis Report panel** — shows the actual AI verdict (confluence
+score dial, LONG/SHORT/NEUTRAL bias, summary, key risk, entry/SL/TP
+levels) on the chart page. Deliberately does NOT call Groq itself — that
+stays a paid, rate-limited action the user explicitly triggers on
+analysis.html. Instead, `analysis.html`'s "View Chart" button now stashes
+its already-computed result into `sessionStorage` before navigating
+(`openChartWithAnalysis()`); chart.html reads it back if present and the
+symbol matches. Navigating to chart.html directly (no prior analysis) or
+for a different symbol simply hides this panel — no error, no broken
+state, just nothing to show. A visible note reminds the user this
+snapshot may be stale ("price may have moved since — re-run analysis for
+a fresh read") rather than implying it's live.
+
+## 5d. Market Context panel + layer "found" counts
+
+**Market Context panel** — `/api/chart/overlays` now also returns
+`marketContext`: funding rate, Open Interest trend/signal, BTC 4H trend,
+current candle pattern, volume-vs-average ratio (with spike flag),
+ATR (same one used for SL sizing in deep-analysis), a liquidity warning,
+recent news headlines, and — if the 24/7 Market Memory collector has been
+running long enough for this symbol — a 7-day long/short skew summary.
+Fetched in parallel; each piece degrades to `null` independently on
+failure rather than failing the whole request. Rendered as a new panel
+below the indicator strip, always visible once a chart loads (not gated
+behind a layer toggle, since it isn't a chart drawing).
+
+**Layer "found" counts** — every zone/marker-based toggle (S/R, FVG, Order
+Blocks, Liquidity Sweep, BOS/CHoCH, RSI Divergence) now shows a small
+badge with how many instances exist in the current view (or "none in
+view" at zero). This directly addresses a real point raised in testing:
+toggling on a layer like RSI Divergence when no divergence pattern
+currently exists looks identical to a broken toggle — nothing visibly
+happens either way. The count badge makes the difference obvious: "0 /
+none in view" confirms the toggle worked and there's genuinely nothing to
+draw right now, vs the chart being broken. Overlays (and therefore these
+counts + the Market Context panel) now load automatically on every chart
+open, rather than waiting for the first layer toggle.
+
+## 5c. BOS/CHoCH markers, RSI Divergence lines, filled-box plugin
+
+**BOS / CHoCH layer** — `market_tools.js` gained `structure.detectStructureEvents()`,
+additive alongside the existing `detectStructure()` (still used unchanged by
+the AI prompt). Walks the candle set, finds confirmed swing highs/lows, and
+records each time price breaks one (BOS if continuing the trend, CHoCH if
+reversing it) — with the actual time+price of the break, not just a verdict
+string. **Caught and fixed a real bug via a synthetic-data test before
+shipping:** the first version re-selected an already-broken swing level on
+every subsequent candle until a newer swing appeared, firing duplicate BOS
+events repeatedly at the same price. Fixed with a swing-pointer approach —
+verified fix with a second test run showing clean, non-duplicated output.
+
+**RSI Divergence layer** — `candleReading.findRsiDivergences()`, additive
+alongside the existing `rsiDivergence()`. Finds actual swing-high/swing-low
+PAIRS where price and RSI disagree and returns their real coordinates, so
+the chart draws a connecting line between the two genuine pivots (standard
+divergence visualization) instead of just a verdict. Tested against both
+degenerate (flat/tied) and realistic synthetic data — works correctly;
+the degenerate case revealed that near-identical consecutive candle values
+can produce noisy adjacent-swing comparisons, which is a non-issue with
+real market data (prices essentially never tie exactly) but noted here for
+transparency.
+
+**Filled-box plugin (FVG/OB)** — added `FilledRectangle`, a real
+Lightweight Charts "Series Primitive" (canvas-drawing plugin) for TRUE
+shaded rectangles, layered ON TOP of the existing dashed-outline lines
+(previous fix). Every call into the primitive is wrapped in try/catch and
+checks `typeof candleSeries.attachPrimitive === 'function'` first — if this
+browser's loaded library build doesn't support it (or any part of the
+canvas draw call throws), it silently no-ops and the outline-only
+rendering still works exactly as before. **I could not test this specific
+piece in a real browser** (no browser available in my environment) — it's
+built to the documented Series Primitives pattern, but is the one part of
+this change most likely to need a live look if it doesn't render as
+expected. The dashed outlines are a guaranteed-working fallback either way.
+
 ## 5b. View Chart Feature (TradingView-style candlestick chart, self-hosted)
 
 New `chart.html` page — a candlestick chart **inside your own site** (not
