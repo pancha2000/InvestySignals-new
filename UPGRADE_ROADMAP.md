@@ -81,7 +81,7 @@ Report panel.
 |---|---|---|---|
 | 19 | Risk-based position sizing | ✅ Done | — |
 | 20 | Duplicate trade protection | ✅ Done | — |
-| 21 | Signal outcome tracking / feedback loop | ⏳ Not built — needs a new tracking model + a scheduled job comparing confluenceScore to actual trade outcomes | 🔴 High, most valuable long-term |
+| 21 | Signal outcome tracking / feedback loop | ✅ Done — see 🚨 critical bug note in changelog | — |
 
 ---
 

@@ -140,6 +140,43 @@ wick is wide enough to touch both a TP and the SL in the same 3-candle
 window, the code checks TP before SL (optimistic order) — true tick-by-tick
 ordering isn't knowable from 1m candles alone.
 
+## 5g. Signal Outcome Tracking — AND a critical bug caught in the process
+
+**🚨 Critical bug found while building this:** `models/PaperTrade.js` was
+never actually `require()`'d anywhere — `server.js` defines its own
+inline schema (`paperTradeSchema2`) and uses THAT as the real, live
+PaperTrade model. Every field I'd added to `models/PaperTrade.js` across
+several earlier changes (`entryAtr`, `expiresAt`, `sizingMethod`,
+`riskPct`) was being silently dropped by Mongoose on every save — no
+error, just quietly never persisted. **Practical impact:** the
+Break-Even ATR buffer fix (5c) always fell back to its live-1m-range
+proxy instead of the intended stored ATR (not broken, just not using the
+preferred value); the Infinite-Pending fix (5a) was unaffected — it
+independently computes age from `openedAt` + live settings and never
+actually relied on the missing `expiresAt` field. Risk-based sizing (5f)
+computed correctly at creation time (not affected) but wasn't recording
+its own metadata for audit.
+
+**Fix:** added all the missing fields directly to `paperTradeSchema2` in
+`server.js` (the schema actually in use), and added a large warning
+comment to the top of `models/PaperTrade.js` explaining it's not live,
+so this doesn't happen again. Did not attempt to unify the two files —
+`models/PaperTrade.js` is missing several fields the live schema depends
+on (`currentSl`, `trailOffset` especially, used by the trailing-stop
+logic), so migrating to it is a separate, carefully-tested project of
+its own, not something to do as a side effect of this fix.
+
+**Signal Outcome Tracking (the actual feature):** `PaperTrade` now
+records `confluenceScore` and `grade` at trade-open time (sent from
+analysis.html, sourced from the AI's own analysis result — no extra
+computation). New endpoint `GET /api/admin/signal-performance?days=N`
+aggregates all `CLOSED` trades with a recorded score into win-rate/P&L
+buckets, both by exact confluenceScore (0-10) and by grade (S/A/B/C).
+New Admin Panel section "📈 Signal Performance" renders this as two
+tables. Only counts trades that closed AFTER this feature was deployed
+(older trades have no recorded score and are correctly excluded, not
+miscounted) — the panel says so explicitly when there's no data yet.
+
 ## 5f. Large batch — OTE/EQH-EQL, Long-Short & Fear-Greed in scoring, risk sizing, duplicate protection, scan RVOL/BTC-strength, consistency fixes
 
 **ICT/SMC additions:**

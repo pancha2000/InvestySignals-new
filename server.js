@@ -837,6 +837,22 @@ const paperTradeSchema2 = new mongoose.Schema({
   trailOffset:Number,
   triggerPrice: Number,
   remainingSize: Number,
+  // ── FIX: these fields were being written via PT.create({...}) for
+  // several features (Break-Even ATR buffer, LIMIT order auto-expiry,
+  // risk-based sizing, signal outcome tracking) but were NEVER ACTUALLY
+  // PERSISTED — this schema (paperTradeSchema2) is the one really in use
+  // (see the mongoose.models.PaperTrade fallback below), and it didn't
+  // define these fields yet. Mongoose silently drops any field not
+  // declared in the schema on save — no error, just quietly gone. Adding
+  // them here is the real fix; models/PaperTrade.js (a separate,
+  // never-`require`'d file) was NOT the live schema and editing it alone
+  // did nothing.
+  entryAtr:        Number,
+  expiresAt:       Date,
+  sizingMethod:    { type:String, enum:['MANUAL','RISK_BASED'], default:'MANUAL' },
+  riskPct:         Number,
+  confluenceScore: Number,
+  grade:           String,
 }, { timestamps:true });
 
 const paperBalanceSchema2 = new mongoose.Schema({
@@ -1042,6 +1058,8 @@ app.post('/api/paper/trade', ptAuth, async (req, res) => {
       remainingSize: size,
       status:   statusVal,
       entryAtr, expiresAt,
+      confluenceScore: parseInt(b.confluenceScore) || null, // NEW — for signal outcome tracking
+      grade: b.grade || null,                                 // NEW
       openTime: new Date().toISOString(),
       openedAt: new Date(),
       fillTime: isLimit ? null : new Date().toISOString(),
@@ -2480,51 +2498,6 @@ app.get('/api/admin/users', verifyAdmin, async (req, res) => {
   } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-/* POST /api/admin/users — admin manually registers a user (works even when
-   public self-registration is turned off). Creates the Firebase Auth account
-   AND the matching MongoDB user in one step. */
-app.post('/api/admin/users', verifyAdmin, async (req, res) => {
-  try {
-    const email       = (req.body.email || '').trim().toLowerCase();
-    const password    = req.body.password || '';
-    const displayName = (req.body.displayName || '').trim();
-    const plan        = ['free','pro','elite'].includes(req.body.plan) ? req.body.plan : 'free';
-
-    if (!email) return res.status(400).json({ success: false, error: 'Email is required.' });
-    if (!password || password.length < 8) return res.status(400).json({ success: false, error: 'Password must be at least 8 characters.' });
-
-    // Create the Firebase Auth account
-    let fbUser;
-    try {
-      fbUser = await admin.auth().createUser({ email, password, displayName: displayName || undefined });
-    } catch(fbErr) {
-      const msg = fbErr.code === 'auth/email-already-exists'
-        ? 'This email is already registered.'
-        : (fbErr.message || 'Failed to create account.');
-      return res.status(400).json({ success: false, error: msg });
-    }
-
-    // Create the matching MongoDB user document
-    let dbUser;
-    try {
-      dbUser = await User.create({
-        uid: fbUser.uid,
-        email,
-        displayName: displayName || '',
-        role: ADMIN_EMAILS.includes(email) ? 'admin' : 'user',
-        plan,
-        paperBalance: 1000,
-      });
-    } catch(dbErr) {
-      // Roll back the Firebase account if DB write fails, so we don't leave an orphaned auth user
-      try { await admin.auth().deleteUser(fbUser.uid); } catch(_) {}
-      return res.status(500).json({ success: false, error: 'Failed to save user: ' + dbErr.message });
-    }
-
-    res.json({ success: true, user: dbUser });
-  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
-});
-
 /* PATCH /api/admin/users/:uid — update user (suspend, plan, etc.) */
 app.patch('/api/admin/users/:uid', verifyAdmin, async (req, res) => {
   try {
@@ -2562,6 +2535,66 @@ app.get('/api/admin/stats', verifyAdmin, async (req, res) => {
         : 0,
     ]);
     res.json({ success: true, stats: { totalUsers, activeSignals, openReports, pendingBalReqs } });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  NEW — Signal Outcome Tracking (the feedback loop)
+//  Answers the actual question, with real numbers, instead of assuming
+//  ICT/SMC confluence scoring works: "did trades opened with a higher
+//  confluenceScore actually win more often than lower-score ones?"
+//  Only counts trades with status:'CLOSED' AND a confluenceScore recorded
+//  — older trades opened before this field existed are excluded rather
+//  than silently counted as score=null (which would corrupt the buckets).
+// ═══════════════════════════════════════════════════════════════
+app.get('/api/admin/signal-performance', verifyAdmin, async (req, res) => {
+  try {
+    const daysBack = Math.min(parseInt(req.query.days) || 90, 365);
+    const since = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+
+    const trades = await PT.find({
+      status: 'CLOSED',
+      confluenceScore: { $ne: null },
+      closedAt: { $gte: since },
+    }).select('confluenceScore grade pnl pnlPct direction pair closedAt').lean();
+
+    if (!trades.length) {
+      return res.json({ success: true, totalTrades: 0, byScore: [], byGrade: [], overall: null, note: 'No closed trades with a recorded confluenceScore yet in this window — this fills in as trades opened after this feature was deployed actually close.' });
+    }
+
+    function summarize(group) {
+      const n = group.length;
+      const wins = group.filter(t => t.pnl > 0).length;
+      const totalPnl = group.reduce((s, t) => s + (t.pnl || 0), 0);
+      const avgPnlPct = group.reduce((s, t) => s + (t.pnlPct || 0), 0) / n;
+      return { count: n, wins, losses: n - wins, winRatePct: round2(100 * wins / n), totalPnl: round2(totalPnl), avgPnlPct: round2(avgPnlPct) };
+    }
+
+    // Bucket by confluenceScore (0-10)
+    const byScoreMap = {};
+    for (const t of trades) {
+      const k = t.confluenceScore;
+      (byScoreMap[k] = byScoreMap[k] || []).push(t);
+    }
+    const byScore = Object.keys(byScoreMap).map(k => ({ score: parseInt(k), ...summarize(byScoreMap[k]) })).sort((a, b) => a.score - b.score);
+
+    // Bucket by grade (S/A/B/C)
+    const byGradeMap = {};
+    for (const t of trades) {
+      const k = t.grade || 'UNKNOWN';
+      (byGradeMap[k] = byGradeMap[k] || []).push(t);
+    }
+    const gradeOrder = ['S', 'A', 'B', 'C', 'UNKNOWN'];
+    const byGrade = gradeOrder.filter(g => byGradeMap[g]).map(g => ({ grade: g, ...summarize(byGradeMap[g]) }));
+
+    res.json({
+      success: true,
+      totalTrades: trades.length,
+      windowDays: daysBack,
+      byScore,   // [{score, count, wins, losses, winRatePct, totalPnl, avgPnlPct}]
+      byGrade,   // [{grade, count, wins, losses, winRatePct, totalPnl, avgPnlPct}]
+      overall: summarize(trades),
+    });
   } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
 

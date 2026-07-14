@@ -1986,6 +1986,11 @@ async function ptSubmit(allowDuplicate) {
                 tp1, tp2, tp3, sl, leverage: lev, size,
                 riskPct, // NEW — null unless the risk toggle is on
                 allowDuplicate: !!allowDuplicate, // NEW — set true only on explicit user confirm (see duplicate handling below)
+                // NEW: for the signal outcome tracking feedback loop —
+                // lets the admin panel later ask "did higher-score signals
+                // actually win more often" with real numbers.
+                confluenceScore: ptCurrentData?.analysis?.confluenceScore ?? null,
+                grade: ptCurrentData?.analysis?.grade ?? null,
                 // NEW: 1H ATR from the analysis that produced this SL/TP —
                 // used server-side to give Break-Even a noise buffer instead
                 // of an exact-entry stop (see runTPSLCheck's TP1 handling).

@@ -943,6 +943,33 @@
                     </div>
                 </div>
 
+                <!-- ═══════════════════════════════════════════════════ -->
+                <!-- SIGNAL PERFORMANCE PANEL (feedback loop)             -->
+                <!-- ═══════════════════════════════════════════════════ -->
+                <div class="data-panel" style="margin-top:20px;">
+                    <div class="panel-header">
+                        <div class="panel-title">📈 Signal Performance — does confluenceScore actually predict wins?</div>
+                        <div style="font-size:0.75rem;color:var(--text-muted);">Real win-rate data from closed paper trades, not an assumption</div>
+                    </div>
+                    <div style="padding:20px;">
+                        <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;">
+                            <label style="font-size:0.8rem;color:var(--text-sub);">Window:</label>
+                            <select id="sigPerfDays" class="input-control" style="width:140px;">
+                                <option value="30">Last 30 days</option>
+                                <option value="90" selected>Last 90 days</option>
+                                <option value="180">Last 180 days</option>
+                                <option value="365">Last 365 days</option>
+                            </select>
+                            <button onclick="loadSignalPerformance()" class="btn" style="background:var(--surface);border:1px solid var(--border-soft);color:var(--text);padding:8px 14px;">
+                                🔄 Refresh
+                            </button>
+                        </div>
+                        <div id="sigPerfContent">
+                            <div style="color:var(--text-muted);font-size:0.85rem;">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
 
@@ -1362,6 +1389,7 @@ window.adminSignOut = async function() {
 
         // Load Market Memory settings + status
         await refreshMarketMemoryStatus(true);
+        await loadSignalPerformance();
     }  // end loadAdminStats
 
     async function refreshStats() {
@@ -1732,6 +1760,70 @@ window.adminSignOut = async function() {
         box.innerHTML = `Running: <b>${status.running ? '🟢 yes' : '🔴 no'}</b> · Last run: <b>${lastRun}</b><br>`
             + `Disk usage: <b>${status.diskUsageMB ?? 0} MB</b> (${status.fileCount ?? 0} files)`;
     }
+
+    // ── Signal Performance (feedback loop) ──────────────────
+    async function loadSignalPerformance() {
+        const el = document.getElementById('sigPerfContent');
+        if (!el) return;
+        el.innerHTML = '<div style="color:var(--text-muted);font-size:0.85rem;">Loading...</div>';
+        try {
+            const days = document.getElementById('sigPerfDays')?.value || 90;
+            const idToken = await getToken();
+            const r = await fetch('/api/admin/signal-performance?days=' + days, {
+                headers: { 'Authorization': 'Bearer ' + idToken }
+            }).then(r => r.json());
+
+            if (!r.success) { el.innerHTML = '<div style="color:var(--red);font-size:0.85rem;">' + (r.error || 'Failed to load') + '</div>'; return; }
+            if (r.totalTrades === 0) {
+                el.innerHTML = '<div style="color:var(--text-muted);font-size:0.85rem;padding:20px;text-align:center;">' + (r.note || 'No data yet.') + '</div>';
+                return;
+            }
+
+            const winColor = (wr) => wr >= 60 ? 'var(--green)' : wr >= 45 ? 'var(--gold)' : 'var(--red)';
+            const row = (label, d) => `
+                <tr style="border-bottom:1px solid var(--border-soft);">
+                    <td style="padding:8px 12px;font-weight:600;">${label}</td>
+                    <td style="padding:8px 12px;text-align:center;">${d.count}</td>
+                    <td style="padding:8px 12px;text-align:center;color:${winColor(d.winRatePct)};font-weight:700;">${d.winRatePct}%</td>
+                    <td style="padding:8px 12px;text-align:center;">${d.wins}W / ${d.losses}L</td>
+                    <td style="padding:8px 12px;text-align:center;color:${d.totalPnl>=0?'var(--green)':'var(--red)'};">$${d.totalPnl}</td>
+                    <td style="padding:8px 12px;text-align:center;">${d.avgPnlPct}%</td>
+                </tr>`;
+
+            let html = `<div style="margin-bottom:16px;padding:12px 16px;background:var(--surface);border-radius:var(--radius-sm);">
+                <b>${r.totalTrades}</b> closed trades in the last ${r.windowDays} days —
+                overall win rate: <b style="color:${winColor(r.overall.winRatePct)};">${r.overall.winRatePct}%</b>,
+                total P&L: <b style="color:${r.overall.totalPnl>=0?'var(--green)':'var(--red)'};">$${r.overall.totalPnl}</b>
+            </div>`;
+
+            if (r.byGrade.length) {
+                html += `<div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px;">By Grade</div>
+                <table style="width:100%;border-collapse:collapse;margin-bottom:20px;font-size:0.82rem;">
+                    <thead><tr style="border-bottom:2px solid var(--border-soft);color:var(--text-muted);font-size:0.72rem;text-transform:uppercase;">
+                        <th style="padding:8px 12px;text-align:left;">Grade</th><th style="padding:8px 12px;">Trades</th>
+                        <th style="padding:8px 12px;">Win Rate</th><th style="padding:8px 12px;">W/L</th>
+                        <th style="padding:8px 12px;">Total P&L</th><th style="padding:8px 12px;">Avg P&L%</th>
+                    </tr></thead><tbody>${r.byGrade.map(d => row(d.grade, d)).join('')}</tbody>
+                </table>`;
+            }
+
+            if (r.byScore.length) {
+                html += `<div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px;">By Confluence Score</div>
+                <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+                    <thead><tr style="border-bottom:2px solid var(--border-soft);color:var(--text-muted);font-size:0.72rem;text-transform:uppercase;">
+                        <th style="padding:8px 12px;text-align:left;">Score</th><th style="padding:8px 12px;">Trades</th>
+                        <th style="padding:8px 12px;">Win Rate</th><th style="padding:8px 12px;">W/L</th>
+                        <th style="padding:8px 12px;">Total P&L</th><th style="padding:8px 12px;">Avg P&L%</th>
+                    </tr></thead><tbody>${r.byScore.map(d => row(d.score + '/10', d)).join('')}</tbody>
+                </table>`;
+            }
+
+            el.innerHTML = html;
+        } catch (e) {
+            el.innerHTML = '<div style="color:var(--red);font-size:0.85rem;">Error: ' + e.message + '</div>';
+        }
+    }
+    document.getElementById('sigPerfDays')?.addEventListener('change', loadSignalPerformance);
 
     async function refreshMarketMemoryStatus(alsoLoadSettings) {
         try {
