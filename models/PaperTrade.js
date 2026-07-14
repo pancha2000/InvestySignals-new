@@ -1,3 +1,31 @@
+/**
+ * ⚠️⚠️⚠️ THIS FILE IS NOT CURRENTLY USED ⚠️⚠️⚠️
+ *
+ * server.js defines its OWN inline schema (`paperTradeSchema2`, near the
+ * "PAPER TRADING API" section header) and never `require()`s this file.
+ * The live PaperTrade model in production is `paperTradeSchema2`, NOT
+ * the schema below.
+ *
+ * This was discovered after several fields (entryAtr, confluenceScore,
+ * grade, riskPct, sizingMethod) were added HERE by mistake across
+ * multiple edits and silently never persisted — Mongoose drops any field
+ * not declared in the schema actually registered for a model name, with
+ * no error. The real fix each time was adding the field to
+ * `paperTradeSchema2` in server.js instead.
+ *
+ * If you want this file to become the real source of truth, you'd need to:
+ *   1. Add ALL fields paperTradeSchema2 has that this one is missing
+ *      (uid, id, entryPrice, entryType, openTime, fillTime, filledAt,
+ *      closeTime, totalPnl, totalRoe, tp1Pnl, tp1HitPrice, tp1HitTime,
+ *      currentSl, trailOffset, notional, liqPrice, roe) — several of
+ *      these (currentSl, trailOffset especially) are actively used by
+ *      the trailing-stop logic in runTPSLCheck.
+ *   2. Change server.js's PT constant to `require('./models/PaperTrade')`
+ *      instead of defining paperTradeSchema2 inline.
+ *   3. Test thoroughly — this is a live financial-data schema.
+ * Until that migration happens, EDIT paperTradeSchema2 IN SERVER.JS,
+ * not this file.
+ */
 const mongoose = require('mongoose');
 
 const PaperTradeSchema = new mongoose.Schema({
@@ -21,6 +49,12 @@ const PaperTradeSchema = new mongoose.Schema({
   // used to give Break-Even a sensible noise buffer instead of an exact
   // entry-price stop (see runTPSLCheck's TP1 handling in server.js).
   entryAtr:      { type: Number },
+  // NEW: captured from the analysis that produced this trade — lets us
+  // answer "does a higher confluenceScore actually predict a higher win
+  // rate" with real numbers instead of assuming the ICT/SMC scoring
+  // works. See GET /api/admin/signal-performance.
+  confluenceScore: { type: Number },
+  grade:           { type: String }, // 'S'|'A'|'B'|'C' at the time this trade was opened
   // NEW: LIMIT orders expire after this time instead of staying pending
   // forever — set at creation time (see POST /api/paper/trade).
   expiresAt:     { type: Date },
