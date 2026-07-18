@@ -140,6 +140,142 @@ wick is wide enough to touch both a TP and the SL in the same 3-candle
 window, the code checks TP before SL (optimistic order) — true tick-by-tick
 ordering isn't knowable from 1m candles alone.
 
+## 5j. The remaining batch — Volume Profile, VSA, Breaker Blocks, Inducement, Judas Swing, Power of 3, scan spread/spike/news checks
+
+All 9 remaining roadmap items from this session, each tested with
+synthetic data before shipping (three had real bugs caught in testing —
+detailed below).
+
+**Volume Profile / POC** (`candleReading.volumeProfile`) — buckets the
+traded range into price bins, distributing each candle's volume
+proportionally across the bins its high-low range spans. Returns the
+Point of Control (highest-volume price level) and a 70%-of-volume Value
+Area. Tested with concentrated-volume synthetic data — POC landed
+correctly in the high-volume zone.
+
+**VSA — Volume Spread Analysis** (`candleReading.volumeSpreadAnalysis`) —
+reads volume + spread (high-low range) + close-position-within-bar to
+flag climax bars (high volume + wide spread, closing off the extreme)
+and no-demand/no-supply bars (low volume + narrow spread). Tested with
+crafted selling-climax and no-demand scenarios — both correctly
+identified.
+
+**Breaker Blocks** (`structure.findBreakerBlocks`) — an Order Block that
+was later invalidated (price closed beyond it) flips role. Deliberately
+separate from `findOrderBlocks()`, which filters OUT broken OBs — this
+keeps only the ones that WERE broken. **Bug caught in testing:** the
+first synthetic test used a down-candle for the bearish-OB candidate,
+but the real ICT pattern requires an up-candle (last bullish candle
+before a bearish impulse) — this was a test-construction error, not a
+logic bug; fixed the test and re-verified against a correctly-built
+scenario.
+
+**Inducement** (`structure.findInducement`) — a minor liquidity pool
+(fewer touches) forming before a larger one of the same type (EQH/EQL),
+the classic "retail gets trapped on the small sweep" pattern. **Real bug
+caught in testing:** the first version compared only time-ADJACENT pools
+regardless of type, so a different-type pool sitting between two
+same-type pools in time hid valid pairs. Fixed by grouping by type first,
+then scanning all pairs within each group — re-tested and confirmed.
+
+**Judas Swing** (`structure.findJudasSwing`) — a false breakout right at
+London (07:00 UTC) or NY (13:00 UTC) session open that reverses back
+through the open price within ~2 hours. Tested with a crafted
+sweep-then-reverse scenario at a simulated London open.
+
+**Power of 3 / AMD Model** (`structure.powerOf3Status`) — splits the
+current UTC day into Accumulation (00:00-07:00), Manipulation
+(07:00-10:00), Distribution (10:00+), and detects whether the
+manipulation phase swept the accumulation range. Takes an injectable
+`now` parameter (defaults to actual current time in production) — used
+to test all three phase branches deterministically, including the
+manipulation-sweep detection that real-clock-dependent testing couldn't
+reach directly.
+
+All six wired into: (1) the deep-analysis AI prompt as ICT/SMC context
+with new confluence rules (Breaker Block confluence, VSA confirmation,
+Power of 3 manipulation-phase caution, Judas Swing reversal bias); (2)
+new chart layers (Breaker Blocks as bounded boxes, Volume Profile as
+POC/Value-Area lines) and a new "🧩 ICT Extras" info panel (Power of 3,
+Judas Swing, Inducement, VSA — informational rather than drawable zones).
+
+**Scan quality (`/api/scan`):**
+- Real bid-ask spread — `bookTicker` fetch per shortlisted coin (actual
+  current spread, not the previous volume/trade-count proxy).
+- Single-candle-spike filter — compares the largest single 1H candle's
+  % move against the full 24H change; flags when one candle accounts for
+  60%+ of the day's move (pump-and-dump risk vs a structured trend).
+- News cross-check — top 5 by volume only (news APIs have tighter rate
+  limits than Binance), flags `hasRecentNews` + top headline.
+- `analysis.html` scan rows now show RVOL/spread/BTC-relative-strength
+  inline, plus ⚡ SPIKE and 📰 NEWS badges.
+
+This closes out all 24 items from the original roadmap.
+
+## 5i. Liquidation Cluster → production, and Stop-Hunt-aware SL placement
+
+**User-reported issue investigated:** "SL hits, then price goes back toward
+my TP direction" — a real, well-known pattern (stop hunt / liquidity
+sweep of retail stops). Root cause: the SL formula (1.5×ATR4H from entry)
+is a common-enough convention that many traders/algos land on similar
+price levels, which is exactly what a stop-hunt wick targets before
+reversing into the real move. This isn't a bug in the wick-detection fix
+(5a) — that fix made SL-touch detection MORE accurate, which is correct
+and desirable; it just means genuine stop-hunt wicks now get registered
+instead of occasionally missed.
+
+**Fix — liquidity-aware SL:** `/api/deep-analysis` now computes the
+nearest sell-side/buy-side liquidity pool (from the EQL/EQH data added in
+5f) between entry and where the plain ATR formula would place the stop.
+New prompt guidance (RULE 2) tells the AI to prefer placing the SL just
+beyond that pool instead of the raw ATR distance, when one exists closer
+in — giving a stop-hunt wick room to reverse from before it also
+invalidates this trade.
+
+**Liquidation Cluster → production (#8):** `market_memory.js` gained a
+second, separate collector (`startLiquidationCollector`) — continuous
+WebSocket to Binance's public liquidation stream, filtered to tracked
+symbols, opt-in via a new admin toggle (different resource profile than
+the periodic REST snapshots, kept independently switchable).
+`getLiquidationClusters(symbol, hours, currentPrice)` buckets recent
+events by price (0.25% buckets) and returns the largest clusters by
+total USD value. **Caught a real bug via testing before shipping:** the
+first bucketing formula computed bucket width per-row as
+`price / (price × pct)`, which always simplifies to the same constant
+regardless of price — every liquidation was collapsing into one bucket
+no matter its actual price level. Fixed by using a single fixed
+reference price for the whole batch; re-tested with synthetic multi-
+cluster data to confirm separate clusters are now correctly distinguished.
+Wired into the deep-analysis prompt (clusters as plausible TP targets /
+SL caution) and a new chart layer (price lines, thickness scaled by
+cluster size). New admin toggle: Market Memory panel → "💥 Liquidation
+Cluster tracking".
+
+## 5h. VWAP + Bands, Already-In-Position badge
+
+**VWAP + Deviation Bands (#7):** `indicators.vwapWithBands(candles)` —
+session-reset daily (UTC midnight), volume-weighted typical price with
+±1/±2 standard-deviation bands. Tested with 2-day synthetic data to
+confirm the session reset actually resets (not a running average that
+drifts across days). Wired into: (1) the deep-analysis AI prompt on the
+1H timeframe, with two new confluence rules — a confirmation bonus when
+price is on the expected side of VWAP, and an "EXTENSION" caution when
+price is beyond the 2nd deviation band; (2) a new chart layer drawing the
+full VWAP line + 1st deviation band as real time-series (not a static
+level — VWAP moves every candle).
+
+**Already-In-Position badge (#17):** New `verifyTokenOptional` middleware
+— tries to verify a Bearer token if one is sent, but NEVER blocks the
+request either way, unlike the strict `verifyToken`. Applied to
+`/api/scan` (which stays public/unauthenticated by default). When a valid
+user token IS present, cross-references the shortlisted scan results
+against that user's own active `PaperTrade`s (one cheap indexed query,
+not an extra API call) and flags matches with `alreadyInPosition: true`.
+`analysis.html` now sends its auth token with the scan request and shows
+a "📌 IN POSITION" badge next to any coin the user already has an open
+trade on — directly surfaces the double-entry/revenge-trade risk
+discussed earlier, using data that already existed.
+
 ## 5g. Signal Outcome Tracking — AND a critical bug caught in the process
 
 **🚨 Critical bug found while building this:** `models/PaperTrade.js` was

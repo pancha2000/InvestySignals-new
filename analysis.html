@@ -627,8 +627,9 @@ window.runUnifiedScan = async function() {
     spTxt.textContent = 'Scanning movers + checking volatility compression across the market…';
     fill.style.width = '50%';
 
+    const scanTok = await getToken();
     const [moversOutcome, earlyOutcome] = await Promise.allSettled([
-        fetch('/api/scan').then(r => r.json()),
+        fetch('/api/scan', scanTok ? { headers: { 'Authorization': 'Bearer ' + scanTok } } : {}).then(r => r.json()),
         fetch('/api/scan-smart').then(r => r.json()),
     ]);
 
@@ -644,7 +645,12 @@ window.runUnifiedScan = async function() {
             const chgScore = Math.min(Math.round(chgAbs * 3), 50);
             const volScore = Math.min(Math.round(c.volume / 1e7), 50);
             const score = Math.min(chgScore + volScore, 100);
-            return { coin: c.symbol.replace('USDT',''), symbol: c.symbol, change: c.change, volume: c.volume, price: c.price, score };
+            return {
+                coin: c.symbol.replace('USDT',''), symbol: c.symbol, change: c.change, volume: c.volume, price: c.price, score,
+                alreadyInPosition: !!c.alreadyInPosition,   // NEW
+                rvol: c.rvol,                                // NEW
+                relativeStrengthVsBtc: c.relativeStrengthVsBtc, // NEW
+            };
         }).sort((a,b) => b.score - a.score);
     } else if (moversOutcome.status === 'rejected') {
         errorMsg = 'Movers scan failed. ';
@@ -786,7 +792,10 @@ function renderScanTable() {
         const isActive = activeCoin === r.coin;
         return `
         <div class="scan-row${isActive?' active-row':''}" onclick="openCoinFromScan('${r.coin}','${r.price}')">
-            <div class="scan-sym">${r.coin}<span>/U</span></div>
+            <div class="scan-sym">
+                ${r.coin}<span>/U</span>${r.alreadyInPosition ? '<span title="You already have an active trade on this coin" style="margin-left:6px;font-size:0.65rem;background:rgba(240,180,41,0.15);color:var(--gold);border:1px solid var(--gold);border-radius:8px;padding:1px 6px;">📌 IN POSITION</span>' : ''}${r.isSingleCandleSpike ? '<span title="This move is concentrated in a single candle — possible pump/dump, not a structured trend" style="margin-left:6px;font-size:0.65rem;background:rgba(255,59,92,0.15);color:var(--red);border:1px solid var(--red);border-radius:8px;padding:1px 6px;">⚡ SPIKE</span>' : ''}${r.hasRecentNews ? `<span title="${(r.topHeadline||'Recent news').replace(/"/g,'&quot;')}" style="margin-left:6px;font-size:0.65rem;background:rgba(59,139,255,0.15);color:#3B8BFF;border:1px solid #3B8BFF;border-radius:8px;padding:1px 6px;">📰 NEWS</span>` : ''}
+                <div style="font-size:0.65rem;color:var(--text-muted);font-weight:400;margin-top:1px;">${r.rvol!=null?'RVOL '+r.rvol+'x':''}${r.spreadPct!=null?' · Spread '+r.spreadPct+'%':''}${r.relativeStrengthVsBtc!=null?' · vsBTC '+(r.relativeStrengthVsBtc>=0?'+':'')+r.relativeStrengthVsBtc+'%':''}</div>
+            </div>
             <div><span class="score-badge ${g}">${gl} ${r.score}</span></div>
             <div><span class="sig-pill ${sig.cls}">${sig.label}</span></div>
             <div class="rsi-val" style="color:${chgClr};">${chgStr}</div>

@@ -924,6 +924,18 @@
                             </div>
                         </div>
 
+                        <!-- NEW: Liquidation Cluster tracking -->
+                        <div style="display:flex;align-items:center;justify-content:space-between;">
+                            <div>
+                                <label style="font-size:0.85rem;font-weight:600;color:var(--text-sub);">💥 Liquidation Cluster tracking</label>
+                                <div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px;">Continuous WebSocket stream — separate resource profile from the periodic snapshots above</div>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="mmLiqToggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+
                         <!-- Status -->
                         <div id="mmStatusBox" style="padding:12px 14px;border-radius:var(--radius-sm);background:var(--surface);border:1px solid var(--border-soft);font-size:0.78rem;color:var(--text-sub);font-family:'JetBrains Mono',monospace;">
                             Loading status...
@@ -1757,8 +1769,10 @@ window.adminSignOut = async function() {
         if (!box) return;
         if (!status) { box.textContent = 'Status unavailable.'; return; }
         const lastRun = status.lastRunAt ? new Date(status.lastRunAt).toLocaleString() : 'never yet';
+        const liq = status.liquidationTracking;
         box.innerHTML = `Running: <b>${status.running ? '🟢 yes' : '🔴 no'}</b> · Last run: <b>${lastRun}</b><br>`
-            + `Disk usage: <b>${status.diskUsageMB ?? 0} MB</b> (${status.fileCount ?? 0} files)`;
+            + `Disk usage: <b>${status.diskUsageMB ?? 0} MB</b> (${status.fileCount ?? 0} files)`
+            + (liq ? `<br>Liquidation tracker: <b>${liq.running ? '🟢 connected' : '🔴 off'}</b> · ${liq.diskUsageMB ?? 0} MB (${liq.fileCount ?? 0} files)` : '');
     }
 
     // ── Signal Performance (feedback loop) ──────────────────
@@ -1840,6 +1854,7 @@ window.adminSignOut = async function() {
                     const rt = document.getElementById('mmRetentionInput'); if (rt) rt.value = s.marketMemoryRetentionDays;
                     const cs = document.getElementById('mmCloudToggle'); if (cs) cs.checked = !!s.marketMemoryCloudSyncEnabled;
                     const cr = document.getElementById('mmRemoteInput'); if (cr) cr.value = s.marketMemoryCloudRemote;
+                    const lq = document.getElementById('mmLiqToggle'); if (lq) lq.checked = !!s.liquidationTrackingEnabled;
                     renderMmStatus(r.status, r.vercelWarning);
                 }
             } else {
@@ -1859,6 +1874,7 @@ window.adminSignOut = async function() {
             marketMemoryRetentionDays: parseInt(document.getElementById('mmRetentionInput')?.value),
             marketMemoryCloudSyncEnabled: document.getElementById('mmCloudToggle')?.checked,
             marketMemoryCloudRemote: document.getElementById('mmRemoteInput')?.value.trim(),
+            liquidationTrackingEnabled: document.getElementById('mmLiqToggle')?.checked,
         };
         try {
             const idToken = await getToken();

@@ -434,6 +434,61 @@ const indicators = {
 
     return { adx: adxVal, plusDI: plusDIv, minusDI: minDIv, trend, strength };
   },
+
+  /**
+   * NEW — Volume Weighted Average Price (VWAP) with standard-deviation
+   * bands, reset each UTC day (the standard convention — VWAP is a
+   * SESSION indicator, not a continuous one; carrying it across days
+   * would make the bands meaningless). Institutional desks use VWAP as
+   * "the price the market actually transacted at, on average, today" —
+   * deviation from it is a real, leading signal (not derived from a
+   * moving average of price alone, unlike RSI/MACD).
+   *
+   * Returns a time series (one point per candle) so the chart can draw a
+   * proper VWAP line + bands, plus `current` (the latest point) for quick
+   * confluence-score use in deep-analysis.
+   */
+  vwapWithBands(candles) {
+    if (!candles.length) return { series: [], current: null };
+    const series = [];
+    let daySum = 0, dayVolSum = 0, daySumSq = 0; // resets at each UTC day boundary
+    let currentDay = null;
+
+    for (const c of candles) {
+      const day = new Date(c.time * 1000).toISOString().slice(0, 10); // UTC date
+      if (day !== currentDay) {
+        currentDay = day;
+        daySum = 0; dayVolSum = 0; daySumSq = 0; // new session — reset
+      }
+      const typicalPrice = (c.high + c.low + c.close) / 3;
+      const vol = c.volume || 0;
+      daySum += typicalPrice * vol;
+      dayVolSum += vol;
+      daySumSq += typicalPrice * typicalPrice * vol;
+
+      const vwap = dayVolSum > 0 ? daySum / dayVolSum : typicalPrice;
+      // Volume-weighted variance → std dev, for the deviation bands
+      const variance = dayVolSum > 0 ? Math.max(0, daySumSq / dayVolSum - vwap * vwap) : 0;
+      const stdDev = Math.sqrt(variance);
+
+      series.push({
+        time: c.time,
+        vwap: round(vwap, 6),
+        upper1: round(vwap + stdDev, 6), lower1: round(vwap - stdDev, 6),
+        upper2: round(vwap + stdDev * 2, 6), lower2: round(vwap - stdDev * 2, 6),
+      });
+    }
+
+    const current = series[series.length - 1];
+    const lastClose = candles[candles.length - 1].close;
+    let positionLabel = 'AT_VWAP';
+    if (lastClose > current.upper2) positionLabel = 'EXTENDED_ABOVE';
+    else if (lastClose > current.upper1) positionLabel = 'ABOVE_BAND1';
+    else if (lastClose < current.lower2) positionLabel = 'EXTENDED_BELOW';
+    else if (lastClose < current.lower1) positionLabel = 'BELOW_BAND1';
+
+    return { series, current: { ...current, price: lastClose, positionLabel } };
+  },
 };
 
 // ════════════════════════════════════════════════════════════════════════
@@ -813,6 +868,143 @@ const structure = {
     }
     return { direction: 'BEARISH', swingHigh: round(swingHigh, 6), swingLow: round(swingLow, 6), e1272: round(swingHigh - range * 1.272, 6), e1414: round(swingHigh - range * 1.414, 6), e1618: round(swingHigh - range * 1.618, 6), e2618: round(swingHigh - range * 2.618, 6) };
   },
+
+  /**
+   * NEW — Breaker Blocks. An Order Block that was later invalidated
+   * (price closed beyond it) flips role — a bearish OB that gets broken
+   * upward becomes a BULLISH_BREAKER (support), and vice versa. This is
+   * DELIBERATELY separate from findOrderBlocks() above, which filters
+   * OUT mitigated/broken OBs (`if (!mitigated) obs.push(...)`) — this
+   * function keeps only the ones that WERE broken. Caught a test bug
+   * before shipping: an initial synthetic test used a down-candle for
+   * the bearish-OB candidate, but the real pattern requires an UP candle
+   * (the last bullish candle before a bearish impulse) — fixed the test,
+   * not the logic, and re-verified against a correctly-crafted scenario.
+   */
+  findBreakerBlocks(candles, maxCount = 5) {
+    const breakers = [];
+    const avgBody = candles.slice(-30).reduce((s, c) => s + Math.abs(c.close - c.open), 0) / Math.min(30, candles.length || 1);
+    const minImpulse = avgBody * 0.5;
+    for (let i = candles.length - 4; i >= 1; i--) {
+      if (breakers.length >= maxCount) break;
+      const ob = candles[i];
+      const next = candles[i + 1];
+      const impulseBody = Math.abs(next.close - next.open);
+      if (impulseBody < minImpulse) continue;
+      if (ob.close < ob.open && next.close > next.open && next.close > ob.high) {
+        const brokenAfter = candles.slice(i + 2).find((c) => c.close < ob.low);
+        if (brokenAfter) breakers.push({ type: 'BEARISH_BREAKER', low: round(ob.low, 4), high: round(ob.high, 4), idx: i });
+      }
+      if (ob.close > ob.open && next.close < next.open && next.close < ob.low) {
+        const brokenAfter = candles.slice(i + 2).find((c) => c.close > ob.high);
+        if (brokenAfter) breakers.push({ type: 'BULLISH_BREAKER', low: round(ob.low, 4), high: round(ob.high, 4), idx: i });
+      }
+    }
+    return breakers;
+  },
+
+  /**
+   * NEW — Inducement. A smaller, less-significant liquidity pool (fewer
+   * touches) that forms BEFORE a larger one of the same type (EQH or
+   * EQL) — the classic ICT pattern where retail gets trapped on the
+   * minor sweep before the real move targets the major pool. Built on
+   * findEqualHighsLows() (additive). Caught a test bug before shipping:
+   * comparing only time-ADJACENT pools missed valid pairs when a
+   * different-type pool sat between them in time — fixed by grouping by
+   * type first, then scanning all pairs within each group.
+   */
+  findInducement(candles) {
+    const pools = structure.findEqualHighsLows(candles);
+    const eqh = pools.filter((p) => p.type === 'EQH').sort((a, b) => a.firstTime - b.firstTime);
+    const eql = pools.filter((p) => p.type === 'EQL').sort((a, b) => a.firstTime - b.firstTime);
+    function scan(arr, label) {
+      for (let i = 0; i < arr.length - 1; i++) {
+        for (let j = i + 1; j < arr.length; j++) {
+          if (arr[j].count > arr[i].count) return { minorLevel: arr[i].price, majorLevel: arr[j].price, type: label };
+        }
+      }
+      return null;
+    }
+    return scan(eqh, 'EQH') || scan(eql, 'EQL');
+  },
+
+  /**
+   * NEW — Judas Swing. A false breakout right at a session open (London
+   * 07:00 UTC or NY 13:00 UTC) that reverses back through the open price
+   * within the following ~2 hours — the classic ICT pattern of the
+   * market "faking" a direction to trap early breakout traders before
+   * the real move goes the other way. Requires M15 (or finer) candles
+   * covering today's session opens. Tested with a crafted London-open
+   * sweep-then-reverse scenario (initial test had a bug where the final
+   * window candle wasn't actually set to the reversal close — fixed the
+   * test, re-verified).
+   */
+  findJudasSwing(candles, now = new Date()) {
+    const sessions = [{ name: 'London', hour: 7 }, { name: 'NY', hour: 13 }];
+    const results = [];
+    const today = now.toISOString().slice(0, 10);
+    for (const session of sessions) {
+      const sessionOpenTime = new Date(`${today}T${String(session.hour).padStart(2, '0')}:00:00Z`).getTime() / 1000;
+      const openIdx = candles.findIndex((c) => c.time >= sessionOpenTime);
+      if (openIdx === -1 || openIdx + 8 >= candles.length) continue; // need ~2h of M15 candles after open
+      const openPrice = candles[openIdx].open;
+      const window = candles.slice(openIdx, openIdx + 8);
+      const maxHigh = Math.max(...window.map((c) => c.high));
+      const minLow = Math.min(...window.map((c) => c.low));
+      const lastClose = window[window.length - 1].close;
+      if (maxHigh > openPrice * 1.002 && lastClose < openPrice) {
+        results.push({ session: session.name, type: 'BEARISH_JUDAS', sweptHigh: round(maxHigh, 6), openPrice: round(openPrice, 6), note: `${session.name} open swept above ${round(openPrice,6)} then reversed below it — real move likely down.` });
+      } else if (minLow < openPrice * 0.998 && lastClose > openPrice) {
+        results.push({ session: session.name, type: 'BULLISH_JUDAS', sweptLow: round(minLow, 6), openPrice: round(openPrice, 6), note: `${session.name} open swept below ${round(openPrice,6)} then reversed above it — real move likely up.` });
+      }
+    }
+    return results;
+  },
+
+  /**
+   * NEW — Power of 3 (AMD Model): splits the current UTC day into
+   * Accumulation (00:00-07:00, typically range-bound Asian session),
+   * Manipulation (07:00-10:00, London open — where a fake sweep of the
+   * accumulation range often happens), and Distribution (10:00 onward —
+   * the real directional move). Requires M15 (or finer) candles covering
+   * today so far. `now` is injectable for testing; defaults to the
+   * actual current time in production. Tested with a fixed timestamp to
+   * verify all three phase branches, including the manipulation-sweep
+   * detection which real-clock-dependent testing couldn't reach directly.
+   */
+  powerOf3Status(candles, now = new Date()) {
+    const today = now.toISOString().slice(0, 10);
+    const baseTime = new Date(`${today}T00:00:00Z`).getTime() / 1000;
+    const nowUtcHour = now.getUTCHours() + now.getUTCMinutes() / 60;
+    const accCandles = candles.filter((c) => c.time >= baseTime && c.time < baseTime + 7 * 3600);
+    if (accCandles.length < 4) return { phase: 'UNKNOWN', note: "Not enough of today's session collected yet." };
+    const accHigh = Math.max(...accCandles.map((c) => c.high));
+    const accLow = Math.min(...accCandles.map((c) => c.low));
+
+    let phase;
+    if (nowUtcHour < 7) phase = 'ACCUMULATION';
+    else if (nowUtcHour < 10) phase = 'MANIPULATION';
+    else phase = 'DISTRIBUTION';
+
+    let manipulationDirection = null;
+    if (phase !== 'ACCUMULATION') {
+      const manipWindow = candles.filter((c) => c.time >= baseTime + 7 * 3600 && c.time < baseTime + 10 * 3600);
+      if (manipWindow.length) {
+        const manipHigh = Math.max(...manipWindow.map((c) => c.high));
+        const manipLow = Math.min(...manipWindow.map((c) => c.low));
+        if (manipHigh > accHigh) manipulationDirection = 'SWEPT_ACCUMULATION_HIGH';
+        else if (manipLow < accLow) manipulationDirection = 'SWEPT_ACCUMULATION_LOW';
+      }
+    }
+    return {
+      phase,
+      accumulationRange: { high: round(accHigh, 6), low: round(accLow, 6) },
+      manipulationDirection,
+      note: phase === 'DISTRIBUTION' && manipulationDirection
+        ? `Today's accumulation range was swept ${manipulationDirection === 'SWEPT_ACCUMULATION_HIGH' ? 'upward' : 'downward'} during London — the real distribution move is often the OPPOSITE direction of that sweep.`
+        : `Currently in the ${phase} phase of today's session.`,
+    };
+  },
 };
 
 // ════════════════════════════════════════════════════════════════════════
@@ -900,6 +1092,84 @@ const candleReading = {
       if (b.price < a.price && b.rsi > a.rsi) results.push({ type: 'BULLISH_DIV', point1: a, point2: b });
     }
     return results.slice(-maxResults);
+  },
+
+  /**
+   * NEW — Volume Profile / Point of Control (POC). Buckets the traded
+   * range into `bins` price levels and distributes each candle's volume
+   * proportionally across the bins its high-low range spans (not just
+   * its close) — the standard volume-profile construction. POC = the
+   * single price level with the most traded volume (a "magnet" — price
+   * tends to revisit high-volume nodes and move quickly through
+   * low-volume ones). Also returns a 70%-of-volume Value Area (high/low).
+   * Tested with synthetic concentrated-volume data before shipping.
+   */
+  volumeProfile(candles, bins = 24) {
+    if (!candles.length) return null;
+    const low = Math.min(...candles.map((c) => c.low));
+    const high = Math.max(...candles.map((c) => c.high));
+    const range = high - low;
+    if (range === 0) return null;
+    const binSize = range / bins;
+    const profile = new Array(bins).fill(0);
+    for (const c of candles) {
+      const startBin = Math.max(0, Math.floor((c.low - low) / binSize));
+      const endBin = Math.min(bins - 1, Math.floor((c.high - low) / binSize));
+      const binsSpanned = endBin - startBin + 1;
+      const volPerBin = (c.volume || 0) / binsSpanned;
+      for (let b = startBin; b <= endBin; b++) profile[b] += volPerBin;
+    }
+    let pocBin = 0;
+    for (let i = 1; i < bins; i++) if (profile[i] > profile[pocBin]) pocBin = i;
+    const poc = low + (pocBin + 0.5) * binSize;
+
+    const totalVol = profile.reduce((a, b) => a + b, 0);
+    let includedVol = profile[pocBin];
+    let lo = pocBin, hi = pocBin;
+    while (includedVol < totalVol * 0.7 && (lo > 0 || hi < bins - 1)) {
+      const nextLo = lo > 0 ? profile[lo - 1] : -1;
+      const nextHi = hi < bins - 1 ? profile[hi + 1] : -1;
+      if (nextLo >= nextHi) { lo--; includedVol += nextLo; } else { hi++; includedVol += nextHi; }
+    }
+    return {
+      poc: round(poc, 6),
+      valueAreaHigh: round(low + (hi + 1) * binSize, 6),
+      valueAreaLow: round(low + lo * binSize, 6),
+      bins, rangeLow: round(low, 6), rangeHigh: round(high, 6),
+    };
+  },
+
+  /**
+   * NEW — Volume Spread Analysis (VSA). Reads the relationship between
+   * volume, spread (high-low range), and where the bar CLOSED within
+   * that spread — the classic Wyckoff/VSA signals: climax bars (high
+   * volume + wide spread, closing off the extreme = absorption/reversal
+   * risk) and no-demand/no-supply bars (low volume + narrow spread =
+   * weak participation). Tested with crafted selling-climax and
+   * no-demand scenarios before shipping.
+   */
+  volumeSpreadAnalysis(candles, lookback = 20) {
+    if (candles.length < lookback + 1) return null;
+    const recent = candles.slice(-lookback - 1, -1); // baseline excludes the bar being judged
+    const avgVol = recent.reduce((s, c) => s + (c.volume || 0), 0) / recent.length;
+    const avgSpread = recent.reduce((s, c) => s + (c.high - c.low), 0) / recent.length;
+    const c = candles[candles.length - 1];
+    const spread = c.high - c.low;
+    const volRatio = avgVol > 0 ? c.volume / avgVol : 1;
+    const spreadRatio = avgSpread > 0 ? spread / avgSpread : 1;
+    const closePosition = spread > 0 ? (c.close - c.low) / spread : 0.5; // 0=closed at low, 1=closed at high
+    const isUpBar = c.close >= c.open;
+
+    let signal = 'NEUTRAL', note = '';
+    if (volRatio >= 2 && spreadRatio >= 1.5) {
+      if (closePosition < 0.35) { signal = 'SELLING_CLIMAX'; note = 'High volume, wide spread, closed near the low despite the bar range — possible distribution/selling climax.'; }
+      else if (closePosition > 0.65) { signal = 'BUYING_CLIMAX'; note = 'High volume, wide spread, closed near the high — possible exhaustion/buying climax.'; }
+      else { signal = 'STOPPING_VOLUME'; note = 'High volume, wide spread, closed mid-range — absorption, indecisive.'; }
+    } else if (volRatio < 0.7 && spreadRatio < 0.7) {
+      if (isUpBar) { signal = 'NO_DEMAND'; note = 'Up bar on low volume + narrow spread — weak buying interest.'; }
+      else { signal = 'NO_SUPPLY'; note = 'Down bar on low volume + narrow spread — weak selling pressure.'; }
+    }
+    return { signal, note, volRatio: round(volRatio, 2), spreadRatio: round(spreadRatio, 2), closePosition: round(closePosition, 2) };
   },
 };
 

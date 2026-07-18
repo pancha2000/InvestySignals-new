@@ -145,6 +145,10 @@
             <label class="layer-toggle"><input type="checkbox" id="layerDiv"> <span class="layer-color-dot" style="background:#FF8C42;"></span><span>RSI Divergence</span><span class="layer-count" id="cnt-layerDiv"></span></label>
             <label class="layer-toggle"><input type="checkbox" id="layerOTE"> <span class="layer-color-dot" style="background:#C77DFF;"></span><span>ICT Optimal Trade Entry</span><span class="layer-count" id="cnt-layerOTE"></span></label>
             <label class="layer-toggle"><input type="checkbox" id="layerEQ"> <span class="layer-color-dot" style="background:#7DDBFF;"></span><span>Equal Highs / Lows</span><span class="layer-count" id="cnt-layerEQ"></span></label>
+            <label class="layer-toggle"><input type="checkbox" id="layerVWAP"> <span class="layer-color-dot" style="background:#FFB700;"></span><span>VWAP + Bands</span></label>
+            <label class="layer-toggle"><input type="checkbox" id="layerLiq"> <span class="layer-color-dot" style="background:#FF5C8A;"></span><span>Liquidation Clusters</span><span class="layer-count" id="cnt-layerLiq"></span></label>
+            <label class="layer-toggle"><input type="checkbox" id="layerBreaker"> <span class="layer-color-dot" style="background:#B586FF;"></span><span>Breaker Blocks</span><span class="layer-count" id="cnt-layerBreaker"></span></label>
+            <label class="layer-toggle"><input type="checkbox" id="layerVP"> <span class="layer-color-dot" style="background:#5CC9FF;"></span><span>Volume Profile POC</span></label>
         </div>
         <div class="kz-badge inactive" id="kzBadge">⏳ Kill Zone status loading…</div>
         <div class="indicator-strip" id="indicatorStrip"></div>
@@ -155,6 +159,11 @@
         <div class="ctx-grid" id="ctxGrid"></div>
         <div id="ctxNews"></div>
         <div id="ctxWarn"></div>
+    </div>
+
+    <div class="ctx-panel" id="ictExtrasPanel" style="display:none;">
+        <div class="layers-title">🧩 ICT Extras — Power of 3, Judas Swing, Inducement, VSA</div>
+        <div class="ctx-grid" id="ictExtrasGrid"></div>
     </div>
 
     <div class="ctx-panel" id="aiReportPanel" style="display:none;"></div>
@@ -243,7 +252,7 @@ window.addEventListener('resize', () => {
 });
 
 // Price lines currently drawn, so we can clear them when toggling layers off
-let priceLines = { SR: [], FibRet: [], FibExt: [], PD: [], FVG: [], OB: [], OTE: [] };
+let priceLines = { SR: [], FibRet: [], FibExt: [], PD: [], FVG: [], OB: [], OTE: [], LIQ: [], VP: [] };
 let overlaysCache = null;
 
 // ── Data loading ─────────────────────────────────────────────
@@ -348,6 +357,7 @@ async function loadOverlays() {
     redrawLayers();
     updateKillZoneBadge(r.overlays.killZone);
     renderMarketContext(r.overlays.marketContext); // always shown once loaded — not gated by a zone toggle
+    renderIctExtras(r.overlays);
     renderMultiTimeframe(r.overlays.multiTimeframe);
   } catch (e) { /* overlays are optional — chart still works without them */ }
 }
@@ -416,7 +426,7 @@ function tryAttachFilledBox(zone, fillColor) {
 // lines, which always span the full chart width) so they only draw across
 // the [time, endTime] window where the zone actually exists — this is
 // what fixes the "spans the whole chart" complaint.
-let boxSeries = { FVG: [], OB: [], DIV: [], EQ: [] };
+let boxSeries = { FVG: [], OB: [], DIV: [], EQ: [], VWAP: [], BREAKER: [] };
 function clearBoxSeries(group) {
   (boxSeries[group] || []).forEach(s => chart.removeSeries(s));
   boxSeries[group] = [];
@@ -515,6 +525,37 @@ function redrawLayers() {
     });
   }
 
+  // VWAP + deviation bands — a REAL time series (one point per candle),
+  // not a static level, since VWAP moves continuously through the
+  // session. Reuses the same "clear old series, redraw" pattern as the
+  // boxSeries groups above.
+  clearBoxSeries('VWAP');
+  if (document.getElementById('layerVWAP').checked && o.vwap && o.vwap.series && o.vwap.series.length) {
+    const mk = (color, width, style, key) => {
+      const s = chart.addLineSeries({ color, lineWidth: width, lineStyle: style, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false });
+      s.setData(o.vwap.series.map(p => ({ time: p.time, value: p[key] })));
+      boxSeries.VWAP.push(s);
+    };
+    mk('#FFB700', 2, LightweightCharts.LineStyle.Solid, 'vwap');
+    mk('#FFB700', 1, LightweightCharts.LineStyle.Dotted, 'upper1');
+    mk('#FFB700', 1, LightweightCharts.LineStyle.Dotted, 'lower1');
+  }
+
+  // Liquidation Clusters — static price levels (not time-bounded, since
+  // "where liquidations happened" isn't tied to a specific future time
+  // window the way an FVG/OB zone is). Line thickness scales with cluster
+  // size so the biggest clusters visually stand out.
+  clearPriceLines('LIQ');
+  if (document.getElementById('layerLiq').checked && o.liquidationClusters && o.liquidationClusters.available) {
+    o.liquidationClusters.clusters.forEach(c => {
+      const width = c.totalUsd > 500000 ? 3 : c.totalUsd > 150000 ? 2 : 1;
+      priceLines.LIQ.push(candleSeries.createPriceLine({
+        price: c.price, color: '#FF5C8A', lineWidth: width, lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true, title: '💥 $' + Math.round(c.totalUsd/1000) + 'k liq',
+      }));
+    });
+  }
+
   // FVG / Order Blocks — BUG FIX: previously drawn with createPriceLine,
   // which ALWAYS spans the entire chart width regardless of the zone's
   // actual time range — that's why every FVG looked like "one long line
@@ -533,6 +574,22 @@ function redrawLayers() {
   clearBoxSeries('OB');
   if (document.getElementById('layerOB').checked && o.orderBlocks) {
     o.orderBlocks.forEach(ob => drawBoxEdges('OB', ob, ob.type === 'BULL_OB' ? '#F0B429' : '#FFD166', ob.type === 'BULL_OB' ? 'rgba(240,180,41,0.15)' : 'rgba(255,209,102,0.15)'));
+  }
+
+  // Breaker Blocks — same time-bounded box technique as FVG/OB above.
+  clearBoxSeries('BREAKER');
+  if (document.getElementById('layerBreaker').checked && o.breakerBlocks) {
+    o.breakerBlocks.forEach(b => drawBoxEdges('BREAKER', b, b.type === 'BULLISH_BREAKER' ? '#7DFFB0' : '#FF7D9E', b.type === 'BULLISH_BREAKER' ? 'rgba(125,255,176,0.12)' : 'rgba(255,125,158,0.12)'));
+  }
+
+  // Volume Profile — POC (solid line) + Value Area (dashed band), static
+  // levels for the whole loaded range (not time-bounded).
+  clearPriceLines('VP');
+  if (document.getElementById('layerVP').checked && o.volumeProfile) {
+    const vp = o.volumeProfile;
+    priceLines.VP.push(candleSeries.createPriceLine({ price: vp.poc, color: '#5CC9FF', lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Solid, axisLabelVisible: true, title: 'POC' }));
+    priceLines.VP.push(candleSeries.createPriceLine({ price: vp.valueAreaHigh, color: '#5CC9FF', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted, axisLabelVisible: true, title: 'VA High' }));
+    priceLines.VP.push(candleSeries.createPriceLine({ price: vp.valueAreaLow, color: '#5CC9FF', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted, axisLabelVisible: true, title: 'VA Low' }));
   }
 
   // Indicator readout strip — "everything the analysis used", surfaced
@@ -590,6 +647,37 @@ function redrawLayers() {
   }
 }
 
+function renderIctExtras(o) {
+  const panel = document.getElementById('ictExtrasPanel');
+  const grid = document.getElementById('ictExtrasGrid');
+  const chip = (label, value, color) => `<div class="ctx-chip"><div class="lbl">${label}</div><div class="val" style="color:${color||'var(--text)'};">${value}</div></div>`;
+  let html = '';
+  let anyData = false;
+
+  if (o.powerOf3 && o.powerOf3.phase !== 'UNKNOWN') {
+    anyData = true;
+    const phaseColor = o.powerOf3.phase === 'DISTRIBUTION' ? 'var(--gold)' : o.powerOf3.phase === 'MANIPULATION' ? 'var(--red)' : 'var(--text)';
+    html += chip('Power of 3 Phase', o.powerOf3.phase, phaseColor);
+    if (o.powerOf3.manipulationDirection) html += chip('Manipulation Swept', o.powerOf3.manipulationDirection.replace('SWEPT_ACCUMULATION_',''));
+  }
+  if (o.judasSwing && o.judasSwing.length) {
+    anyData = true;
+    o.judasSwing.forEach(j => { html += chip('Judas Swing', j.session + ' — ' + j.type.replace('_',' '), j.type.includes('BEARISH') ? 'var(--red)' : 'var(--green)'); });
+  }
+  if (o.inducement) {
+    anyData = true;
+    html += chip('Inducement', o.inducement.type + ': minor ' + o.inducement.minorLevel + ' → major ' + o.inducement.majorLevel, 'var(--gold)');
+  }
+  if (o.vsa && o.vsa.signal !== 'NEUTRAL') {
+    anyData = true;
+    const vsaColor = o.vsa.signal.includes('CLIMAX') ? 'var(--red)' : o.vsa.signal === 'NO_SUPPLY' ? 'var(--green)' : o.vsa.signal === 'NO_DEMAND' ? 'var(--red)' : 'var(--text)';
+    html += chip('VSA Signal', o.vsa.signal.replace(/_/g,' '), vsaColor);
+  }
+
+  panel.style.display = anyData ? 'block' : 'none';
+  grid.innerHTML = html;
+}
+
 function renderMarketContext(ctx) {
   const panel = document.getElementById('ctxPanel');
   if (!ctx) { panel.style.display = 'none'; return; }
@@ -636,6 +724,8 @@ function updateLayerCounts(o) {
   set('layerDiv', o.rsiDivergences ? o.rsiDivergences.length : 0);
   set('layerOTE', (o.oteZone && o.oteZone.inZone) ? 1 : 0);
   set('layerEQ', o.equalHighsLows ? o.equalHighsLows.length : 0);
+  set('layerLiq', (o.liquidationClusters && o.liquidationClusters.available) ? o.liquidationClusters.clusters.length : 0);
+  set('layerBreaker', o.breakerBlocks ? o.breakerBlocks.length : 0);
 }
 
 let mtfData = null, mtfActiveTab = '1h';
@@ -749,11 +839,11 @@ function updateKillZoneBadge(kz) {
 }
 
 function anyLayerOn() {
-  return ['layerSR','layerFVG','layerOB','layerFibRet','layerFibExt','layerPD','layerSweep','layerBOS','layerDiv','layerOTE','layerEQ']
+  return ['layerSR','layerFVG','layerOB','layerFibRet','layerFibExt','layerPD','layerSweep','layerBOS','layerDiv','layerOTE','layerEQ','layerVWAP','layerLiq','layerBreaker','layerVP']
     .some(id => document.getElementById(id).checked);
 }
 
-['layerSR','layerFVG','layerOB','layerFibRet','layerFibExt','layerPD','layerSweep','layerBOS','layerDiv','layerOTE','layerEQ'].forEach(id => {
+['layerSR','layerFVG','layerOB','layerFibRet','layerFibExt','layerPD','layerSweep','layerBOS','layerDiv','layerOTE','layerEQ','layerVWAP','layerLiq','layerBreaker','layerVP'].forEach(id => {
   document.getElementById(id).addEventListener('change', async () => {
     if (!overlaysCache && anyLayerOn()) await loadOverlays();
     else redrawLayers();

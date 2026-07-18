@@ -127,6 +127,10 @@ const SETTINGS_DEFAULTS = {
   // (see runTPSLCheck's "Infinite Pending" fix).
   limitOrderExpiryHours: 4,
   confluenceThreshold: 5, // admin-configurable version of the const below
+  // NEW: Liquidation Cluster tracking (opt-in, separate from the periodic
+  // snapshot collector above — this is a continuous WebSocket, different
+  // resource profile).
+  liquidationTrackingEnabled: false,
 };
 let globalSettings = { ...SETTINGS_DEFAULTS };
 
@@ -149,6 +153,9 @@ function applyMarketMemorySettings() {
     cloudSync: {
       enabled: !!globalSettings.marketMemoryCloudSyncEnabled,
       remote: globalSettings.marketMemoryCloudRemote,
+    },
+    liquidationTracking: {
+      enabled: !!globalSettings.liquidationTrackingEnabled,
     },
   });
 }
@@ -468,6 +475,20 @@ async function verifyToken(req, res, next) {
   } catch(e) { res.status(401).json({ success: false, error: 'Invalid token' }); }
 }
 
+// NEW: lenient version for endpoints that stay PUBLIC (like /api/scan) but
+// can show extra info WHEN a valid token happens to be present. Never
+// blocks the request either way — a missing or invalid token just means
+// req.uid stays undefined and the route falls back to its public behavior.
+async function verifyTokenOptional(req, res, next) {
+  const token = (req.headers.authorization || '').replace('Bearer ', '');
+  if (!token) return next();
+  try {
+    const decoded = await admin.auth().verifyIdToken(token);
+    req.uid = decoded.uid;
+  } catch (_) { /* invalid/expired token — proceed as anonymous, not an error for a public route */ }
+  next();
+}
+
 async function verifyAdmin(req, res, next) {
   const token = (req.headers.authorization || '').replace('Bearer ', '');
   if (!token) return res.status(401).json({ success: false, error: 'Unauthorized' });
@@ -518,7 +539,7 @@ app.get('/api/analysis', async (req, res) => {
 
 const STABLECOINS = new Set(['USDCUSDT','FDUSDUSDT','TUSDUSDT','BUSDUSDT','EURUSDT','DAIUSDT','USDPUSDT','AEURUSDT']);
 function round2(v) { return Math.round(v * 100) / 100; }
-app.get('/api/scan', async (req, res) => {
+app.get('/api/scan', verifyTokenOptional, async (req, res) => {
   try {
     const ctrl=new AbortController();
     setTimeout(()=>ctrl.abort(),10000);
@@ -558,6 +579,56 @@ app.get('/api/scan', async (req, res) => {
         coin.rvol = avgVol ? round2(coin.volume / avgVol) : null;
       } catch (_) { coin.rvol = null; } // best-effort — a failed RVOL lookup doesn't remove the coin from results
     }));
+
+    // NEW: Real bid-ask spread — previously only a volume/trade-count
+    // proxy for liquidity risk. bookTicker is a single lightweight call
+    // per shortlisted coin (not the full market), gives the ACTUAL
+    // current spread rather than an inference.
+    await Promise.all(results.map(async (coin) => {
+      try {
+        const btRes = await fetch(`https://fapi.binance.com/fapi/v1/ticker/bookTicker?symbol=${coin.symbol}`);
+        const bt = await btRes.json();
+        const bid = parseFloat(bt.bidPrice), ask = parseFloat(bt.askPrice);
+        coin.spreadPct = (bid > 0 && ask > 0) ? round2(100 * (ask - bid) / ask) : null;
+      } catch (_) { coin.spreadPct = null; }
+    }));
+
+    // NEW: Single-candle-spike filter — flags a 24h move that's really
+    // just ONE outsized 1h candle (pump-and-dump risk) vs a move spread
+    // across many candles (a more structured, trend-following move).
+    await Promise.all(results.map(async (coin) => {
+      try {
+        const hourly = await fetchKlinesCached(coin.symbol, '1h', 24);
+        const ranges = hourly.map(k => Math.abs(parseFloat(k[4]) - parseFloat(k[1])) / parseFloat(k[1]) * 100); // % move per candle
+        const maxCandleMovePct = Math.max(...ranges);
+        const totalMovePct = Math.abs(coin.change);
+        coin.singleCandleSpikeRatio = totalMovePct > 0 ? round2(maxCandleMovePct / totalMovePct) : null;
+        coin.isSingleCandleSpike = coin.singleCandleSpikeRatio !== null && coin.singleCandleSpikeRatio > 0.6; // one candle = 60%+ of the whole day's move
+      } catch (_) { coin.singleCandleSpikeRatio = null; coin.isSingleCandleSpike = false; }
+    }));
+
+    // NEW: News cross-check — only for the top 5 by volume (news APIs
+    // have tighter rate limits than Binance; the shortlist is already
+    // sorted by volume so this covers the coins users look at first).
+    await Promise.all(results.slice(0, 5).map(async (coin) => {
+      try {
+        const news = await marketTools.getCryptoNews(coin.symbol);
+        coin.hasRecentNews = !!(news && Array.isArray(news.articles) && news.articles.length > 0);
+        coin.topHeadline = coin.hasRecentNews ? news.articles[0].title : null;
+      } catch (_) { coin.hasRecentNews = false; coin.topHeadline = null; }
+    }));
+
+    // NEW: "Already in position" badge — only when a valid user token was
+    // sent (see verifyTokenOptional above). A single cheap query against
+    // the user's own active trades, cross-referenced against the already-
+    // shortlisted symbols — not an extra API call, just a DB lookup.
+    if (req.uid) {
+      const activeSymbols = new Set(
+        (await PT.find({ uid: req.uid, status: { $in: ['OPEN', 'PENDING_LONG', 'PENDING_SHORT', 'TP1_HIT'] } })
+          .select('symbol').lean()).map(t => t.symbol)
+      );
+      results.forEach(coin => { coin.alreadyInPosition = activeSymbols.has(coin.symbol); });
+    }
 
     res.json({ success:true, count:results.length, coins:results, btcChange });
   } catch(err) { res.status(500).json({ success:false, error:err.message }); }
@@ -657,6 +728,14 @@ app.get('/api/chart/overlays', async (req, res) => {
     const killZone = marketTools.structure.killZoneStatus();
     const oteZone = marketTools.structure.getOteZoneStatus(candles);       // NEW
     const equalHighsLows = marketTools.structure.findEqualHighsLows(candles); // NEW
+    const vwap = marketTools.indicators.vwapWithBands(candles);            // NEW
+    const liquidationClusters = marketMemory.getLiquidationClusters(symbol, 24, candles[candles.length - 1].close); // NEW
+    const breakerBlocks = marketTools.structure.findBreakerBlocks(candles).map(b => ({ ...b, time: timeAt(b.idx), endTime: lastTime })); // NEW
+    const inducement = marketTools.structure.findInducement(candles); // NEW
+    const judasSwing = marketTools.structure.findJudasSwing(candles); // NEW
+    const powerOf3 = marketTools.structure.powerOf3Status(candles); // NEW
+    const volumeProfile = marketTools.candleReading.volumeProfile(candles); // NEW
+    const vsa = marketTools.candleReading.volumeSpreadAnalysis(candles); // NEW
 
     // NEW: positioned BOS/CHoCH events (new detectStructureEvents — see
     // market_tools.js for why this is separate from the existing
@@ -732,6 +811,14 @@ app.get('/api/chart/overlays', async (req, res) => {
         rsiDivergences,                // NEW: [{type: BULLISH_DIV|BEARISH_DIV, point1:{time,price}, point2:{time,price}}] — draw as connecting lines
         oteZone,                       // NEW: {direction, zoneLow, zoneHigh, inZone} — ICT Optimal Trade Entry (Fib 61.8-78.6%)
         equalHighsLows,                 // NEW: [{type: EQH|EQL, price, firstTime, lastTime, count}] — resting liquidity levels
+        vwap,                           // NEW: {series:[{time,vwap,upper1,lower1,upper2,lower2}], current:{...,positionLabel}}
+        liquidationClusters,            // NEW: {available, clusters:[{price,totalUsd,eventCount,side}]}
+        breakerBlocks,                  // NEW: [{type:BULLISH_BREAKER|BEARISH_BREAKER, low, high, time, endTime}]
+        inducement,                     // NEW: {minorLevel, majorLevel, type} | null
+        judasSwing,                     // NEW: [{session, type, openPrice, note}]
+        powerOf3,                       // NEW: {phase, accumulationRange, manipulationDirection, note}
+        volumeProfile,                  // NEW: {poc, valueAreaHigh, valueAreaLow, rangeLow, rangeHigh}
+        vsa,                            // NEW: {signal, note, volRatio, spreadRatio, closePosition}
         indicators: indicatorSnapshot,// NEW: RSI/MACD/ADX/EMA — same numbers the AI analysis prompt used
         marketContext,                 // NEW: funding/OI/BTC-trend/news/candle-pattern/volume/ATR/liquidity/market-memory
         multiTimeframe: (multiTf && multiTf.success) ? multiTf.timeframes : null, // NEW: full 15m/1h/4h/1d breakdown
@@ -1680,6 +1767,15 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
           m15: marketTools.structure.getOteZoneStatus(m15c),
           h1: marketTools.structure.getOteZoneStatus(h1c),
         },
+        // NEW: this batch — Breaker Blocks, Inducement, Judas Swing,
+        // Power of 3, Volume Profile, VSA. All additive/free (no extra
+        // API calls — computed from candles already fetched).
+        breakerBlocks: { h4: marketTools.structure.findBreakerBlocks(h4c), h1: marketTools.structure.findBreakerBlocks(h1c) },
+        inducement: { h1: marketTools.structure.findInducement(h1c) },
+        judasSwing: marketTools.structure.findJudasSwing(m15c),
+        powerOf3: marketTools.structure.powerOf3Status(m15c),
+        volumeProfile: { h4: marketTools.candleReading.volumeProfile(h4c) },
+        vsa: { h1: marketTools.candleReading.volumeSpreadAnalysis(h1c) },
       };
     } catch (_) { /* ICT data failure is non-fatal */ }
 
@@ -1867,6 +1963,36 @@ Rule: If confluenceScore < ${CONFLUENCE_THRESHOLD}, set overallBias to NEUTRAL.`
     if (ls4h?.sellSideLiquidity?.length) ictLines.push(`SELL-SIDE LIQUIDITY (4H equal lows): ${ls4h.sellSideLiquidity.join(', ')}`);
     const fe4h = ictData.fibExtensions?.h4;
     if (fe4h) ictLines.push(`FIB EXTENSIONS (4H, ${fe4h.direction}): 127.2%=${fe4h.e1272}  161.8%=${fe4h.e1618}  261.8%=${fe4h.e2618} — USE THESE as preferred TP targets over arbitrary price levels`);
+
+    // NEW: Liquidity-aware SL guidance. A raw "1.5×ATR" stop is a common
+    // enough formula that many traders/algos end up with stops clustered
+    // at similar price levels — exactly what smart money sweeps before
+    // reversing into the real move ("stop hunt"). Sell-side liquidity
+    // (equal lows) is where LONG stops cluster; buy-side liquidity (equal
+    // highs) is where SHORT stops cluster. If one of those sits BEYOND
+    // where the plain ATR formula would place the stop, push the stop
+    // past it instead — a stop-hunt wick into that pool has somewhere to
+    // reverse from before it also takes out this trade.
+    const nearestSellLiquidityBelow = (ls4h?.sellSideLiquidity || []).filter(p => p < price).sort((a,b) => b - a)[0];
+    const nearestBuyLiquidityAbove = (ls4h?.buySideLiquidity || []).filter(p => p > price).sort((a,b) => a - b)[0];
+    if (nearestSellLiquidityBelow) ictLines.push(`NEAREST SELL-SIDE LIQUIDITY POOL BELOW PRICE: ${nearestSellLiquidityBelow} — if this is closer than the ATR-based LONG SL, consider placing SL just below this pool instead (stop-hunt wicks often reverse right after sweeping it).`);
+    if (nearestBuyLiquidityAbove) ictLines.push(`NEAREST BUY-SIDE LIQUIDITY POOL ABOVE PRICE: ${nearestBuyLiquidityAbove} — if this is closer than the ATR-based SHORT SL, consider placing SL just above this pool instead.`);
+
+    // NEW: Breaker Blocks, Inducement, Judas Swing, Power of 3, Volume
+    // Profile, VSA — all free (candles already fetched), all additive to
+    // the existing ICT/SMC framework.
+    const breakers = [...(ictData.breakerBlocks?.h4 || []), ...(ictData.breakerBlocks?.h1 || [])];
+    if (breakers.length) ictLines.push(`BREAKER BLOCKS: ${breakers.map(b => `${b.type} at ${b.low}-${b.high}`).join('; ')} — a broken OB that flipped role, often a high-probability reaction zone.`);
+    const inducement1h = ictData.inducement?.h1;
+    if (inducement1h) ictLines.push(`INDUCEMENT DETECTED (1H): minor ${inducement1h.type} at ${inducement1h.minorLevel} likely swept as a trap before the larger ${inducement1h.type} at ${inducement1h.majorLevel} — the major level is the more meaningful liquidity target.`);
+    const judas = ictData.judasSwing || [];
+    if (judas.length) ictLines.push(`JUDAS SWING DETECTED: ${judas.map(j => `${j.session} session — ${j.note}`).join(' ')}`);
+    const p3 = ictData.powerOf3;
+    if (p3 && p3.phase !== 'UNKNOWN') ictLines.push(`POWER OF 3 (today's session, AMD model): currently in ${p3.phase} phase. Accumulation range: ${p3.accumulationRange.low}-${p3.accumulationRange.high}. ${p3.note}`);
+    const volProfile = ictData.volumeProfile?.h4;
+    if (volProfile) ictLines.push(`VOLUME PROFILE (4H, Point of Control): POC=${volProfile.poc} (highest-volume price — acts as a magnet), Value Area=${volProfile.valueAreaLow}-${volProfile.valueAreaHigh}.`);
+    const vsa1h = ictData.vsa?.h1;
+    if (vsa1h && vsa1h.signal !== 'NEUTRAL') ictLines.push(`VOLUME SPREAD ANALYSIS (1H): ${vsa1h.signal} — ${vsa1h.note}`);
     const ote15 = ictData.oteZone?.m15;
     const ote1h = ictData.oteZone?.h1;
     if (ote15?.inZone) ictLines.push(`OPTIMAL TRADE ENTRY (M15): price IS INSIDE the OTE zone (${ote15.zoneLow}-${ote15.zoneHigh}, ${ote15.direction}) — ICT's highest-probability entry pocket on the entry timeframe.`);
@@ -1883,6 +2009,18 @@ Rule: If confluenceScore < ${CONFLUENCE_THRESHOLD}, set overallBias to NEUTRAL.`
     const memoryContext = marketMemory.getRecentContext(symbol, 7);
     const marketMemoryPromptBlock = memoryContext.available ? '\n\n' + memoryContext.promptLine : '';
 
+    // ── NEW: Liquidation Clusters — real forced-closure history, only
+    // available if the admin has turned on liquidation tracking (opt-in,
+    // continuous WebSocket) and it's been running long enough to collect
+    // something for this symbol. Same graceful-degrade pattern as market
+    // memory above: contributes nothing if unavailable.
+    const liqClusters = marketMemory.getLiquidationClusters(symbol, 24, price);
+    const liqPromptBlock = (liqClusters.available && liqClusters.clusters.length)
+      ? '\n\nLIQUIDATION CLUSTERS (last 24h, real forced-closure data — where a meaningful concentration of stop-outs already happened):\n'
+        + liqClusters.clusters.map(c => `- $${c.totalUsd.toLocaleString()} liquidated near $${c.price} (${c.side} current price, ${c.eventCount} events)`).join('\n')
+        + '\n(These levels can act as magnets — price is sometimes drawn back to sweep resting liquidity near them — or as reaction zones after a large one-sided liquidation cascade already happened. Consider a nearby cluster as a plausible TP target or as extra caution before placing a SL exactly at/before one, since the cluster represents where a wave of forced closures already occurred, not necessarily where the NEXT one will.)'
+      : '';
+
     // ── Groq AI Analysis ─────────────────────────────────────
     // DB ලේ key set කරලා ඇත්නම් ඒක use කරනවා, නැත්නම් .env ලේ key
     const GROQ_API_KEY = (globalSettings.groq_api_key && globalSettings.groq_api_key.trim())
@@ -1894,9 +2032,14 @@ Rule: If confluenceScore < ${CONFLUENCE_THRESHOLD}, set overallBias to NEUTRAL.`
     const GROQ_TEMPERATURE = parseFloat(globalSettings.groq_temperature) || 0.2;
 
     const earlyWarnText = earlyWarnings.length ? '\nEARLY WARNINGS (M15/H1 signals):\n' + earlyWarnings.map((w,i) => (i+1)+'. '+w).join('\n') : '';
+    // NEW: VWAP (session-reset daily) on the 1H timeframe — a genuinely
+    // leading/real-time signal (today's actual volume-weighted average
+    // transaction price), not derived from a lagging moving average.
+    const vwapH1 = marketTools.indicators.vwapWithBands(h1c);
+
     const prompt = `You are a professional crypto futures trader who provides institutional-grade signals. Analyze ${coin}/USDT and respond ONLY with valid JSON.
 
-${thesisContext}${earlyWarnText}${newsContext}${liquidityContext}${ictContext}${marketMemoryPromptBlock}
+${thesisContext}${earlyWarnText}${newsContext}${liquidityContext}${ictContext}${marketMemoryPromptBlock}${liqPromptBlock}
 
 MARKET DATA:
 - Price: $${price}
@@ -1904,6 +2047,7 @@ MARKET DATA:
 - Funding: ${fundingRate!=null?fundingRate.toFixed(4)+'%':'-'} (${fundingBias})
 - Long/Short Ratio: ${longShortCtx && longShortCtx.longAccount!=null ? (longShortCtx.longAccount*100).toFixed(1)+'% long / '+(longShortCtx.shortAccount*100).toFixed(1)+'% short ('+longShortCtx.skewLabel+')' : 'N/A'}
 - Fear & Greed Index: ${fearGreedCtx && fearGreedCtx.value!=null ? fearGreedCtx.value+'/100 ('+fearGreedCtx.classification+')' : 'N/A'}
+- VWAP (1H, session): ${vwapH1.current ? '$'+vwapH1.current.vwap+' — price is '+vwapH1.current.positionLabel.replace(/_/g,' ') : 'N/A'}
 - RSI: 15m=${m15RSI} | 1H=${h1RSI} | 4H=${h4RSI}
 - RSI Div: 4H=${h4Div} | 1H=${h1Div} | 15m=${m15Div}
 - MACD 1H: hist=${h1MACDv.histogram} (prev=${h1MACDv.prevHistogram})
@@ -1942,11 +2086,12 @@ RULE 1 — ENTRY ZONE (must be at CONFLUENCE of ≥2 factors):
   - entryHigh = top of confluence zone, entryLow = bottom
   - If no zone: use price ±(0.5×ATR 1H): entryHigh=$${(price+atr1h*0.5).toFixed(4)} entryLow=$${(price-atr1h*0.5).toFixed(4)}
 
-RULE 2 — STOP LOSS (ATR-based, must clear key S/R):
+RULE 2 — STOP LOSS (ATR-based, must clear key S/R, liquidity-aware):
   - ATR 4H = ${atr4h} | ATR 1H = ${atr1h}
   - LONG SL: place 1.5×ATR4H BELOW entryLow → approximately $${(price - atr4h*1.5).toFixed(4)}
   - SHORT SL: place 1.5×ATR4H ABOVE entryHigh → approximately $${(price + atr4h*1.5).toFixed(4)}
   - SL MUST be below/above a significant S/R level (not arbitrary) — check 4H S/R: ${h4SR.join(', ')}
+  - STOP HUNT AWARENESS: if a sell-side/buy-side liquidity pool (see ICT/SMC DATA above) sits between the entry and the plain ATR-based SL, that pool is where retail stops are clustered and where a stop-hunt wick is likely to reverse FROM. Prefer placing the SL just beyond that pool (with a small buffer) over the raw ATR distance — this avoids the stop sitting exactly where the sweep is heading.
   - Minimum SL distance: 1×ATR4H = $${atr4h} from entry
 
 RULE 3 — TAKE PROFITS (minimum R:R ratios — calculate R = |entry - sl|):
@@ -1969,9 +2114,15 @@ RULE 5 — CONFLUENCE MINIMUM:
     +1 OI signal confirms direction (BULLISH_CONTINUATION or SHORT_SQUEEZE for LONG, etc.)
     +1 Long/Short ratio confirms (e.g. SHORT_HEAVY skew + LONG bias = contrarian squeeze setup)
     +1 Fear & Greed extreme confirms (Extreme Fear ≤24 + LONG bias, or Extreme Greed ≥76 + SHORT bias — contrarian confirmation)
+    +1 VWAP confirms (price above VWAP + LONG bias, or price below VWAP + SHORT bias — trading with the session's real average)
+    +1 Breaker Block confluence (price reacting at a breaker block in the trade direction)
+    +1 VSA confirms (e.g. NO_SUPPLY + LONG bias, or SELLING_CLIMAX exhaustion + LONG bias after a downtrend)
   - ADX RULE: if h4ADX.adx < 20 (RANGING), reduce score by 1 — range-bound markets have low follow-through
   - OI RULE: if oiData.signal is LONG_LIQUIDATION and bias=LONG, reduce score by 1
   - CROWDED TRADE RULE: if Long/Short ratio is LONG_HEAVY (65%+) AND bias=LONG, reduce score by 1 — you'd be adding to an already-crowded, squeeze-vulnerable side. Same logic for SHORT_HEAVY + SHORT bias.
+  - VWAP EXTENSION RULE: if price is EXTENDED_ABOVE or EXTENDED_BELOW VWAP (beyond the 2nd deviation band), treat a NEW entry in that same direction with caution — mention mean-reversion risk in keyRisk.
+  - POWER OF 3 RULE: if currently in the MANIPULATION phase (see Power of 3 above), be cautious about entering in the direction of the manipulation sweep itself — the real distribution move often goes the opposite way once NY session begins.
+  - JUDAS SWING RULE: if a Judas Swing was just detected, strongly favor the REVERSAL direction it implies over the direction of the fake breakout.
   - If score < ${CONFLUENCE_THRESHOLD}: set overallBias=NEUTRAL, still provide valid numeric levels
 
 Respond with ONLY this JSON (no markdown, no explanation):
@@ -2495,6 +2646,51 @@ app.get('/api/admin/users', verifyAdmin, async (req, res) => {
   try {
     const users = await User.find({}).sort({ createdAt: -1 }).lean();
     res.json({ success: true, users });
+  } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+/* POST /api/admin/users — admin manually registers a user (works even when
+   public self-registration is turned off). Creates the Firebase Auth account
+   AND the matching MongoDB user in one step. */
+app.post('/api/admin/users', verifyAdmin, async (req, res) => {
+  try {
+    const email       = (req.body.email || '').trim().toLowerCase();
+    const password    = req.body.password || '';
+    const displayName = (req.body.displayName || '').trim();
+    const plan        = ['free','pro','elite'].includes(req.body.plan) ? req.body.plan : 'free';
+
+    if (!email) return res.status(400).json({ success: false, error: 'Email is required.' });
+    if (!password || password.length < 8) return res.status(400).json({ success: false, error: 'Password must be at least 8 characters.' });
+
+    // Create the Firebase Auth account
+    let fbUser;
+    try {
+      fbUser = await admin.auth().createUser({ email, password, displayName: displayName || undefined });
+    } catch(fbErr) {
+      const msg = fbErr.code === 'auth/email-already-exists'
+        ? 'This email is already registered.'
+        : (fbErr.message || 'Failed to create account.');
+      return res.status(400).json({ success: false, error: msg });
+    }
+
+    // Create the matching MongoDB user document
+    let dbUser;
+    try {
+      dbUser = await User.create({
+        uid: fbUser.uid,
+        email,
+        displayName: displayName || '',
+        role: ADMIN_EMAILS.includes(email) ? 'admin' : 'user',
+        plan,
+        paperBalance: 1000,
+      });
+    } catch(dbErr) {
+      // Roll back the Firebase account if DB write fails, so we don't leave an orphaned auth user
+      try { await admin.auth().deleteUser(fbUser.uid); } catch(_) {}
+      return res.status(500).json({ success: false, error: 'Failed to save user: ' + dbErr.message });
+    }
+
+    res.json({ success: true, user: dbUser });
   } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
@@ -3048,6 +3244,7 @@ app.get('/api/admin/market-memory-settings', verifyAdmin, (req, res) => {
       marketMemoryRetentionDays: globalSettings.marketMemoryRetentionDays || 30,
       marketMemoryCloudSyncEnabled: !!globalSettings.marketMemoryCloudSyncEnabled,
       marketMemoryCloudRemote: globalSettings.marketMemoryCloudRemote || '',
+      liquidationTrackingEnabled: !!globalSettings.liquidationTrackingEnabled, // NEW
     },
     status: marketMemory.getStatus(),
     vercelWarning: !!process.env.VERCEL, // collector cannot run on serverless — surface this to the admin UI
@@ -3059,6 +3256,7 @@ app.post('/api/admin/market-memory-settings', verifyAdmin, async (req, res) => {
     const {
       marketMemoryEnabled, marketMemorySymbols, marketMemoryIntervalMin,
       marketMemoryRetentionDays, marketMemoryCloudSyncEnabled, marketMemoryCloudRemote,
+      liquidationTrackingEnabled,
     } = req.body;
 
     const updates = {};
@@ -3080,6 +3278,7 @@ app.post('/api/admin/market-memory-settings', verifyAdmin, async (req, res) => {
     }
     if (marketMemoryCloudSyncEnabled !== undefined) { updates.marketMemoryCloudSyncEnabled = !!marketMemoryCloudSyncEnabled; }
     if (marketMemoryCloudRemote !== undefined) { updates.marketMemoryCloudRemote = marketMemoryCloudRemote.trim(); }
+    if (liquidationTrackingEnabled !== undefined) { updates.liquidationTrackingEnabled = !!liquidationTrackingEnabled; } // NEW
 
     for (const [key, value] of Object.entries(updates)) {
       globalSettings[key] = value;

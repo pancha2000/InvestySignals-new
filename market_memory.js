@@ -39,7 +39,120 @@
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
+const WebSocket = require('ws');
 const marketTools = require('./market_tools');
+
+// ── Liquidation Cluster Collection ────────────────────────────────────
+// Same pattern as experiments/liquidation_tracker.js, promoted to
+// production: a persistent WebSocket connection to Binance's public
+// liquidation stream, filtered to the tracked symbol list, written to
+// data/liquidations/<SYMBOL>/<date>.jsonl. This answers a genuinely
+// leading question price indicators can't: "where did a lot of forced
+// closures already happen?" — those price levels often act as magnets
+// (price gets drawn back to sweep resting liquidity near them) or as
+// reaction zones (a cluster of shorts just got liquidated here, so a
+// bounce lost its short-covering fuel).
+const LIQ_DATA_ROOT = path.join(__dirname, 'data', 'liquidations');
+let liqWs = null;
+let liqReconnectTimer = null;
+let liqTrackedSymbols = [];
+
+function liqSymbolDir(symbol) { return path.join(LIQ_DATA_ROOT, symbol); }
+function liqTodayFile(symbol) {
+  const iso = new Date().toISOString().slice(0, 10);
+  return path.join(liqSymbolDir(symbol), `${iso}.jsonl`);
+}
+function parseLiquidation(msg) {
+  const o = msg.o;
+  if (!o) return null;
+  return {
+    symbol: o.s, side: o.S, price: parseFloat(o.p), qty: parseFloat(o.q),
+    usdValue: Math.round(parseFloat(o.p) * parseFloat(o.q) * 100) / 100,
+    time: Math.floor(o.T / 1000), // seconds, matches candle time format used elsewhere
+  };
+}
+function startLiquidationCollector(getSymbols) {
+  stopLiquidationCollector();
+  function connect() {
+    liqWs = new WebSocket('wss://fstream.binance.com/ws/!forceOrder@arr');
+    liqWs.on('open', () => console.log('[market_memory] liquidation collector connected'));
+    liqWs.on('message', (raw) => {
+      let payload;
+      try { payload = JSON.parse(raw.toString()); } catch (_) { return; }
+      const record = parseLiquidation(payload);
+      if (!record) return;
+      liqTrackedSymbols = typeof getSymbols === 'function' ? getSymbols() : getSymbols;
+      if (!liqTrackedSymbols.includes(record.symbol)) return; // only store what we actually track — keeps disk usage bounded
+      try {
+        fs.mkdirSync(liqSymbolDir(record.symbol), { recursive: true });
+        fs.appendFileSync(liqTodayFile(record.symbol), JSON.stringify(record) + '\n');
+      } catch (_) { /* best-effort — a missed write doesn't crash the collector */ }
+    });
+    liqWs.on('close', () => { liqReconnectTimer = setTimeout(connect, 5000); });
+    liqWs.on('error', (err) => console.error('[market_memory] liquidation ws error:', err.message));
+  }
+  connect();
+}
+function stopLiquidationCollector() {
+  if (liqReconnectTimer) clearTimeout(liqReconnectTimer);
+  if (liqWs) { try { liqWs.removeAllListeners('close'); liqWs.close(); } catch (_) {} }
+  liqWs = null;
+}
+
+/**
+ * getLiquidationClusters(symbol, hours, currentPrice)
+ * Reads recent liquidation events for a symbol and buckets them by price
+ * (0.25% buckets) to find where a meaningful concentration of forced
+ * closures already happened. Returns clusters sorted by total USD value,
+ * each tagged as ABOVE or BELOW the current price (relevant for different
+ * things: a cluster below = past long-liquidations = potential support-
+ * turned-magnet; above = past short-liquidations = potential resistance).
+ */
+function getLiquidationClusters(symbol, hours = 24, currentPrice = null, minClusterUsd = 50000) {
+  const dir = liqSymbolDir(symbol);
+  if (!fs.existsSync(dir)) return { available: false, clusters: [] };
+  const cutoff = Date.now() / 1000 - hours * 3600;
+  const rows = [];
+  for (const file of fs.readdirSync(dir).sort()) {
+    if (!file.endsWith('.jsonl')) continue;
+    const lines = fs.readFileSync(path.join(dir, file), 'utf8').split('\n').filter(Boolean);
+    for (const line of lines) {
+      try { const row = JSON.parse(line); if (row.time >= cutoff) rows.push(row); } catch (_) {}
+    }
+  }
+  if (rows.length < 5) return { available: false, clusters: [], sampleCount: rows.length };
+
+  const bucketPct = 0.0025; // 0.25% price buckets
+  // BUG FIX (caught via test before shipping): bucket width must be a
+  // FIXED reference value. The first version computed it per-row as
+  // `price / (price * bucketPct)`, which always simplifies to the
+  // constant `1/bucketPct` regardless of the actual price — every
+  // liquidation regardless of price level was collapsing into the exact
+  // same bucket. Using currentPrice (or the first row's price as a
+  // fallback) as a single fixed reference for the whole pass fixes it.
+  const refPrice = currentPrice || (rows[0] && rows[0].price) || 1;
+  const bucketWidth = refPrice * bucketPct;
+  const buckets = {};
+  for (const r of rows) {
+    const bucketKey = Math.round(r.price / bucketWidth);
+    if (!buckets[bucketKey]) buckets[bucketKey] = { totalUsd: 0, count: 0, prices: [] };
+    buckets[bucketKey].totalUsd += r.usdValue;
+    buckets[bucketKey].count++;
+    buckets[bucketKey].prices.push(r.price);
+  }
+  const clusters = Object.values(buckets)
+    .filter(b => b.totalUsd >= minClusterUsd)
+    .map(b => ({
+      price: Math.round((b.prices.reduce((s, p) => s + p, 0) / b.prices.length) * 1e6) / 1e6,
+      totalUsd: Math.round(b.totalUsd),
+      eventCount: b.count,
+      side: currentPrice ? (b.prices[0] < currentPrice ? 'BELOW' : 'ABOVE') : null,
+    }))
+    .sort((a, b) => b.totalUsd - a.totalUsd)
+    .slice(0, 8);
+
+  return { available: true, clusters, sampleCount: rows.length, windowHours: hours };
+}
 
 const DATA_ROOT = path.join(__dirname, 'data', 'market_memory');
 
@@ -228,7 +341,16 @@ function startCollector(getSymbols, options = {}) {
   }, 24 * 60 * 60 * 1000);
   cloudSyncTimer.unref();
 
-  console.log(`[market_memory] collector started — every ${Math.round(intervalMs / 60000)}min, retention ${retentionDays}d`);
+  // NEW: liquidation collector — separate opt-in (continuous WebSocket,
+  // different resource profile than the periodic REST snapshots above),
+  // gated by its own settings flag.
+  if (options.liquidationTracking && options.liquidationTracking.enabled) {
+    startLiquidationCollector(getSymbols);
+  } else {
+    stopLiquidationCollector();
+  }
+
+  console.log(`[market_memory] collector started — every ${Math.round(intervalMs / 60000)}min, retention ${retentionDays}d, liquidations ${options.liquidationTracking?.enabled ? 'ON' : 'OFF'}`);
 }
 
 function stopCollector() {
@@ -236,6 +358,7 @@ function stopCollector() {
   if (cloudSyncTimer) clearInterval(cloudSyncTimer);
   collectorTimer = null;
   cloudSyncTimer = null;
+  stopLiquidationCollector();
 }
 
 function getStatus() {
@@ -251,6 +374,17 @@ function getStatus() {
       }
     }
   }
+  let liqDiskUsageBytes = 0, liqFileCount = 0;
+  if (fs.existsSync(LIQ_DATA_ROOT)) {
+    for (const symbol of fs.readdirSync(LIQ_DATA_ROOT)) {
+      const dir = liqSymbolDir(symbol);
+      if (!fs.statSync(dir).isDirectory()) continue;
+      for (const file of fs.readdirSync(dir)) {
+        liqDiskUsageBytes += fs.statSync(path.join(dir, file)).size;
+        liqFileCount++;
+      }
+    }
+  }
   return {
     running: !!collectorTimer,
     lastRunAt,
@@ -258,6 +392,11 @@ function getStatus() {
     diskUsageBytes,
     diskUsageMB: round(diskUsageBytes / (1024 * 1024)),
     fileCount,
+    liquidationTracking: {
+      running: !!liqWs,
+      diskUsageMB: round(liqDiskUsageBytes / (1024 * 1024)),
+      fileCount: liqFileCount,
+    },
   };
 }
 
@@ -270,4 +409,5 @@ module.exports = {
   startCollector,
   stopCollector,
   getStatus,
+  getLiquidationClusters, // NEW
 };

@@ -42,10 +42,10 @@ Report panel.
 |---|---|---|---|
 | 1 | Optimal Trade Entry (OTE) zone | ✅ Done | — |
 | 2 | Equal Highs/Equal Lows (EQH/EQL) | ✅ Done | — |
-| 3 | Breaker Blocks | ⏳ Not built | 🟡 Medium |
-| 4 | Inducement detection | ⏳ Not built | 🟡 Medium |
-| 5 | Judas Swing | ⏳ Not built | 🟠 Higher effort |
-| 6 | Power of 3 (AMD Model) | ⏳ Not built | 🟠 Higher effort |
+| 3 | Breaker Blocks | ✅ Done | — |
+| 4 | Inducement detection | ✅ Done | — |
+| 5 | Judas Swing | ✅ Done | — |
+| 6 | Power of 3 (AMD Model) | ✅ Done | — |
 
 ---
 
@@ -53,10 +53,10 @@ Report panel.
 
 | # | Item | Status | Priority |
 |---|---|---|---|
-| 7 | VWAP + Deviation Bands | ⏳ Not built | 🔴 High |
-| 8 | Liquidation Cluster → production | ⏳ `experiments/` built, not wired to scoring/chart | 🔴 High |
-| 9 | Volume Profile / POC | ⏳ Not built | 🟡 Medium |
-| 10 | VSA (Volume Spread Analysis) | ⏳ Not built | 🟡 Medium |
+| 7 | VWAP + Deviation Bands | ✅ Done | — |
+| 8 | Liquidation Cluster → production | ✅ Done | — |
+| 9 | Volume Profile / POC | ✅ Done | — |
+| 10 | VSA (Volume Spread Analysis) | ✅ Done | — |
 | 11 | Long/Short Ratio → production | ✅ Done | — |
 | 12 | Fear & Greed → production | ✅ Done | — |
 
@@ -68,10 +68,10 @@ Report panel.
 |---|---|---|---|
 | 13 | Relative Volume (RVOL) | ✅ Done | — |
 | 14 | BTC-relative strength | ✅ Done | — |
-| 15 | Real bid-ask spread check | ⏳ Not built | 🟡 Medium |
-| 16 | Single-candle-spike filter | ⏳ Not built | 🟡 Medium |
-| 17 | Already-in-position badge | ⏳ Not built (data exists via PaperTrade, just needs wiring into scan response) | 🟡 Medium |
-| 18 | News cross-check on scan results | ⏳ Not built | 🟢 Low |
+| 15 | Real bid-ask spread check | ✅ Done | — |
+| 16 | Single-candle-spike filter | ✅ Done | — |
+| 17 | Already-in-position badge | ✅ Done | — |
+| 18 | News cross-check on scan results | ✅ Done | — |
 
 ---
 
