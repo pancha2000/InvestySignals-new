@@ -450,6 +450,13 @@ const indicators = {
    */
   vwapWithBands(candles) {
     if (!candles.length) return { series: [], current: null };
+    // DEFENSIVE: this crashed in production with "RangeError: Invalid
+    // time value" when called with candles that had no `.time` field
+    // (root cause fixed at the call site — _da_klines now always
+    // includes it — but guarding here too means a future caller with
+    // the same gap degrades gracefully instead of taking down the whole
+    // analysis request).
+    if (!candles.every((c) => Number.isFinite(c.time))) return { series: [], current: null };
     const series = [];
     let daySum = 0, dayVolSum = 0, daySumSq = 0; // resets at each UTC day boundary
     let currentDay = null;

@@ -1354,7 +1354,21 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
   // on re-analysis of the same coin. Moving them here (handler scope) fully fixes it.
   async function _da_klines(sym, interval, limit=200, skipCache=false) {
     const r = await fetchKlinesCached(sym, interval, limit, 3, skipCache);
+    // BUG FIX: this candle shape was missing `.time` entirely. Several
+    // newer functions (vwapWithBands, findJudasSwing, powerOf3Status,
+    // findEqualHighsLows, findInducement, findBreakerBlocks) need it —
+    // vwapWithBands does `new Date(c.time * 1000).toISOString()` per
+    // candle, and `undefined * 1000 = NaN` produces an Invalid Date,
+    // which throws "RangeError: Invalid time value" the moment it's
+    // called — exactly the error seen in production. The other
+    // functions above don't crash on a missing `.time` (comparisons
+    // against `undefined` just evaluate false), but they silently
+    // returned empty/no-op results instead of doing anything — a
+    // quieter but equally real bug. `k[0]` is the candle's open time in
+    // milliseconds from Binance; converting to seconds matches the
+    // convention used everywhere else (chart routes, market_memory.js).
     return sanitizeCandles(r).map(k=>({
+      time:Math.floor(k[0]/1000),
       open:parseFloat(k[1]),high:parseFloat(k[2]),low:parseFloat(k[3]),
       close:parseFloat(k[4]),volume:parseFloat(k[5])
     }));

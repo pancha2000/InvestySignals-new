@@ -400,7 +400,43 @@
                     <h2>Manage Users</h2>
                     <p>View, edit, and manage platform user accounts and permissions.</p>
                 </div>
-                <button class="btn btn-gold btn-sm">+ Add User</button>
+                <button class="btn btn-gold btn-sm" onclick="openAddUserModal()">+ Add User</button>
+            </div>
+
+            <!-- NEW: Add User modal — wires the button above to the new
+                 POST /api/admin/users endpoint (manual registration, works
+                 even when public self-registration is off). -->
+            <div id="addUserModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;">
+                <div style="background:var(--bg2,#0c0f18);border:1px solid var(--border-soft);border-radius:var(--radius);padding:24px;width:90%;max-width:400px;">
+                    <div style="font-size:1.05rem;font-weight:700;margin-bottom:16px;">+ Add User</div>
+                    <div style="display:flex;flex-direction:column;gap:12px;">
+                        <div>
+                            <label style="font-size:0.8rem;color:var(--text-sub);display:block;margin-bottom:6px;">Email</label>
+                            <input type="email" id="auEmail" class="input-control" placeholder="user@example.com" style="width:100%;">
+                        </div>
+                        <div>
+                            <label style="font-size:0.8rem;color:var(--text-sub);display:block;margin-bottom:6px;">Password (min 8 chars)</label>
+                            <input type="password" id="auPassword" class="input-control" placeholder="••••••••" style="width:100%;">
+                        </div>
+                        <div>
+                            <label style="font-size:0.8rem;color:var(--text-sub);display:block;margin-bottom:6px;">Display Name (optional)</label>
+                            <input type="text" id="auDisplayName" class="input-control" placeholder="Jane Doe" style="width:100%;">
+                        </div>
+                        <div>
+                            <label style="font-size:0.8rem;color:var(--text-sub);display:block;margin-bottom:6px;">Plan</label>
+                            <select id="auPlan" class="input-control" style="width:100%;">
+                                <option value="free">Free</option>
+                                <option value="pro">Pro</option>
+                                <option value="elite">Elite</option>
+                            </select>
+                        </div>
+                        <div id="auMsg" style="display:none;font-size:0.8rem;padding:8px 12px;border-radius:var(--radius-sm);"></div>
+                        <div style="display:flex;gap:10px;margin-top:6px;">
+                            <button class="btn btn-gold" style="flex:1;" onclick="submitAddUser()" id="auSubmitBtn">Create User</button>
+                            <button class="btn" style="flex:1;background:var(--surface);border:1px solid var(--border-soft);color:var(--text);" onclick="closeAddUserModal()">Cancel</button>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="stats-grid-4" style="grid-template-columns:repeat(4,1fr);margin-bottom:20px;">
                 <div class="stat-box sb-gold"><div class="stat-box-lbl">Total</div><div class="stat-box-val text-gold" id="userTotal">—</div></div>
@@ -1776,6 +1812,61 @@ window.adminSignOut = async function() {
     }
 
     // ── Signal Performance (feedback loop) ──────────────────
+    // ── Add User modal ───────────────────────────────────────
+    function openAddUserModal() {
+        const m = document.getElementById('addUserModal');
+        if (m) m.style.display = 'flex';
+        ['auEmail','auPassword','auDisplayName'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+        const plan = document.getElementById('auPlan'); if (plan) plan.value = 'free';
+        const msg = document.getElementById('auMsg'); if (msg) msg.style.display = 'none';
+    }
+    function closeAddUserModal() {
+        const m = document.getElementById('addUserModal');
+        if (m) m.style.display = 'none';
+    }
+    async function submitAddUser() {
+        const btn = document.getElementById('auSubmitBtn');
+        const msg = document.getElementById('auMsg');
+        const email = document.getElementById('auEmail')?.value.trim();
+        const password = document.getElementById('auPassword')?.value;
+        const displayName = document.getElementById('auDisplayName')?.value.trim();
+        const plan = document.getElementById('auPlan')?.value;
+
+        const showMsg = (text, isError) => {
+            if (!msg) return;
+            msg.style.display = 'block';
+            msg.style.background = isError ? 'rgba(255,59,92,0.12)' : 'rgba(16,185,129,0.12)';
+            msg.style.border = '1px solid ' + (isError ? 'rgba(255,59,92,0.3)' : 'rgba(16,185,129,0.3)');
+            msg.style.color = isError ? 'var(--red,#ff4d4f)' : 'var(--green,#10b981)';
+            msg.textContent = text;
+        };
+
+        if (!email) return showMsg('Email is required.', true);
+        if (!password || password.length < 8) return showMsg('Password must be at least 8 characters.', true);
+
+        btn.disabled = true;
+        btn.textContent = 'Creating...';
+        try {
+            const idToken = await getToken();
+            const res = await fetch('/api/admin/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+                body: JSON.stringify({ email, password, displayName, plan })
+            });
+            const j = await res.json();
+            if (j.success) {
+                showMsg('✅ User created: ' + email, false);
+                setTimeout(() => { closeAddUserModal(); loadUsers(); }, 900);
+            } else {
+                showMsg('❌ ' + (j.error || 'Failed to create user'), true);
+            }
+        } catch (e) {
+            showMsg('❌ ' + e.message, true);
+        }
+        btn.disabled = false;
+        btn.textContent = 'Create User';
+    }
+
     async function loadSignalPerformance() {
         const el = document.getElementById('sigPerfContent');
         if (!el) return;

@@ -140,6 +140,60 @@ wick is wide enough to touch both a TP and the SL in the same 3-candle
 window, the code checks TP before SL (optimistic order) — true tick-by-tick
 ordering isn't knowable from 1m candles alone.
 
+## 5l. Merged in your own addition: manual user registration
+
+You added `POST /api/admin/users` (creates a Firebase Auth account + the
+matching MongoDB user in one step — works even when public
+self-registration is turned off, with automatic rollback of the Firebase
+account if the MongoDB write fails). Your uploaded file was based on the
+version before the "Invalid time value" fix (5k), so merging it in
+directly would have silently reverted that fix — instead, your new route
+was inserted into the latest version so both are present together.
+
+**Bonus:** noticed `admin.html` already had a "+ Add User" button that
+was never wired to anything (no `onclick` at all). Since your new
+endpoint is exactly what that button was clearly meant to call, wired it
+up with a small modal (email/password/display name/plan) so the feature
+is actually usable end-to-end now, not just a backend route with no UI.
+
+## 5k. 🚨 Critical production bug — "Invalid time value" crashing analysis
+
+**Reported:** analyzing BANK/USDT (and any coin) threw "Invalid time
+value" instead of returning a result.
+
+**Root cause:** `_da_klines()` — the function that builds every candle
+array (`m15c`, `h1c`, `h4c`, `d1c`) used throughout `/api/deep-analysis`
+— never included a `.time` field on its returned candle objects. This
+went unnoticed through five batches of ICT/SMC additions because most of
+those functions (Judas Swing, Power of 3, EQH/EQL, Inducement, Breaker
+Blocks) just do comparisons against `c.time` — with `c.time` undefined,
+`undefined >= x` silently evaluates `false` and the functions quietly
+returned empty/no-op results. No crash, so no obvious symptom. But
+`vwapWithBands()` (added in 5h) does `new Date(c.time * 1000).toISOString()`
+per candle to bucket by UTC day — `undefined * 1000 = NaN`, and calling
+`.toISOString()` on the resulting Invalid Date throws exactly
+`RangeError: Invalid time value`. That's what surfaced.
+
+**Fix (two layers):**
+1. **Root cause** — `_da_klines()` now includes `time: Math.floor(k[0]/1000)`
+   on every candle, matching the convention already used in the chart
+   routes and `market_memory.js`. This doesn't just stop the crash — it
+   also makes Judas Swing, Power of 3, EQH/EQL, Inducement, and Breaker
+   Blocks actually FUNCTIONAL inside the deep-analysis prompt for the
+   first time (they were silently inert before this, a real but quiet
+   bug of its own).
+2. **Defensive guard** — `vwapWithBands()` now checks
+   `candles.every(c => Number.isFinite(c.time))` up front and returns an
+   empty/safe result instead of throwing if any future caller has the
+   same gap. Verified both layers with an isolated test: old-shape
+   candles (no `.time`) now degrade safely; new-shape candles (with
+   `.time`) compute VWAP correctly.
+
+Checked whether the raw candle arrays get serialized anywhere else that
+adding a new field could bloat (e.g., into the AI prompt directly) —
+confirmed they're never `JSON.stringify`'d wholesale, only specific
+extracted numeric values are used, so this fix has no token-cost impact.
+
 ## 5j. The remaining batch — Volume Profile, VSA, Breaker Blocks, Inducement, Judas Swing, Power of 3, scan spread/spike/news checks
 
 All 9 remaining roadmap items from this session, each tested with
