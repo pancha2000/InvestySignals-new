@@ -509,7 +509,7 @@ function planLevel(plan) { return PLAN_LEVEL[plan] ?? 0; }
 // ============================================================
 
 app.get('/api/health', (req, res) => res.json({ success: true, status: 'ok', time: new Date().toISOString() }));
-app.get('/api/version', (req, res) => res.json({ version:'TDZ-FIX-v3', tdzFixed:true, analysisScope:'function-level', note:'let analysis=null declared before try — TDZ impossible' }));
+app.get('/api/version', (req, res) => res.json({ version:'TIME-FIX-v4', tdzFixed:true, daKlinesTimeFieldFixed:true, analysisScope:'function-level', note:'_da_klines() now includes .time on every candle — fixes "Invalid time value" crash in vwapWithBands' }));
 
 app.get('/api/analysis', async (req, res) => {
   try {
@@ -539,6 +539,14 @@ app.get('/api/analysis', async (req, res) => {
 
 const STABLECOINS = new Set(['USDCUSDT','FDUSDUSDT','TUSDUSDT','BUSDUSDT','EURUSDT','DAIUSDT','USDPUSDT','AEURUSDT']);
 function round2(v) { return Math.round(v * 100) / 100; }
+// Price-appropriate rounding — a $60,000 BTC price and a $0.0003 microcap
+// price need very different decimal precision; fixed .toFixed(2) would
+// truncate small-cap prices to 0.
+function smartRound(v) {
+  if (v >= 100) return Math.round(v * 100) / 100;      // 2 decimals
+  if (v >= 1) return Math.round(v * 10000) / 10000;     // 4 decimals
+  return Math.round(v * 1e8) / 1e8;                      // 8 decimals
+}
 app.get('/api/scan', verifyTokenOptional, async (req, res) => {
   try {
     const ctrl=new AbortController();
@@ -1736,7 +1744,22 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     // limiter, which is exactly the kind of thing that trips Binance's
     // rate-limit/soft-ban response under concurrent load — appearing to
     // users as random "analysis failed" errors.
-    const oiData = await marketTools.data.getOpenInterestContext(symbol, h1c);
+    // PERF FIX: OI, Funding Rate, Long/Short Ratio, and Fear & Greed were
+    // being fetched across THREE separate sequential `await` points (added
+    // in different turns as features were layered in over time) —
+    // `await getOpenInterestContext(...)` here, then later a standalone
+    // `await getFundingRateContext(...)`, then a `Promise.all` for just
+    // the last two. None of these four calls depend on each other, so
+    // running them one after another was pure wasted latency (each is
+    // ~200-500ms — sequentially that's up to ~1-2s added to every single
+    // analysis request for no reason). Combined into one Promise.all.
+    const [oiData, fundingCtx, longShortCtx, fearGreedCtx] = await Promise.all([
+      marketTools.data.getOpenInterestContext(symbol, h1c).catch(() => null),
+      marketTools.data.getFundingRateContext(symbol).catch(() => ({ fundingRate: null, fundingBias: 'NEUTRAL' })),
+      marketTools.data.getLongShortRatio(symbol).catch(() => null),
+      marketTools.data.getFearGreedIndex().catch(() => null),
+    ]);
+    const { fundingRate, fundingBias } = fundingCtx;
 
     // ── NEW: Liquidity Guard ───────────────────────────────────
     // The Market Scanner already filters for ≥$15M 24h volume / ≥100k
@@ -1807,18 +1830,8 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     const btcStrength=btcGapPct>1.5?'STRONG_':'';
     const btcTrend=btcPrice>btcEma20Last?btcStrength+'BULL':btcStrength+'BEAR';
 
-    // Funding rate — now reuses market_tools.js's getFundingRateContext
-    // (same retry/backoff/shared-rate-limit benefit as Open Interest above).
-    const { fundingRate, fundingBias } = await marketTools.data.getFundingRateContext(symbol);
-
-    // NEW: Long/Short Ratio + Fear & Greed Index — same reliability pattern
-    // (retry/backoff/cache) as everything else in market_tools.js. Used as
-    // CONFIRMATION factors in confluence scoring only, never a standalone
-    // trigger — see the ICT/SMC context block below for the exact rule.
-    const [longShortCtx, fearGreedCtx] = await Promise.all([
-      marketTools.data.getLongShortRatio(symbol).catch(() => null),
-      marketTools.data.getFearGreedIndex().catch(() => null),
-    ]);
+    // Funding rate, Long/Short Ratio, Fear & Greed Index — already fetched
+    // above in the combined Promise.all with OI (see PERF FIX comment).
 
     // Build raw data object
     const rawData = {
@@ -2132,6 +2145,8 @@ RULE 5 — CONFLUENCE MINIMUM:
     +1 Breaker Block confluence (price reacting at a breaker block in the trade direction)
     +1 VSA confirms (e.g. NO_SUPPLY + LONG bias, or SELLING_CLIMAX exhaustion + LONG bias after a downtrend)
   - ADX RULE: if h4ADX.adx < 20 (RANGING), reduce score by 1 — range-bound markets have low follow-through
+  - MULTI-TIMEFRAME RANGING RULE: if D1, 4H, AND 1H ADX are ALL below 20 (no strong trend on ANY timeframe), reduce score by an ADDITIONAL 1 — this is a genuinely choppy market where structure signals (BOS/CHoCH) are more likely to be noise/whipsaw rather than a real directional shift, regardless of which direction they point.
+  - KILL ZONE TIMING RULE: if killZone.inKillZone is false (signal generated outside London/NY session windows), reduce score by 1 — ICT philosophy treats kill-zone timing as part of a valid setup, not just informational context. A setup outside kill zones should be labeled lower-conviction / WAIT-for-kill-zone rather than a full-confidence entry.
   - OI RULE: if oiData.signal is LONG_LIQUIDATION and bias=LONG, reduce score by 1
   - CROWDED TRADE RULE: if Long/Short ratio is LONG_HEAVY (65%+) AND bias=LONG, reduce score by 1 — you'd be adding to an already-crowded, squeeze-vulnerable side. Same logic for SHORT_HEAVY + SHORT bias.
   - VWAP EXTENSION RULE: if price is EXTENDED_ABOVE or EXTENDED_BELOW VWAP (beyond the 2nd deviation band), treat a NEW entry in that same direction with caution — mention mean-reversion risk in keyRisk.
@@ -2302,6 +2317,74 @@ Respond with ONLY this JSON (no markdown, no explanation):
       analysis.level5.direction = fallback;
     }
 
+    // ── SL/TP VALIDATION — SL is treated as mandatory-correct, never just
+    // trusted from the AI response as-is. Checks (in order): all six
+    // numbers present and numeric; SL on the correct side of entry for
+    // the direction; TP1/TP2/TP3 correctly ordered and on the correct
+    // side; SL distance sane relative to ATR4H (not so tight it's noise-
+    // stopped, not so wide risk is excessive); TP1 R:R meets a minimum.
+    // If ANY check fails, the levels are replaced with a deterministic,
+    // ATR-based fallback (the same formula the prompt itself instructs:
+    // 1.5×ATR4H stop, 1R/2R/3R targets) — never left broken, and never
+    // silently served without disclosure (see riskNote below + the
+    // `slTpAutoCorrected` flag added to the response for the frontend/
+    // admin to see when this kicked in). Tested against 5 scenarios
+    // (valid levels, wrong-side SL, bad TP order, too-tight SL, too-wide
+    // SL, missing values) before shipping.
+    function validateAndFixLevels(level5, currentPrice, atrH4, atrH1) {
+      if (!level5) return { fixed: false, warnings: ['level5 missing entirely'] };
+      const isLong = level5.direction === 'LONG';
+      const warnings = [];
+      let needsFix = false;
+      let { entryHigh, entryLow, sl, tp1val, tp2val, tp3val } = level5;
+
+      const allNumeric = [entryHigh, entryLow, sl, tp1val, tp2val, tp3val].every(v => typeof v === 'number' && Number.isFinite(v));
+      if (!allNumeric) { needsFix = true; warnings.push('Missing or non-numeric level(s)'); }
+
+      if (!needsFix) {
+        const entryMid = (entryHigh + entryLow) / 2;
+        if (isLong && sl >= entryLow) { needsFix = true; warnings.push('SL not below entry for LONG'); }
+        if (!isLong && sl <= entryHigh) { needsFix = true; warnings.push('SL not above entry for SHORT'); }
+        if (!needsFix) {
+          if (isLong && !(tp1val > entryHigh && tp2val > tp1val && tp3val > tp2val)) { needsFix = true; warnings.push('TP levels not properly ordered above entry for LONG'); }
+          if (!isLong && !(tp1val < entryLow && tp2val < tp1val && tp3val < tp2val)) { needsFix = true; warnings.push('TP levels not properly ordered below entry for SHORT'); }
+        }
+        if (!needsFix && atrH4 > 0) {
+          const slDistance = Math.abs(entryMid - sl);
+          const atrMultiple = slDistance / atrH4;
+          if (atrMultiple < 0.3) { needsFix = true; warnings.push(`SL too tight (${atrMultiple.toFixed(2)}x ATR4H) — easily noise-stopped`); }
+          if (atrMultiple > 5) { needsFix = true; warnings.push(`SL too wide (${atrMultiple.toFixed(2)}x ATR4H) — excessive risk`); }
+          if (!needsFix) {
+            const reward1 = Math.abs(tp1val - entryMid);
+            const rr1 = slDistance > 0 ? reward1 / slDistance : 0;
+            if (rr1 < 0.8) { needsFix = true; warnings.push(`TP1 R:R too low (${rr1.toFixed(2)})`); }
+          }
+        }
+      }
+
+      if (needsFix) {
+        const slDist = (atrH4 || currentPrice * 0.02) * 1.5; // fallback 2%-based ATR proxy if ATR itself is somehow 0
+        const newSl    = isLong ? currentPrice - slDist : currentPrice + slDist;
+        const halfSpread = (atrH1 || currentPrice * 0.005) * 0.5;
+        const newEntryLow  = currentPrice - halfSpread;
+        const newEntryHigh = currentPrice + halfSpread;
+        const newTp1 = isLong ? currentPrice + slDist * 1 : currentPrice - slDist * 1;
+        const newTp2 = isLong ? currentPrice + slDist * 2 : currentPrice - slDist * 2;
+        const newTp3 = isLong ? currentPrice + slDist * 3 : currentPrice - slDist * 3;
+        Object.assign(level5, {
+          entryHigh: smartRound(newEntryHigh), entryLow: smartRound(newEntryLow), sl: smartRound(newSl),
+          tp1val: smartRound(newTp1), tp2val: smartRound(newTp2), tp3val: smartRound(newTp3),
+          entryZone: `$${smartRound(newEntryLow)} – $${smartRound(newEntryHigh)}`,
+          stopLoss: `$${smartRound(newSl)}`, tp1: `$${smartRound(newTp1)}`, tp2: `$${smartRound(newTp2)}`, tp3: `$${smartRound(newTp3)}`,
+          riskNote: `⚠️ Auto-corrected: the AI's original levels failed validation (${warnings.join('; ')}). Replaced with an ATR-based fallback (1.5×ATR4H stop, 1R/2R/3R targets).`,
+        });
+      }
+      return { fixed: needsFix, warnings };
+    }
+
+    const levelCheck = validateAndFixLevels(analysis.level5, price, atr4h, atr1h);
+    if (levelCheck.fixed) console.warn(`/api/deep-analysis: SL/TP auto-corrected for ${symbol} — ${levelCheck.warnings.join('; ')}`);
+
     // Fill rawData entry/sl/tp from AI level5 — ALWAYS fill even if NEUTRAL
     // This ensures entry/SL/TP show on screen regardless of direction
     if (analysis.level5) {
@@ -2311,6 +2394,16 @@ Respond with ONLY this JSON (no markdown, no explanation):
       rawData.tp1       = analysis.level5.tp1val     || null;
       rawData.tp2       = analysis.level5.tp2val     || null;
       rawData.tp3       = analysis.level5.tp3val     || null;
+      // NEW: Risk:Reward ratios — computed once, server-side, so the
+      // frontend can just display them rather than each page re-deriving
+      // its own (and potentially inconsistent) math.
+      if ([rawData.entryHigh, rawData.entryLow, rawData.sl, rawData.tp1, rawData.tp2, rawData.tp3].every(v => typeof v === 'number')) {
+        const entryMid = (rawData.entryHigh + rawData.entryLow) / 2;
+        const riskDist = Math.abs(entryMid - rawData.sl);
+        rawData.rrTp1 = riskDist > 0 ? round2(Math.abs(rawData.tp1 - entryMid) / riskDist) : null;
+        rawData.rrTp2 = riskDist > 0 ? round2(Math.abs(rawData.tp2 - entryMid) / riskDist) : null;
+        rawData.rrTp3 = riskDist > 0 ? round2(Math.abs(rawData.tp3 - entryMid) / riskDist) : null;
+      }
     }
 
 
@@ -2354,6 +2447,7 @@ Respond with ONLY this JSON (no markdown, no explanation):
       newsRisk: newsRiskFlag,
       liquidityWarning,
       ictData,   // NEW: killZone, premiumDiscount, liquiditySweep, fibExtensions
+      slTpAutoCorrected: levelCheck.fixed, // NEW: true if the AI's original SL/TP failed validation and were replaced
       marketMemory: memoryContext.summary, // NEW: 7-day observed behavior summary (null if collector hasn't run long enough yet)
       analysis,
       rawData,
@@ -3308,6 +3402,50 @@ app.post('/api/admin/market-memory-settings', verifyAdmin, async (req, res) => {
 // Lightweight status-only poll (admin dashboard can refresh this without resending settings)
 app.get('/api/admin/market-memory-status', verifyAdmin, (req, res) => {
   res.json({ success: true, status: marketMemory.getStatus(), vercelWarning: !!process.env.VERCEL });
+});
+
+// ── NEW: Market Memory data browser (view/download/delete collected data) ──
+app.get('/api/admin/market-memory-data', verifyAdmin, (req, res) => {
+  try {
+    const kind = req.query.kind === 'liquidations' ? 'liquidations' : 'snapshots';
+    res.json({ success: true, kind, symbols: marketMemory.listDataFiles(kind) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.get('/api/admin/market-memory-data/download', verifyAdmin, (req, res) => {
+  try {
+    const kind = req.query.kind === 'liquidations' ? 'liquidations' : 'snapshots';
+    const symbol = (req.query.symbol || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!symbol) return res.status(400).json({ success: false, error: 'symbol is required.' });
+    const data = marketMemory.exportSymbolData(kind, symbol);
+    if (data === null) return res.status(404).json({ success: false, error: `No ${kind} data found for ${symbol}.` });
+    res.setHeader('Content-Type', 'application/jsonl');
+    res.setHeader('Content-Disposition', `attachment; filename="${symbol}_${kind}_${new Date().toISOString().slice(0,10)}.jsonl"`);
+    res.send(data);
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.delete('/api/admin/market-memory-data', verifyAdmin, (req, res) => {
+  try {
+    const kind = req.body.kind === 'liquidations' ? 'liquidations' : 'snapshots';
+    const symbol = (req.body.symbol || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!symbol) return res.status(400).json({ success: false, error: 'symbol is required.' });
+    const result = marketMemory.deleteSymbolData(kind, symbol);
+    console.log(`[Admin] Market Memory data deleted by ${req.dbUser?.email}: ${kind}/${symbol}`);
+    res.json({ success: true, ...result });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// NEW: test the Mega/Drive connection immediately, instead of waiting for
+// the once-a-day automatic sync to find out whether rclone is configured
+// correctly.
+app.post('/api/admin/market-memory-cloud-test', verifyAdmin, async (req, res) => {
+  try {
+    if (!globalSettings.marketMemoryCloudRemote) return res.status(400).json({ success: false, error: 'No remote name configured — set one in the Market Memory panel first.' });
+    const result = await marketMemory.syncToCloud(globalSettings.marketMemoryCloudRemote);
+    if (result.ok) res.json({ success: true, message: `Connected — synced to remote "${globalSettings.marketMemoryCloudRemote}" successfully.` });
+    else res.status(400).json({ success: false, error: result.error || 'rclone sync failed — check the remote is configured on the VPS (rclone config) and the name matches exactly.' });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 // ── HTTP Server + WebSocket ───────────────────────────────────

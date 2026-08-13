@@ -140,6 +140,159 @@ wick is wide enough to touch both a TP and the SL in the same 3-candle
 window, the code checks TP before SL (optimistic order) — true tick-by-tick
 ordering isn't knowable from 1m candles alone.
 
+## 5o. SL/TP mandatory validation, AI chat completion + web search, scan repeat-results investigation
+
+*(Note: this section's changes were lost once when the sandbox container
+reset mid-session and had to be rebuilt from the last delivered zip —
+rebuilt a second time here, verified identical to the original tested
+logic.)*
+
+**SL/TP Validation (mandatory, per explicit user emphasis on SL correctness):**
+`validateAndFixLevels()` in `/api/deep-analysis` — checks (in order) all
+six numbers present/numeric, SL on the correct side of entry for the
+direction, TP1/TP2/TP3 correctly ordered and on the correct side, SL
+distance sane relative to ATR4H (0.3x-5x), TP1 R:R meets a minimum. On
+ANY failure, replaced with a deterministic ATR-based fallback (1.5×ATR4H
+stop, 1R/2R/3R targets — the same formula already documented in the
+prompt) — never left broken, never silently served without disclosure.
+Tested against 5 scenarios (valid levels, wrong-side SL, bad TP order,
+too-tight SL, too-wide SL, missing values) before shipping. New
+`slTpAutoCorrected` flag in the response; `analysis.html` shows an R:R
+ratio readout (TP1/TP2/TP3) and a warning banner when auto-correction
+fired.
+
+**AI Chat Agent completion:** Trade Copilot mode's system prompt updated
+to reflect that the printed report already includes this session's ICT
+extras (OTE/Breaker/Inducement/Judas/Power of 3/Volume Profile/VSA), and
+specifically calls out Liquidation Clusters (not in the printed report)
+as worth a fresh tool call. Added a new global rule (#8): price
+predictions/targets must be grounded in actual tool data (Fib Extension,
+Volume Profile POC, Liquidation Clusters, S/R) with the source named —
+never an invented percentage — and the agent should ask for a timeframe
+(scalp/swing/position) before giving a number if the user didn't specify
+one.
+
+**Web search (`search_web` tool):** `market_tools.js` gained `webSearch()`
+using Tavily (built for LLM agents — clean pre-summarized results, not
+raw HTML) via an optional `TAVILY_API_KEY` env var, following the same
+"optional key, clean unavailable message" pattern already used for the
+news APIs. **Bug caught before shipping:** the first version routed
+through `fetchJSON()`, which is GET-only and shares Binance's rate
+limiter — wrong on both counts for a POST-based, non-Binance API. Fixed
+with a self-contained `fetch()` call. Lets the chat agent answer "what
+are people saying about X" style questions instead of being limited to
+curated crypto-news RSS feeds. **Setup required:** add `TAVILY_API_KEY`
+to `.env` (free tier at tavily.com) — without it, the tool returns a
+clean "not configured" message rather than failing silently or hanging.
+
+**Market scan "same coins every time" — investigated, no bug found:**
+Checked both the backend (`/api/scan` — fetches fresh from Binance every
+call, zero server-side caching) and frontend (`runUnifiedScan()` — a
+genuine new fetch every click, no debounce/staleness). The repeat
+results are the natural consequence of the filter design: fixed
+thresholds (top-20-by-quoteVolume, ≥3% change, ≥$15M volume) combined
+with sorting by raw volume descending means consistently-high-volume
+coins (BTC, ETH, SOL, XRP, DOGE, etc.) reliably qualify across many scans,
+especially in quiet/range-bound markets. Documented as a design
+observation with concrete improvement options (weight by RVOL/relative-
+strength instead of raw volume, widen the candidate pool, de-prioritize
+recently-shown coins) — not implemented yet, pending the user's choice.
+
+## 5n. Market Memory data browser — view, download, delete + Mega/Drive connection test
+
+Previously, the only visibility into collected data was an aggregate
+disk-usage number — no way to see what's actually been collected per
+symbol, export it, or remove it. Added:
+
+- `market_memory.js`: `listDataFiles(kind)` (per-symbol inventory — file
+  count, total size, date range), `exportSymbolData(kind, symbol)`
+  (concatenates all of a symbol's stored days into one downloadable
+  JSONL), `deleteSymbolData(kind, symbol)` (removes one symbol's data;
+  snapshots and liquidations are independent — deleting one doesn't
+  touch the other). All three tested against a temp directory with
+  multiple symbols before wiring in, specifically checking that deleting
+  one symbol never touches another's data.
+- New admin routes: `GET /api/admin/market-memory-data` (list),
+  `GET .../download` (download a symbol's data as `.jsonl`),
+  `DELETE /api/admin/market-memory-data` (remove a symbol's data).
+- New admin panel section "🗂️ Collected Data" — tabs for Snapshots vs
+  Liquidations, a table per symbol with file count/size/date range, and
+  Download/Delete buttons per row (delete requires a confirm dialog).
+- **Cloud connection test**: previously the only way to know if the
+  Mega/Drive `rclone` setup actually worked was to wait for the once-a-
+  day automatic sync. New `POST /api/admin/market-memory-cloud-test`
+  triggers an immediate sync attempt and reports success/failure right
+  away — a "🔌 Test Cloud Connection" button next to the remote-name field.
+
+## 5m. Reviewed a real production analysis, refined confluence scoring, caught a second instance of the time-field bug, expanded the AI chat agent
+
+**Reviewed an actual BTC/USDT analysis snapshot** the user flagged as
+"wrong" (LONG call when they expected SHORT). Read the full underlying
+data (D1/4H/1H/15m structure, RSI, MACD, ADX across all timeframes,
+Premium/Discount zones, entry/SL/TP levels) rather than taking the
+disagreement at face value. Conclusion: **not a bug** — the system
+correctly labeled it "⏳ Watch Zone" (not a firm entry), Entry Timing was
+explicitly "WAIT", and the entry zone sat below current price at the
+exact sell-side liquidity pool the warning box flagged for a stop-hunt.
+This is a coherent "D1 bullish bias, 4H corrective pullback into
+premium, wait for the sweep" read — the kind of thing reasonable traders
+(and reasonable systems) can disagree about depending on which timeframe
+they weight, not a slam-dunk error.
+
+That said, found two **real, addressable gaps** in the confluence
+scoring surfaced by this specific example:
+- All three timeframes' ADX (D1 23.1, 4H 19.12, 1H 10.95) showed
+  "Ranging"/weak trend, yet the score wasn't further discounted for a
+  fully choppy, no-trend-anywhere environment (where BOS/CHoCH signals
+  are more likely noise). Added a **Multi-Timeframe Ranging Rule**
+  (additional -1 when D1+4H+1H ADX are all below 20).
+- Kill Zone timing ("Outside Kill Zones") was shown as informational
+  context only, never actually factored into the score. Added a
+  **Kill Zone Timing Rule** (-1 when outside London/NY session windows).
+
+**Also answered directly: does this need "experience" like a human
+analyst?** Yes — and that's precisely what Signal Outcome Tracking (5g)
+exists for. Rules encode generations of OTHER traders' experience
+(ICT/SMC theory), but the system doesn't yet have feedback from its OWN
+track record. That requires real trades closing over weeks/months to
+accumulate — the infrastructure exists now, the experience itself is
+still being built up.
+
+**🚨 Second instance of the "Invalid time value" bug pattern, caught
+proactively:** while building the new AI agent tools below (which needed
+candles with `.time`), found that `market_tools.js`'s `getCandles()` —
+used by the agent's EXISTING tools (`get_technical_indicators`,
+`get_market_structure`) — had the exact same missing-`.time` gap as the
+already-fixed `_da_klines()` in server.js. Not yet visibly broken (no
+current caller needed `.time`), but would have hit the identical crash
+the moment any time-dependent function used it. Fixed proactively before
+wiring in the new tools. Searched every other candle-construction site
+in the codebase (`server.js`, `market_tools.js`, `market_memory.js`,
+`backtest_engine.js`) — the remaining ones without `.time`
+(`scanMarketSmart`'s squeeze detector, `market_memory.js`'s snapshot
+collector, `backtest_engine.js`) were confirmed to never call any of the
+time-dependent functions, so left as-is rather than fixing preemptively
+for code paths that don't need it.
+
+**AI Chat Agent expansion:** `ai_agent.js` had only its original 5 tools
+— none of this session's additions (VWAP, Liquidation Clusters,
+Long/Short Ratio, Fear & Greed, OTE, EQH/EQL, Breaker Blocks, Inducement,
+Judas Swing, Power of 3, Volume Profile, VSA) were reachable from the
+chat agent (ask-ai.html, dashboard copilot) even though they were fully
+built into deep-analysis and the chart. Added two new bundle tools
+(matching the existing tools' granularity — `get_market_structure`
+already bundles several signals into one call, so two new bundles is
+consistent rather than fragmenting into 10+ single-purpose tools):
+- `get_advanced_market_context` — VWAP, Long/Short Ratio, Fear & Greed,
+  Liquidation Clusters
+- `get_ict_smc_extras` — OTE Zone, EQH/EQL, Breaker Blocks, Inducement,
+  Judas Swing, Power of 3, Volume Profile, VSA
+
+Also updated the Global Market Chat mode's system prompt to explicitly
+mention both new tools by name (LLMs follow explicit tool-usage guidance
+in the prompt much more reliably than relying on the tool descriptions
+alone to be discovered).
+
 ## 5l. Merged in your own addition: manual user registration
 
 You added `POST /api/admin/users` (creates a Firebase Auth account + the

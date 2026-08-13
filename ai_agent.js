@@ -39,6 +39,7 @@ const { DynamicStructuredTool } = require('@langchain/core/tools');
 const { SystemMessage, HumanMessage, AIMessage, ToolMessage } = require('@langchain/core/messages');
 const { z } = require('zod');
 const marketTools = require('./market_tools');
+const marketMemory = require('./market_memory'); // NEW — for liquidation cluster data in get_advanced_market_context
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -260,6 +261,69 @@ const TOOLS = [
   }),
 
   new DynamicStructuredTool({
+    name: 'get_advanced_market_context',
+    description:
+      'Get VWAP (session volume-weighted average price + deviation bands), retail Long/Short positioning ratio, the Fear & Greed Index, and recent Liquidation Clusters (price levels where a meaningful concentration of forced closures already happened — these can act as magnets or reaction zones). Use this when the user asks about VWAP, retail positioning/crowding, market sentiment, or liquidation levels/clusters. Liquidation clusters are only available for symbols the admin has enabled continuous tracking for — the result will say so if none exist yet for this symbol.',
+    schema: z.object({
+      symbol: z.string().describe('Coin ticker, e.g. "BTC", "SOL", "ETHUSDT".'),
+    }),
+    func: async ({ symbol } = {}) => {
+      try {
+        const sym = marketTools.data.normalizePair(symbol);
+        const h1c = await marketTools.data.getCandles(sym, '1h');
+        const [vwap, longShort, fearGreed] = await Promise.all([
+          Promise.resolve(marketTools.indicators.vwapWithBands(h1c)),
+          marketTools.data.getLongShortRatio(sym).catch(() => null),
+          marketTools.data.getFearGreedIndex().catch(() => null),
+        ]);
+        const lastPrice = h1c.length ? h1c[h1c.length - 1].close : null;
+        const liquidationClusters = marketMemory.getLiquidationClusters(sym, 24, lastPrice);
+        return toToolResult({
+          success: true,
+          vwap: vwap.current,
+          longShortRatio: longShort,
+          fearGreedIndex: fearGreed,
+          liquidationClusters: liquidationClusters.available ? liquidationClusters.clusters : [],
+          liquidationTrackingNote: liquidationClusters.available ? undefined : 'No liquidation history collected for this symbol yet (tracking may be disabled, or not enough time has passed).',
+        });
+      } catch (err) {
+        return toToolResult({ success: false, error: err.message || 'get_advanced_market_context failed' });
+      }
+    },
+  }),
+
+  new DynamicStructuredTool({
+    name: 'get_ict_smc_extras',
+    description:
+      'Get deeper ICT/Smart-Money-Concepts signals beyond the basics: Optimal Trade Entry (OTE) zone status, Equal Highs/Equal Lows (resting liquidity pools), Breaker Blocks (broken Order Blocks that flipped role), Inducement (minor liquidity sweep trap before a major one), Judas Swing (false breakout at London/NY session open that reversed), Power of 3 / AMD session phase (Accumulation/Manipulation/Distribution), Volume Profile Point of Control, and Volume Spread Analysis (climax bars, no-demand/no-supply bars). Use this when the user asks about any of these specific ICT concepts by name, or asks "what is the deeper structure story" beyond basic support/resistance.',
+    schema: z.object({
+      symbol: z.string().describe('Coin ticker, e.g. "BTC", "SOL", "ETHUSDT".'),
+    }),
+    func: async ({ symbol } = {}) => {
+      try {
+        const sym = marketTools.data.normalizePair(symbol);
+        const [h1c, m15c] = await Promise.all([
+          marketTools.data.getCandles(sym, '1h'),
+          marketTools.data.getCandles(sym, '15m'),
+        ]);
+        return toToolResult({
+          success: true,
+          oteZone: marketTools.structure.getOteZoneStatus(h1c),
+          equalHighsLows: marketTools.structure.findEqualHighsLows(h1c),
+          breakerBlocks: marketTools.structure.findBreakerBlocks(h1c),
+          inducement: marketTools.structure.findInducement(h1c),
+          judasSwing: marketTools.structure.findJudasSwing(m15c),
+          powerOf3: marketTools.structure.powerOf3Status(m15c),
+          volumeProfile: marketTools.candleReading.volumeProfile(h1c),
+          vsa: marketTools.candleReading.volumeSpreadAnalysis(h1c),
+        });
+      } catch (err) {
+        return toToolResult({ success: false, error: err.message || 'get_ict_smc_extras failed' });
+      }
+    },
+  }),
+
+  new DynamicStructuredTool({
     name: 'get_crypto_news',
     description:
       'Get the latest crypto news headlines. Pass a symbol to filter for that coin (e.g. "BTC"), or omit the symbol entirely for general crypto market headlines. ALWAYS check this before giving a confident directional opinion — a clean technical chart can be completely invalidated by a hack, depeg, regulatory action, or exchange insolvency that just broke. News/fundamentals must take priority over technicals when the two conflict.',
@@ -271,6 +335,22 @@ const TOOLS = [
         return toToolResult(await marketTools.getCryptoNews(symbol));
       } catch (err) {
         return toToolResult({ success: false, error: err.message || 'get_crypto_news failed' });
+      }
+    },
+  }),
+
+  new DynamicStructuredTool({
+    name: 'search_web',
+    description:
+      'Search the general internet — for things get_crypto_news won\'t cover: what people are actually saying/discussing (forums, social sentiment, opinion), a specific claim someone wants fact-checked, background on an event, a project, a person, or anything outside curated crypto-news feeds. Use this when the user asks "what are people saying about X", "search for...", "look up...", or references something you don\'t have another tool for. If this returns "not configured", tell the user web search needs a TAVILY_API_KEY set up on the server — don\'t pretend you searched.',
+    schema: z.object({
+      query: z.string().describe('The search query, e.g. "BTC ETF outflows this week sentiment".'),
+    }),
+    func: async ({ query } = {}) => {
+      try {
+        return toToolResult(await marketTools.webSearch(query));
+      } catch (err) {
+        return toToolResult({ success: false, error: err.message || 'search_web failed' });
       }
     },
   }),
@@ -336,13 +416,14 @@ NON-NEGOTIABLE RULES:
 4. BE CONCISE. Most users are on a phone. Lead with the answer. Use short paragraphs, and use markdown formatting (bold for key numbers/levels, short bullet lists for multi-point breakdowns) only where it genuinely helps scanning — don't over-format simple answers.
 5. RISK FIRST. You may share a directional read when asked, but frame it around risk management (position sizing, invalidation levels, what would change your mind) rather than hype or certainty. You are not a financial advisor and you don't place trades — let that come through in tone, without repeating a disclaimer in every single message.
 6. LANGUAGE. Always reply in the same language the user just wrote in (English, Sinhala, or otherwise) — match them naturally.
-7. NEVER REPEAT YOURSELF. State each point exactly once. Do not restate the same sentence, conclusion, or paragraph in different words within one answer — if you notice yourself about to repeat a point already made, stop and move on instead.`;
+7. NEVER REPEAT YOURSELF. State each point exactly once. Do not restate the same sentence, conclusion, or paragraph in different words within one answer — if you notice yourself about to repeat a point already made, stop and move on instead.
+8. PRICE TARGETS/PREDICTIONS MUST BE GROUNDED. If asked "how far will X drop/rise", "what's the target", or anything asking for a specific future price level, NEVER invent a percentage or price from general knowledge. Ground the answer in actual tool data: Fibonacci Extension levels and Volume Profile / Point of Control (get_ict_smc_extras), Liquidation Clusters (get_advanced_market_context), or a support/resistance level (get_market_structure) — and say which one you're using as the basis ("using the 1.618 Fib extension from get_ict_smc_extras..."). If the user hasn't specified a timeframe (scalp/swing/position), ask before giving a number — a "target" means something different over 1 hour vs 1 month. If none of your tools give a groundable level for what's being asked, say plainly that you don't have a reliable basis for a specific number rather than estimating one.`;
 
 const TRADE_COPILOT_ADDENDUM = `
-MODE: Trade Copilot (side panel). The user is currently looking at a specific trade report, included below — it already contains the entry, stop-loss, take-profit levels and the platform's own confluence reasoning. Use that data directly to answer "why is my SL here" / "why this entry" style questions instead of re-deriving it. Only call a tool if the user asks about a different coin, explicitly wants a fresher real-time check, or asks something the report doesn't cover — get_crypto_news is a good example of something genuinely worth fetching fresh even in this mode, since the report is a price/structure snapshot and contains no headlines.`;
+MODE: Trade Copilot (side panel). The user is currently looking at a specific trade report, included below — it already contains the entry, stop-loss, take-profit levels and the platform's own confluence reasoning (which already includes OTE zone, Breaker Blocks, Inducement, Judas Swing, Power of 3, Volume Profile, and VSA if those fired). Use that data directly to answer "why is my SL here" / "why this entry" style questions instead of re-deriving it. Only call a tool if the user asks about a different coin, explicitly wants a fresher real-time check, or asks something the report doesn't cover — get_crypto_news (headlines) and get_advanced_market_context (specifically for Liquidation Clusters, which are NOT part of the printed report) are good examples of things genuinely worth fetching fresh even in this mode.`;
 
 const GLOBAL_CHAT_ADDENDUM = `
-MODE: Global Market Chat (full page, "Crypto ChatGPT"). There is no pre-loaded report here — you're starting from zero for every new symbol or claim. Proactively reach for your tools (scan_market, get_live_price, get_technical_indicators, get_market_structure, get_crypto_news) before stating anything factual about price, trend, or news. Never guess.`;
+MODE: Global Market Chat (full page, "Crypto ChatGPT"). There is no pre-loaded report here — you're starting from zero for every new symbol or claim. Proactively reach for your tools (scan_market, get_live_price, get_technical_indicators, get_market_structure, get_crypto_news, get_advanced_market_context, get_ict_smc_extras, search_web) before stating anything factual about price, trend, or news. Never guess. Reach for get_advanced_market_context when asked about VWAP, retail positioning, sentiment, or liquidations; reach for get_ict_smc_extras when asked about OTE, breaker blocks, inducement, Judas swings, Power of 3/AMD, volume profile, or VSA specifically; reach for search_web when asked what people are saying/discussing, to fact-check a claim, or for anything outside curated crypto-news feeds.`;
 
 function buildSystemPrompt(mode, reportContext) {
   if (mode === 'trade_copilot') {

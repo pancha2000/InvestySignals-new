@@ -1666,6 +1666,18 @@ function buildPaperTradePanel(data) {
         </div>
     </div>
 
+    ${data.rawData?.rrTp1 != null ? `
+    <div style="display:flex;gap:10px;margin:4px 0 10px;font-size:0.72rem;color:var(--text-muted);">
+        <span>R:R → TP1 <b style="color:var(--text);">${data.rawData.rrTp1}</b></span>
+        <span>TP2 <b style="color:var(--text);">${data.rawData.rrTp2}</b></span>
+        <span>TP3 <b style="color:var(--text);">${data.rawData.rrTp3}</b></span>
+    </div>` : ''}
+
+    ${data.slTpAutoCorrected ? `
+    <div style="margin-bottom:10px;padding:10px 14px;border-radius:var(--radius-sm);background:rgba(255,180,0,0.1);border:1px solid rgba(255,180,0,0.35);color:#e0a500;font-size:0.78rem;">
+        ⚠️ The AI's original SL/TP failed validation and were auto-corrected to a safe ATR-based fallback. The AI's directional call is unaffected — only the exact price levels were replaced.
+    </div>` : ''}
+
     <div id="ptMsg"></div>
 
     <button class="pt-submit-btn ${isLong?'long-btn':'short-btn'}" id="ptSubmitBtn" onclick="ptSubmit()">

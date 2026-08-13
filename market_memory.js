@@ -361,6 +361,66 @@ function stopCollector() {
   stopLiquidationCollector();
 }
 
+/**
+ * NEW — listDataFiles(kind)
+ * Browsable inventory of what's actually been collected: per-symbol
+ * breakdown of file count, total size, and date range, for both the
+ * periodic snapshots and the liquidation stream. `kind` is 'snapshots' |
+ * 'liquidations'. This is what powers the admin panel's data browser —
+ * the settings/status endpoints that already existed only gave a single
+ * aggregate total, not a way to see (or act on) individual symbols.
+ */
+function listDataFiles(kind = 'snapshots') {
+  const root = kind === 'liquidations' ? LIQ_DATA_ROOT : DATA_ROOT;
+  const dirFn = kind === 'liquidations' ? liqSymbolDir : symbolDir;
+  if (!fs.existsSync(root)) return [];
+  const out = [];
+  for (const symbol of fs.readdirSync(root)) {
+    const dir = dirFn(symbol);
+    if (!fs.statSync(dir).isDirectory()) continue;
+    const files = fs.readdirSync(dir).filter(f => f.endsWith('.jsonl')).sort();
+    if (!files.length) continue;
+    let totalBytes = 0;
+    for (const f of files) totalBytes += fs.statSync(path.join(dir, f)).size;
+    out.push({
+      symbol,
+      fileCount: files.length,
+      totalBytes,
+      totalMB: round(totalBytes / (1024 * 1024)),
+      earliestDate: files[0].replace('.jsonl', ''),
+      latestDate: files[files.length - 1].replace('.jsonl', ''),
+    });
+  }
+  return out.sort((a, b) => b.totalBytes - a.totalBytes);
+}
+
+/**
+ * NEW — exportSymbolData(kind, symbol)
+ * Concatenates every stored day-file for a symbol into one combined
+ * JSONL string, for the admin panel's "Download" button. Returns null if
+ * nothing exists for that symbol (caller should 404).
+ */
+function exportSymbolData(kind, symbol) {
+  const dir = kind === 'liquidations' ? liqSymbolDir(symbol) : symbolDir(symbol);
+  if (!fs.existsSync(dir)) return null;
+  const files = fs.readdirSync(dir).filter(f => f.endsWith('.jsonl')).sort();
+  if (!files.length) return null;
+  return files.map(f => fs.readFileSync(path.join(dir, f), 'utf8')).join('');
+}
+
+/**
+ * NEW — deleteSymbolData(kind, symbol)
+ * Removes ALL stored data for one symbol (both kinds are independent —
+ * deleting snapshots doesn't touch that symbol's liquidation history and
+ * vice versa). Used by the admin panel's per-symbol "Delete" button.
+ */
+function deleteSymbolData(kind, symbol) {
+  const dir = kind === 'liquidations' ? liqSymbolDir(symbol) : symbolDir(symbol);
+  if (!fs.existsSync(dir)) return { deleted: false, reason: 'No data for this symbol.' };
+  fs.rmSync(dir, { recursive: true, force: true });
+  return { deleted: true };
+}
+
 function getStatus() {
   let diskUsageBytes = 0;
   let fileCount = 0;
@@ -410,4 +470,7 @@ module.exports = {
   stopCollector,
   getStatus,
   getLiquidationClusters, // NEW
+  listDataFiles,          // NEW
+  exportSymbolData,       // NEW
+  deleteSymbolData,       // NEW
 };

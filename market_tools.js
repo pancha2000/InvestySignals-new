@@ -269,7 +269,15 @@ async function fetchKlinesCached(symbol, interval, limit = 200) {
 async function getCandles(symbol, tf) {
   const limit = TF_LIMITS[tf] || 200;
   const raw = await fetchKlinesCached(symbol, tf, limit);
+  // BUG FIX: same class of bug as _da_klines() in server.js (see that
+  // file's comment for the full "Invalid time value" story) — this was
+  // missing `.time` too. Not yet visibly broken here since none of the
+  // CURRENT consumers (getTechnicalIndicators, getMarketStructure) used
+  // it, but adding new agent tools that need `.time` (VWAP, Judas Swing,
+  // Power of 3, etc.) would have hit the exact same crash. Fixed
+  // proactively before wiring those in.
   return sanitizeCandles(raw).map((k) => ({
+    time: Math.floor(k[0] / 1000),
     open: parseFloat(k[1]),
     high: parseFloat(k[2]),
     low: parseFloat(k[3]),
@@ -1457,6 +1465,71 @@ async function getCryptoNews(symbolRaw) {
   return newsCache.set(cacheKey, result);
 }
 
+const webSearchCache = new TTLCache(5 * 60 * 1000); // 5 min — search results don't need second-by-second freshness
+
+/**
+ * NEW — General web search, for the AI chat agent to answer questions
+ * like "what are people saying about X" that go beyond curated crypto-
+ * news RSS feeds (opinion, discussion, broader context, non-crypto
+ * context if relevant). Uses Tavily (built specifically for LLM agents —
+ * returns clean, pre-summarized snippets rather than raw HTML) via
+ * TAVILY_API_KEY, following the SAME "optional env var, no key = clean
+ * unavailable message" pattern already used for CRYPTOCOMPARE_API_KEY /
+ * CRYPTOPANIC_API_KEY above — no admin-panel key management needed for
+ * an optional, best-effort tool like this.
+ * Sign-up (free tier available): https://tavily.com
+ */
+async function webSearch(query) {
+  if (!query || !query.trim()) return { success: false, error: 'Empty search query.' };
+  const cacheKey = query.trim().toLowerCase();
+  const cached = webSearchCache.get(cacheKey);
+  if (cached) return cached;
+
+  if (!process.env.TAVILY_API_KEY) {
+    return {
+      success: false,
+      error: 'Web search is not configured on this server.',
+      setupNote: 'Add TAVILY_API_KEY to the .env file (free tier available at tavily.com) to enable general web search for the AI chat.',
+    };
+  }
+
+  // NOTE: deliberately NOT using fetchJSON() here — that helper is
+  // GET-only and routes through binanceLimiter (a Binance-specific rate
+  // limiter), wrong on both counts for Tavily (POST, unrelated to
+  // Binance's rate budget). Self-contained fetch with its own timeout.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10000);
+  try {
+    const r = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      signal: ctrl.signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: process.env.TAVILY_API_KEY,
+        query: query.trim(),
+        search_depth: 'basic',
+        max_results: 5,
+        include_answer: true,
+      }),
+    });
+    if (!r.ok) return { success: false, error: `Web search API error: ${r.status}` };
+    const data = await r.json();
+    const result = {
+      success: true,
+      query: query.trim(),
+      answer: data.answer || null, // Tavily's own short synthesized answer, when available
+      results: (data.results || []).slice(0, 5).map((res) => ({
+        title: res.title, url: res.url, snippet: (res.content || '').slice(0, 300),
+      })),
+    };
+    return webSearchCache.set(cacheKey, result);
+  } catch (err) {
+    return { success: false, error: 'Web search failed: ' + err.message };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ════════════════════════════════════════════════════════════════════════
 // SECTION 8 — COMPOSED, TOOL-READY FUNCTIONS
 //             These 5 are what ai_agent.js wraps as DynamicStructuredTools.
@@ -1724,6 +1797,7 @@ module.exports = {
   getTechnicalIndicators,
   getMarketStructure,
   getCryptoNews,
+  webSearch, // NEW
 
   // ── Lower-level building blocks (exported for completeness, reuse,
   //    unit testing, or a future opt-in refactor of server.js) ──

@@ -958,6 +958,10 @@
                             <div style="margin-top:4px;font-size:0.7rem;color:var(--text-muted);">
                                 rclone must be installed + configured on the VPS first (one-time, via SSH). This just tells the app which remote to use.
                             </div>
+                            <button onclick="testCloudConnection()" class="btn" style="margin-top:8px;background:var(--surface);border:1px solid var(--border-soft);color:var(--text);font-size:0.78rem;padding:7px 14px;">
+                                🔌 Test Cloud Connection
+                            </button>
+                            <span id="cloudTestResult" style="display:none;margin-left:8px;font-size:0.78rem;"></span>
                         </div>
 
                         <!-- NEW: Liquidation Cluster tracking -->
@@ -987,6 +991,25 @@
                             <button onclick="refreshMarketMemoryStatus()" class="btn" style="flex:1;min-width:120px;background:var(--surface);border:1px solid var(--border-soft);color:var(--text);">
                                 🔄 Refresh Status
                             </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ═══════════════════════════════════════════════════ -->
+                <!-- MARKET MEMORY DATA BROWSER (view/download/delete)    -->
+                <!-- ═══════════════════════════════════════════════════ -->
+                <div class="data-panel" style="margin-top:20px;">
+                    <div class="panel-header">
+                        <div class="panel-title">🗂️ Collected Data — view, download, delete</div>
+                        <div style="font-size:0.75rem;color:var(--text-muted);">What's actually been collected, per symbol</div>
+                    </div>
+                    <div style="padding:20px;">
+                        <div class="tf-tabs" style="display:flex;gap:6px;margin-bottom:14px;">
+                            <button class="mtf-tab active" id="dataTabSnapshots" onclick="switchDataTab('snapshots')" style="background:var(--gold-subtle);border:1px solid var(--gold);color:var(--gold);border-radius:var(--radius-xs);padding:7px 14px;font-size:0.8rem;cursor:pointer;font-weight:700;">📊 Snapshots</button>
+                            <button class="mtf-tab" id="dataTabLiquidations" onclick="switchDataTab('liquidations')" style="background:var(--surface);border:1px solid var(--border-soft);color:var(--text-muted);border-radius:var(--radius-xs);padding:7px 14px;font-size:0.8rem;cursor:pointer;">💥 Liquidations</button>
+                        </div>
+                        <div id="dataBrowserContent">
+                            <div style="color:var(--text-muted);font-size:0.85rem;">Loading...</div>
                         </div>
                     </div>
                 </div>
@@ -1437,6 +1460,7 @@ window.adminSignOut = async function() {
 
         // Load Market Memory settings + status
         await refreshMarketMemoryStatus(true);
+        await loadDataBrowser();
         await loadSignalPerformance();
     }  // end loadAdminStats
 
@@ -1929,6 +1953,94 @@ window.adminSignOut = async function() {
         }
     }
     document.getElementById('sigPerfDays')?.addEventListener('change', loadSignalPerformance);
+
+    // ── Market Memory Data Browser ───────────────────────────
+    let dataBrowserKind = 'snapshots';
+    function switchDataTab(kind) {
+        dataBrowserKind = kind;
+        const snapBtn = document.getElementById('dataTabSnapshots');
+        const liqBtn = document.getElementById('dataTabLiquidations');
+        [snapBtn, liqBtn].forEach(b => { b.style.background = 'var(--surface)'; b.style.borderColor = 'var(--border-soft)'; b.style.color = 'var(--text-muted)'; b.style.fontWeight = '400'; });
+        const active = kind === 'snapshots' ? snapBtn : liqBtn;
+        active.style.background = 'var(--gold-subtle)'; active.style.borderColor = 'var(--gold)'; active.style.color = 'var(--gold)'; active.style.fontWeight = '700';
+        loadDataBrowser();
+    }
+    async function loadDataBrowser() {
+        const el = document.getElementById('dataBrowserContent');
+        el.innerHTML = '<div style="color:var(--text-muted);font-size:0.85rem;">Loading...</div>';
+        try {
+            const idToken = await getToken();
+            const r = await fetch('/api/admin/market-memory-data?kind=' + dataBrowserKind, {
+                headers: { 'Authorization': 'Bearer ' + idToken }
+            }).then(r => r.json());
+            if (!r.success) { el.innerHTML = '<div style="color:var(--red);font-size:0.85rem;">' + (r.error||'Failed to load') + '</div>'; return; }
+            if (!r.symbols.length) { el.innerHTML = '<div style="color:var(--text-muted);font-size:0.85rem;padding:16px;text-align:center;">No ' + dataBrowserKind + ' data collected yet.</div>'; return; }
+            el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+                <thead><tr style="border-bottom:2px solid var(--border-soft);color:var(--text-muted);font-size:0.72rem;text-transform:uppercase;">
+                    <th style="padding:8px 10px;text-align:left;">Symbol</th><th style="padding:8px 10px;">Files</th>
+                    <th style="padding:8px 10px;">Size</th><th style="padding:8px 10px;">Date Range</th><th style="padding:8px 10px;">Actions</th>
+                </tr></thead><tbody>${r.symbols.map(s => `
+                <tr style="border-bottom:1px solid var(--border-soft);">
+                    <td style="padding:8px 10px;font-weight:600;">${s.symbol}</td>
+                    <td style="padding:8px 10px;text-align:center;">${s.fileCount}</td>
+                    <td style="padding:8px 10px;text-align:center;">${s.totalMB} MB</td>
+                    <td style="padding:8px 10px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:0.75rem;">${s.earliestDate} → ${s.latestDate}</td>
+                    <td style="padding:8px 10px;text-align:center;white-space:nowrap;">
+                        <button onclick="downloadSymbolData('${s.symbol}')" style="background:none;border:1px solid var(--border-soft);color:var(--text);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:0.72rem;margin-right:4px;">⬇️ Download</button>
+                        <button onclick="deleteSymbolDataUI('${s.symbol}')" style="background:none;border:1px solid var(--red,#ff4d4f);color:var(--red,#ff4d4f);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:0.72rem;">🗑️ Delete</button>
+                    </td>
+                </tr>`).join('')}</tbody></table>`;
+        } catch (e) {
+            el.innerHTML = '<div style="color:var(--red);font-size:0.85rem;">' + e.message + '</div>';
+        }
+    }
+    async function downloadSymbolData(symbol) {
+        try {
+            const idToken = await getToken();
+            const res = await fetch(`/api/admin/market-memory-data/download?kind=${dataBrowserKind}&symbol=${symbol}`, {
+                headers: { 'Authorization': 'Bearer ' + idToken }
+            });
+            if (!res.ok) { const j = await res.json().catch(()=>({})); alert(j.error || 'Download failed'); return; }
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${symbol}_${dataBrowserKind}_${new Date().toISOString().slice(0,10)}.jsonl`;
+            document.body.appendChild(a); a.click(); a.remove();
+            URL.revokeObjectURL(url);
+        } catch (e) { alert('Download error: ' + e.message); }
+    }
+    async function deleteSymbolDataUI(symbol) {
+        if (!confirm(`Delete ALL ${dataBrowserKind} data for ${symbol}? This can't be undone.`)) return;
+        try {
+            const idToken = await getToken();
+            const r = await fetch('/api/admin/market-memory-data', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+                body: JSON.stringify({ kind: dataBrowserKind, symbol })
+            }).then(r => r.json());
+            if (r.success) { loadDataBrowser(); refreshMarketMemoryStatus(); }
+            else alert(r.error || 'Delete failed');
+        } catch (e) { alert('Delete error: ' + e.message); }
+    }
+    async function testCloudConnection() {
+        const span = document.getElementById('cloudTestResult');
+        span.style.display = 'inline';
+        span.style.color = 'var(--text-muted)';
+        span.textContent = 'Testing...';
+        try {
+            const idToken = await getToken();
+            const r = await fetch('/api/admin/market-memory-cloud-test', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + idToken }
+            }).then(r => r.json());
+            span.style.color = r.success ? 'var(--green,#10b981)' : 'var(--red,#ff4d4f)';
+            span.textContent = (r.success ? '✅ ' : '❌ ') + (r.message || r.error);
+        } catch (e) {
+            span.style.color = 'var(--red,#ff4d4f)';
+            span.textContent = '❌ ' + e.message;
+        }
+    }
 
     async function refreshMarketMemoryStatus(alsoLoadSettings) {
         try {
