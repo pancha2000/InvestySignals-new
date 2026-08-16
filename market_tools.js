@@ -1620,10 +1620,32 @@ async function scanMarketSmart() {
       volume: round(parseFloat(c.quoteVolume), 0),
       price: parseFloat(c.lastPrice),
     }))
-    .sort((a, b) => b.volume - a.volume)
-    .slice(0, 80); // bounds worst-case latency on a small VPS
+    .sort((a, b) => b.volume - a.volume);
 
-  const analyzed = await Promise.all(candidates.map(async (c) => {
+  // BUG FIX: this used to be plain `.slice(0, 80)` on the volume-sorted
+  // list — which meant the candidate pool was STILL just "top 80 by
+  // volume", i.e. still dominated by megacaps/large-caps. That directly
+  // contradicted this function's own stated purpose above ("let
+  // mid-caps that mega-caps would normally crowd out get a fair look").
+  // Fix: keep a top tier (majors still get checked — they can squeeze
+  // too) + a STRATIFIED sample spread evenly across the rest of the
+  // volume-eligible pool (rank 31 down to the $3M floor), instead of
+  // just grabbing the next-highest-volume names. Same total candidate
+  // count (80) so the latency bound on a small VPS is unchanged.
+  const TOP_TIER = 30;
+  const topTier = candidates.slice(0, TOP_TIER);
+  const restPool = candidates.slice(TOP_TIER);
+  const sampleSize = Math.min(80 - TOP_TIER, restPool.length);
+  const stratified = [];
+  if (sampleSize > 0) {
+    const step = restPool.length / sampleSize;
+    for (let i = 0; i < sampleSize; i++) {
+      stratified.push(restPool[Math.floor(i * step)]);
+    }
+  }
+  const candidatePool = [...topTier, ...stratified];
+
+  const analyzed = await Promise.all(candidatePool.map(async (c) => {
     try {
       const raw = await fetchKlinesCached(c.symbol, '1h', 60);
       const candles = sanitizeCandles(raw).map((k) => ({ close: parseFloat(k[4]), volume: parseFloat(k[5]) }));

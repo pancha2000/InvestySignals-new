@@ -173,6 +173,26 @@ async function saveSettingToDB(key, value) {
   await Settings.findOneAndUpdate({ key }, { value }, { upsert: true, new: true });
 }
 
+// ── BUG FIX (Aug 2026): Timeout-safe fetch wrapper ───────────────
+// Several raw `fetch()` calls to Binance in this file had NO timeout at
+// all (unlike market_tools.js's fetchJSON, which times out at 6-10s).
+// Node's fetch has no meaningful default timeout, so if Binance ever
+// hangs/stalls, these calls could block the request far longer than the
+// frontend's own 90s AbortController expects — the browser gives up and
+// shows an error, but the server-side request (and its DB/Groq work)
+// keeps running, wasting a connection/slot on a small VPS. Every direct
+// `fetch()` to Binance below is now routed through this, matching the
+// timeout discipline already used everywhere else in the app.
+async function fetchWithTimeout(url, { timeoutMs = 8000, ...opts } = {}) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 // ── [1][2] Klines Cache + Retry ──────────────────────────────
 const klinesCache   = new Map();
 const KLINES_TTL    = 5 * 60 * 1000;  // BUG FIX: 5min TTL — 15min was too stale for fast markets
@@ -198,7 +218,7 @@ async function fetchKlinesCached(symbol, interval, limit = 200, retries = 3, ski
   for (const url of urls) {
     for (let attempt = 0; attempt < retries; attempt++) {
       try {
-        const r = await fetch(url);
+        const r = await fetchWithTimeout(url, { timeoutMs: 8000 }); // BUG FIX: was a bare fetch() with no timeout
         if (r.status === 429) { await new Promise(res => setTimeout(res, 1000 * Math.pow(2, attempt))); continue; }
         if (!r.ok) break; // try next URL
         const data = await r.json();
@@ -234,7 +254,7 @@ async function fetchKlinesRange(symbol, interval, limit = 500, endTime = null) {
   ];
   for (const url of urls) {
     try {
-      const r = await fetch(url);
+      const r = await fetchWithTimeout(url, { timeoutMs: 8000 }); // BUG FIX: was a bare fetch() with no timeout
       if (!r.ok) continue;
       const data = await r.json();
       if (!Array.isArray(data) || data.length === 0) continue;
@@ -255,13 +275,13 @@ async function getLivePrice(symbol) {
   try {
     // Try futures first, fall back to spot for coins not on futures
     let price = null;
-    const fr = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${symbol}`);
+    const fr = await fetchWithTimeout(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${symbol}`, { timeoutMs: 6000 }); // BUG FIX: was a bare fetch() with no timeout
     if (fr.ok) {
       const fd = await fr.json();
       price = parseFloat(fd.price) || null;
     }
     if (!price) {
-      const sr = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`);
+      const sr = await fetchWithTimeout(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`, { timeoutMs: 6000 }); // BUG FIX: was a bare fetch() with no timeout
       if (sr.ok) {
         const sd = await sr.json();
         price = parseFloat(sd.price) || null;
@@ -515,7 +535,7 @@ app.get('/api/analysis', async (req, res) => {
   try {
     const pair = (req.query.pair || 'BTCUSDT').toUpperCase().replace(/[^A-Z0-9]/g, '');
     const tf   = (req.query.tf || '1h').replace(/[^a-zA-Z0-9]/g, '');
-    const r    = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${pair}&interval=${tf}&limit=100`);
+    const r    = await fetchWithTimeout(`https://fapi.binance.com/fapi/v1/klines?symbol=${pair}&interval=${tf}&limit=100`, { timeoutMs: 8000 }); // BUG FIX: was a bare fetch() with no timeout
     if (!r.ok) return res.status(502).json({ success: false, error: `Binance error: ${await r.text()}` });
     const klines = await r.json();
     if (!Array.isArray(klines) || klines.length < 15) return res.status(502).json({ success: false, error: 'Not enough data' });
@@ -594,7 +614,7 @@ app.get('/api/scan', verifyTokenOptional, async (req, res) => {
     // current spread rather than an inference.
     await Promise.all(results.map(async (coin) => {
       try {
-        const btRes = await fetch(`https://fapi.binance.com/fapi/v1/ticker/bookTicker?symbol=${coin.symbol}`);
+        const btRes = await fetchWithTimeout(`https://fapi.binance.com/fapi/v1/ticker/bookTicker?symbol=${coin.symbol}`, { timeoutMs: 6000 }); // BUG FIX: was a bare fetch() with no timeout
         const bt = await btRes.json();
         const bid = parseFloat(bt.bidPrice), ask = parseFloat(bt.askPrice);
         coin.spreadPct = (bid > 0 && ask > 0) ? round2(100 * (ask - bid) / ask) : null;
@@ -606,9 +626,24 @@ app.get('/api/scan', verifyTokenOptional, async (req, res) => {
     // across many candles (a more structured, trend-following move).
     await Promise.all(results.map(async (coin) => {
       try {
-        const hourly = await fetchKlinesCached(coin.symbol, '1h', 24);
+        // BUG FIX: fetchKlinesCached returns RAW klines including the
+        // currently-forming (not-yet-closed) last candle. That partial
+        // candle's range is artificially small (it hasn't had a full hour
+        // to move yet), which understated maxCandleMovePct right after
+        // each new hour started and made isSingleCandleSpike flicker
+        // inconsistently.
+        // NOTE: deliberately NOT using the shared sanitizeCandles() here —
+        // that function also drops any candle whose close is >30% off the
+        // window's median as an "outlier". For this specific spike check
+        // that would strip out exactly the real spike candle we're trying
+        // to measure. Only the still-forming candle should be dropped, so
+        // that one check is inlined here instead.
+        const hourlyRaw = await fetchKlinesCached(coin.symbol, '1h', 24);
+        const lastRaw = hourlyRaw[hourlyRaw.length - 1];
+        const lastRawCloseTime = lastRaw && Number(lastRaw[6]);
+        const hourly = (lastRawCloseTime && lastRawCloseTime > Date.now()) ? hourlyRaw.slice(0, -1) : hourlyRaw;
         const ranges = hourly.map(k => Math.abs(parseFloat(k[4]) - parseFloat(k[1])) / parseFloat(k[1]) * 100); // % move per candle
-        const maxCandleMovePct = Math.max(...ranges);
+        const maxCandleMovePct = ranges.length ? Math.max(...ranges) : 0;
         const totalMovePct = Math.abs(coin.change);
         coin.singleCandleSpikeRatio = totalMovePct > 0 ? round2(maxCandleMovePct / totalMovePct) : null;
         coin.isSingleCandleSpike = coin.singleCandleSpikeRatio !== null && coin.singleCandleSpikeRatio > 0.6; // one candle = 60%+ of the whole day's move
@@ -1770,7 +1805,7 @@ app.post('/api/deep-analysis', verifyToken, async (req, res) => {
     // the scanner, applied here too, as a non-blocking warning only.
     let liquidityWarning = null;
     try {
-      const ticker = await fetch(`https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=${symbol}`).then(r => r.json());
+      const ticker = await fetchWithTimeout(`https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=${symbol}`, { timeoutMs: 6000 }).then(r => r.json()); // BUG FIX: was a bare fetch() with no timeout
       const qVol = parseFloat(ticker?.quoteVolume);
       const tCount = parseInt(ticker?.count);
       if (Number.isFinite(qVol) && Number.isFinite(tCount) && (qVol < 15_000_000 || tCount < 100_000)) {
@@ -2480,12 +2515,12 @@ app.post('/api/trade-monitor', verifyToken, async (req, res) => {
     async function getKlines(sym, interval, limit) {
       let klines = null;
       try {
-        const fr = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${sym}&interval=${interval}&limit=${limit}`);
+        const fr = await fetchWithTimeout(`https://fapi.binance.com/fapi/v1/klines?symbol=${sym}&interval=${interval}&limit=${limit}`, { timeoutMs: 8000 }); // BUG FIX: was a bare fetch() with no timeout
         if (fr.ok) { const d = await fr.json(); if (Array.isArray(d) && d.length > 5) klines = d; }
       } catch(_) {}
       if (!klines) {
         try {
-          const sr = await fetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${interval}&limit=${limit}`);
+          const sr = await fetchWithTimeout(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${interval}&limit=${limit}`, { timeoutMs: 8000 }); // BUG FIX: was a bare fetch() with no timeout
           if (sr.ok) { const d = await sr.json(); if (Array.isArray(d) && d.length > 5) klines = d; }
         } catch(_) {}
       }
@@ -3534,11 +3569,11 @@ let _tpslRunning = false; // concurrency lock — prevents double-trigger if a c
 // serves both purposes.
 async function getRecentHighLowRange(symbol) {
   try {
-    const fr = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=1m&limit=20`);
+    const fr = await fetchWithTimeout(`https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=1m&limit=20`, { timeoutMs: 8000 }); // BUG FIX: was a bare fetch() with no timeout — dangerous here since this runs in the periodic TP/SL background loop, not just a user request
     let d = null;
     if (fr.ok) { const j = await fr.json(); if (Array.isArray(j) && j.length) d = j; }
     if (!d) {
-      const sr = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1m&limit=20`);
+      const sr = await fetchWithTimeout(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1m&limit=20`, { timeoutMs: 8000 }); // BUG FIX: was a bare fetch() with no timeout
       if (sr.ok) { const j = await sr.json(); if (Array.isArray(j) && j.length) d = j; }
     }
     if (!d) return null;

@@ -466,7 +466,7 @@
             <button class="sf-btn s-grade"        data-min="85" onclick="setSFActive(this)">S 85+</button>
             <button class="sf-btn a-grade"        data-min="70" onclick="setSFActive(this)">A 70+</button>
             <button class="sf-btn b-grade"        data-min="50" onclick="setSFActive(this)">B 50+</button>
-            <button class="sf-btn c-grade"        data-min="1"  onclick="setSFActive(this)">C &lt;50</button>
+            <button class="sf-btn c-grade"        data-min="0" data-mode="below50" onclick="setSFActive(this)">C &lt;50</button>
         </div>
 
         <!-- Progress -->
@@ -583,6 +583,7 @@ document.querySelectorAll('.auth-nav-link').forEach(l => l.addEventListener('cli
 
 let scanResults    = [];
 let scoreMinFilter = 0;
+let scoreFilterMode = 'above'; // BUG FIX: was overloading scoreMinFilter===1 as a magic "below 50" sentinel — fragile (breaks if a real score of 1 or another button ever reused that value). Now an explicit mode instead of a hidden magic number.
 let activeCoin     = null;
 
 /* ── Helpers ── */
@@ -774,7 +775,7 @@ function renderEarlySignalsTable() {
 function renderScanTable() {
     const list = document.getElementById('scanResultsList');
     const head = document.getElementById('scanTableHead');
-    const filtered = scoreMinFilter === 1
+    const filtered = scoreFilterMode === 'below50'
         ? scanResults.filter(r => r.score < 50)
         : scanResults.filter(r => r.score >= scoreMinFilter);
     if (!filtered.length) {
@@ -809,6 +810,7 @@ window.setSFActive = function(btn) {
     document.querySelectorAll('.sf-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     scoreMinFilter = parseInt(btn.dataset.min);
+    scoreFilterMode = btn.dataset.mode === 'below50' ? 'below50' : 'above'; // BUG FIX: explicit mode instead of overloading data-min's value
     if (scanResults.length) renderScanTable();
 };
 
