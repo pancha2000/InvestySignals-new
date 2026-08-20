@@ -119,6 +119,14 @@ const SETTINGS_DEFAULTS = {
   groq_model: 'openai/gpt-oss-120b',
   groq_max_tokens: 2000, // BUG FIX: 1500 too low — AI truncates JSON causing parse errors
   groq_temperature: 0, // FIX: was 0.2 — same input could give slightly different output; 0 = deterministic
+  // NEW: optional free-tier fallback provider. Cerebras serves the SAME
+  // openai/gpt-oss-120b model (OpenAI-compatible API, same request/response
+  // shape) but with a much higher free-tier token-per-minute ceiling than
+  // Groq (~30-60K TPM vs Groq's 8K TPM on this model) plus a 1M-tokens/day
+  // cap. When set, a Groq 429 (rate limit) automatically retries against
+  // Cerebras instead of failing the whole analysis — get a free key at
+  // cloud.cerebras.ai, no credit card required.
+  cerebras_api_key: '',
   // ── Market Memory (24/7 historical collector) — admin-configurable ──
   marketMemoryEnabled: true,
   marketMemorySymbols: 'BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT', // comma-separated
@@ -2415,17 +2423,25 @@ Respond with ONLY this JSON (no markdown, no explanation):
     // the model in the panel. Auto-retry once with a known-current safe
     // default instead of failing the whole request.
     const GROQ_SAFE_FALLBACK_MODEL = 'openai/gpt-oss-120b';
-    async function callGroq(promptText, _isRetry = false) {
+    // NEW: optional Cerebras failover for rate-limit (429) errors — see the
+    // cerebras_api_key comment in SETTINGS_DEFAULTS above for why. Cerebras
+    // uses the same OpenAI-compatible request/response shape as Groq, just
+    // a different base URL, so the same prompt/model works unmodified.
+    const cerebrasKey = (globalSettings.cerebras_api_key || '').trim() || process.env.CEREBRAS_API_KEY;
+    async function callProvider(promptText, provider, modelOverride) {
       const ctrl = new AbortController();
-      const timeout = setTimeout(() => ctrl.abort(), 60000); // 60s — Groq can be slow
+      const timeout = setTimeout(() => ctrl.abort(), 60000); // 60s — inference can be slow under load
       try {
-        const modelToUse = _isRetry ? GROQ_SAFE_FALLBACK_MODEL : GROQ_MODEL;
-        const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        const isCerebras = provider === 'cerebras';
+        const url = isCerebras ? 'https://api.cerebras.ai/v1/chat/completions' : 'https://api.groq.com/openai/v1/chat/completions';
+        const key = isCerebras ? cerebrasKey : GROQ_API_KEY;
+        const model = modelOverride || GROQ_MODEL;
+        const r = await fetch(url, {
           method: 'POST',
           signal: ctrl.signal,
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_API_KEY },
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
           body: JSON.stringify({
-            model: modelToUse,
+            model,
             max_tokens: GROQ_MAX_TOKENS,
             temperature: GROQ_TEMPERATURE,
             messages: [{ role: 'user', content: promptText }],
@@ -2433,21 +2449,47 @@ Respond with ONLY this JSON (no markdown, no explanation):
         });
         if (!r.ok) {
           const errText = await r.text();
-          const modelGone = r.status === 404 && /does not exist|decommissioned|deprecated/i.test(errText);
-          if (modelGone && !_isRetry && modelToUse !== GROQ_SAFE_FALLBACK_MODEL) {
-            console.warn(`[Groq] Configured model "${modelToUse}" was rejected as removed/deprecated — retrying once with fallback "${GROQ_SAFE_FALLBACK_MODEL}". An admin should update AI Settings so this stops happening on every request.`);
-            clearTimeout(timeout);
-            return callGroq(promptText, true);
-          }
-          throw new Error(`Groq API error: ${r.status} — ${errText.slice(0, 200)}`);
+          const err = new Error(`${isCerebras ? 'Cerebras' : 'Groq'} API error: ${r.status} — ${errText.slice(0, 200)}`);
+          err.status = r.status;
+          err.body = errText;
+          throw err;
         }
         const data = await r.json();
         return data.choices?.[0]?.message?.content || '';
       } catch (fetchErr) {
-        if (fetchErr.name === 'AbortError') throw new Error('Groq AI timed out (>60s) — server is overloaded. Please try again in a moment.');
+        if (fetchErr.name === 'AbortError') throw new Error(`${provider === 'cerebras' ? 'Cerebras' : 'Groq'} AI timed out (>60s) — server is overloaded. Please try again in a moment.`);
         throw fetchErr;
       } finally {
         clearTimeout(timeout);
+      }
+    }
+    async function callGroq(promptText, _isRetry = false) {
+      const modelToUse = _isRetry ? GROQ_SAFE_FALLBACK_MODEL : GROQ_MODEL;
+      try {
+        return await callProvider(promptText, 'groq', modelToUse);
+      } catch (err) {
+        const modelGone = err.status === 404 && /does not exist|decommissioned|deprecated/i.test(err.body || '');
+        if (modelGone && !_isRetry && modelToUse !== GROQ_SAFE_FALLBACK_MODEL) {
+          console.warn(`[Groq] Configured model "${modelToUse}" was rejected as removed/deprecated — retrying once with fallback "${GROQ_SAFE_FALLBACK_MODEL}". An admin should update AI Settings so this stops happening on every request.`);
+          return callGroq(promptText, true);
+        }
+        // NEW: rate-limited on Groq and a Cerebras key is configured — try
+        // there instead of failing the whole scan/analysis. Same model
+        // (gpt-oss-120b) is served by both, so quality is unchanged; only
+        // the provider (and its separate, much higher free TPM ceiling) is
+        // different. If Cerebras also fails, the ORIGINAL Groq error is
+        // what reaches the user — a Cerebras problem shouldn't obscure the
+        // real Groq one when neither key is actually the issue.
+        if (err.status === 429 && cerebrasKey) {
+          console.warn(`[Groq] Rate limited (429) — falling back to Cerebras for this request.`);
+          try {
+            return await callProvider(promptText, 'cerebras', 'gpt-oss-120b');
+          } catch (cerebrasErr) {
+            console.warn(`[Cerebras fallback] also failed: ${cerebrasErr.message}`);
+            throw err; // surface the original Groq error, not the fallback's
+          }
+        }
+        throw err;
       }
     }
 
@@ -3635,6 +3677,11 @@ app.get('/api/admin/ai-settings', verifyAdmin, async (req, res) => {
         ? 'gsk_' + '*'.repeat(20) + currentKey.slice(-6)
         : '(using .env key)',
       groq_api_key_set: !!currentKey, // NEW: lets the frontend show/hide the "Clear" button correctly
+      // NEW: Cerebras fallback key — same masking/set pattern as the Groq key above
+      cerebras_api_key_masked: globalSettings.cerebras_api_key
+        ? '*'.repeat(20) + globalSettings.cerebras_api_key.slice(-6)
+        : '(not set — no fallback on Groq rate limits)',
+      cerebras_api_key_set: !!globalSettings.cerebras_api_key,
     }
   });
 });
@@ -3642,7 +3689,7 @@ app.get('/api/admin/ai-settings', verifyAdmin, async (req, res) => {
 /* POST /api/admin/ai-settings — update AI config */
 app.post('/api/admin/ai-settings', verifyAdmin, async (req, res) => {
   try {
-    const { groq_api_key, groq_model, groq_max_tokens, groq_temperature, groq_api_key_clear } = req.body;
+    const { groq_api_key, groq_model, groq_max_tokens, groq_temperature, groq_api_key_clear, cerebras_api_key, cerebras_api_key_clear } = req.body;
     // BUG FIX: this whitelist was almost entirely dead models — Groq shut
     // down llama-3.3-70b-versatile and llama-3.1-8b-instant on Aug 16,
     // 2026 (this is exactly why the admin's save kept 404ing); llama3-
@@ -3681,6 +3728,17 @@ app.post('/api/admin/ai-settings', verifyAdmin, async (req, res) => {
     if (groq_model) { updates.groq_model=groq_model.trim(); globalSettings.groq_model=groq_model.trim(); await saveSettingToDB('groq_model',groq_model.trim()); }
     if (groq_max_tokens) { updates.groq_max_tokens=maxTok; globalSettings.groq_max_tokens=maxTok; await saveSettingToDB('groq_max_tokens',maxTok); }
     if (!isNaN(temp) && groq_temperature!==undefined) { updates.groq_temperature=temp; globalSettings.groq_temperature=temp; await saveSettingToDB('groq_temperature',temp); }
+    // NEW: Cerebras fallback key — same clear/set pattern as the Groq key
+    if (cerebras_api_key_clear === true) {
+      updates.cerebras_api_key = '';
+      globalSettings.cerebras_api_key = '';
+      await saveSettingToDB('cerebras_api_key', '');
+    } else if (cerebras_api_key !== undefined && cerebras_api_key.trim()) {
+      const ck = cerebras_api_key.trim();
+      updates.cerebras_api_key = ck;
+      globalSettings.cerebras_api_key = ck;
+      await saveSettingToDB('cerebras_api_key', ck);
+    }
     console.log(`[Admin] AI settings updated by ${req.dbUser?.email}:`, Object.keys(updates).join(', '));
     res.json({ success: true, message: 'AI settings updated.', updated: Object.keys(updates) });
   } catch(e) { res.status(500).json({ success: false, error: e.message }); }

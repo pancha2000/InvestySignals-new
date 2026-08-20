@@ -865,6 +865,28 @@
                             </div>
                         </div>
 
+                        <!-- NEW: optional Cerebras fallback — same gpt-oss-120b model, much
+                             higher free-tier TPM ceiling than Groq. Used automatically only
+                             when Groq returns a 429 rate-limit error. -->
+                        <div style="border-top:1px dashed var(--border-soft);padding-top:14px;">
+                            <label style="font-size:0.8rem;font-weight:600;color:var(--text-sub);display:block;margin-bottom:6px;">
+                                🌩️ Cerebras Fallback Key (optional)
+                            </label>
+                            <div style="display:flex;gap:8px;">
+                                <input type="password" id="cerebrasApiKeyInput" class="input-control"
+                                    placeholder="csk-••••••••••••••••••••••••••"
+                                    style="flex:1;font-family:'JetBrains Mono',monospace;font-size:0.82rem;">
+                                <button onclick="clearCerebrasKey()" class="btn" id="cerebrasClearBtn"
+                                    style="padding:0 12px;background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--radius-sm);cursor:pointer;font-size:0.75rem;color:var(--text-muted);">
+                                    🗑 Clear
+                                </button>
+                            </div>
+                            <div id="cerebrasKeyCurrentDisplay" style="margin-top:6px;font-size:0.72rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace;"></div>
+                            <div style="margin-top:4px;font-size:0.7rem;color:var(--text-muted);">
+                                When Groq hits a rate limit (429), analysis automatically retries on Cerebras instead of failing. Same model, separate free quota. Get a free key (no card) at <a href="https://cloud.cerebras.ai" target="_blank" style="color:var(--gold);">cloud.cerebras.ai</a>.
+                            </div>
+                        </div>
+
                         <!-- Result message -->
                         <div id="aiSettingsMsg" style="display:none;padding:10px 14px;border-radius:var(--radius-sm);font-size:0.82rem;font-weight:600;"></div>
 
@@ -1452,6 +1474,11 @@ window.adminSignOut = async function() {
                 // NEW: hide the Clear button when there's nothing saved to clear
                 const clearBtn = document.getElementById('aiClearBtn');
                 if (clearBtn) clearBtn.style.display = s.groq_api_key_set ? '' : 'none';
+                // NEW: Cerebras fallback key display
+                const cerebrasDisplay = document.getElementById('cerebrasKeyCurrentDisplay');
+                if (cerebrasDisplay) cerebrasDisplay.textContent = 'Current: ' + (s.cerebras_api_key_masked || '(not set)');
+                const cerebrasClearBtn = document.getElementById('cerebrasClearBtn');
+                if (cerebrasClearBtn) cerebrasClearBtn.style.display = s.cerebras_api_key_set ? '' : 'none';
                 // Set model
                 const modelSel = document.getElementById('aiModelSelect');
                 if (modelSel && s.groq_model) {
@@ -1773,9 +1800,11 @@ window.adminSignOut = async function() {
         const model    = document.getElementById('aiModelSelect')?.value;
         const maxTok   = parseInt(document.getElementById('aiMaxTokensInput')?.value);
         const temp     = parseFloat(document.getElementById('aiTempInput')?.value);
+        const cerebrasKey = document.getElementById('cerebrasApiKeyInput')?.value.trim(); // NEW
 
         const body = { groq_model: model, groq_max_tokens: maxTok, groq_temperature: temp };
         if (key) body.groq_api_key = key; // only send if user typed something — leaving it blank means "don't touch the saved key"; use the 🗑 Clear Key button to actually remove it
+        if (cerebrasKey) body.cerebras_api_key = cerebrasKey; // NEW — same "only send if typed" rule as the Groq key
 
         try {
             const idToken = await getToken();
@@ -1789,9 +1818,11 @@ window.adminSignOut = async function() {
                 showAiMsg('✅ AI settings saved! Updated: ' + (j.updated || []).join(', '), false);
                 // Reload to show new masked key
                 await loadAdminStats();
-                // Clear API key input after save
+                // Clear API key inputs after save
                 const keyInp = document.getElementById('aiApiKeyInput');
                 if (keyInp) keyInp.value = '';
+                const cerebrasInp = document.getElementById('cerebrasApiKeyInput'); // NEW
+                if (cerebrasInp) cerebrasInp.value = '';
             } else {
                 showAiMsg('❌ ' + (j.error || 'Save failed'), true);
             }
@@ -1820,6 +1851,30 @@ window.adminSignOut = async function() {
                 await loadAdminStats();
                 const keyInp = document.getElementById('aiApiKeyInput');
                 if (keyInp) keyInp.value = '';
+            } else {
+                showAiMsg('❌ ' + (j.error || 'Clear failed'), true);
+            }
+        } catch(e) {
+            showAiMsg('❌ Network error: ' + e.message, true);
+        }
+    }
+
+    // NEW: same pattern as clearAiKey(), for the optional Cerebras fallback key
+    async function clearCerebrasKey() {
+        if (!confirm('Clear the saved Cerebras fallback key? Groq rate limits will no longer auto-fallback.')) return;
+        try {
+            const idToken = await getToken();
+            const res = await fetch('/api/admin/ai-settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+                body: JSON.stringify({ cerebras_api_key_clear: true })
+            });
+            const j = await res.json();
+            if (j.success) {
+                showAiMsg('✅ Cerebras fallback key cleared.', false);
+                await loadAdminStats();
+                const inp = document.getElementById('cerebrasApiKeyInput');
+                if (inp) inp.value = '';
             } else {
                 showAiMsg('❌ ' + (j.error || 'Clear failed'), true);
             }
