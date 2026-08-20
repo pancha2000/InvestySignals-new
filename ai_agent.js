@@ -52,18 +52,22 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  *  Kept completely separate from server.js's existing deep-analysis model
  *  whitelist on purpose — we never touch that list, per the "don't remove
  *  or break anything existing" rule. This is a NEW, independent allow-list
- *  scoped only to the new agent. */
+ *  scoped only to the new agent.
+ *  BUG FIX: llama-3.3-70b-versatile and llama-3.1-8b-instant were both
+ *  deprecated by Groq and fully shut down Aug 16, 2026 — this agent's
+ *  tool-calling would have started 404ing on every request using either
+ *  as DEFAULT_MODEL. Dead entries removed; qwen/qwen3.6-27b (current,
+ *  agentic-tool-use capable) added as a third live option. */
 const ALLOWED_MODELS = [
-  'llama-3.3-70b-versatile', // same default the rest of the app already uses — proven, fast, strong tool-use
-  'llama-3.1-8b-instant',    // cheapest/fastest — good automatic fallback under heavy load
   'openai/gpt-oss-120b',     // strongest reasoning — best for nuanced "news overrides technicals" judgment calls
-  'openai/gpt-oss-20b',
+  'openai/gpt-oss-20b',      // fastest — good automatic fallback under heavy load
+  'qwen/qwen3.6-27b',        // agentic tool-use, multimodal
 ];
 
 const DEFAULT_MODEL =
   process.env.GROQ_AGENT_MODEL && ALLOWED_MODELS.includes(process.env.GROQ_AGENT_MODEL)
     ? process.env.GROQ_AGENT_MODEL
-    : 'llama-3.3-70b-versatile';
+    : 'openai/gpt-oss-120b';
 
 const DEFAULT_TEMPERATURE = Number.isFinite(parseFloat(process.env.GROQ_AGENT_TEMPERATURE))
   ? parseFloat(process.env.GROQ_AGENT_TEMPERATURE)
