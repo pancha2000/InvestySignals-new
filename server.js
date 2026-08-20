@@ -2099,7 +2099,100 @@ Rule: If confluenceScore < ${CONFLUENCE_THRESHOLD}, set overallBias to NEUTRAL.`
     // transaction price), not derived from a lagging moving average.
     const vwapH1 = marketTools.indicators.vwapWithBands(h1c);
 
+    // ══════════════════════════════════════════════════════════════
+    // NEW: Deterministic (code-computed) confluence score — a SECOND,
+    // independent opinion alongside the AI's own self-reported
+    // confluenceScore. Previously the AI's number was trusted outright
+    // with no cross-check: nothing verified that an LLM-claimed "8/10"
+    // actually matched the raw indicator values it was given. This
+    // function sums points from the same technicals already computed
+    // above (EMA stack, structure, ADX, MACD, RSI, volume, OI, funding,
+    // BTC trend, ICT confluences) — no extra API calls, everything is
+    // already in memory. It is later compared against the AI's score;
+    // large disagreement is surfaced to the user rather than hidden.
+    function computeDeterministicScore(dir) {
+      const isLong = dir === 'LONG';
+      let score = 0;
+      const notes = [];
+
+      // 1) Multi-TF EMA stack alignment (up to 2 pts)
+      const emaChecks = [
+        isLong ? price > h1Ema20[h1Ema20.length-1] : price < h1Ema20[h1Ema20.length-1],
+        isLong ? price > h1Ema50[h1Ema50.length-1] : price < h1Ema50[h1Ema50.length-1],
+        isLong ? price > h1Ema200[h1Ema200.length-1] : price < h1Ema200[h1Ema200.length-1],
+        isLong ? price > h4Ema20[h4Ema20.length-1] : price < h4Ema20[h4Ema20.length-1],
+        isLong ? price > h4Ema50[h4Ema50.length-1] : price < h4Ema50[h4Ema50.length-1],
+        isLong ? price > d1Ema200[d1Ema200.length-1] : price < d1Ema200[d1Ema200.length-1],
+      ];
+      const emaAligned = emaChecks.filter(Boolean).length;
+      score += (emaAligned / emaChecks.length) * 2;
+      notes.push(`EMA stack: ${emaAligned}/${emaChecks.length} aligned`);
+
+      // 2) Market structure (H4 + D1 BOS/CHoCH), up to 2 pts
+      const structMatch = s => isLong ? (s || '').includes('BULLISH') : (s || '').includes('BEARISH');
+      const structAgainst = s => isLong ? (s || '').includes('BEARISH') : (s || '').includes('BULLISH');
+      let structPts = 0;
+      if (structMatch(h4Struct)) structPts += 1; else if (structAgainst(h4Struct)) structPts -= 0.5;
+      if (structMatch(d1Struct)) structPts += 1; else if (structAgainst(d1Struct)) structPts -= 0.5;
+      score += Math.max(0, structPts);
+      notes.push(`Structure: H4=${h4Struct} D1=${d1Struct}`);
+
+      // 3) ADX trend strength + direction (up to 1 pt)
+      const adxDirOk = isLong ? h4ADX.trend === 'TRENDING_BULL' : h4ADX.trend === 'TRENDING_BEAR';
+      if (adxDirOk) score += (h4ADX.strength === 'VERY_STRONG' || h4ADX.strength === 'STRONG') ? 1 : 0.6;
+      notes.push(`ADX H4: ${h4ADX.adx} (${h4ADX.trend}/${h4ADX.strength})`);
+
+      // 4) MACD H1 (up to 1 pt) — _da_macd().signal is the NUMERIC signal-line
+      // value here (not a 'BULLISH'/'BEARISH' string — that classification
+      // only exists in the separate trade-monitor's monMacd() helper), so
+      // direction is read from the histogram's sign instead.
+      if ((isLong && h1MACDv.histogram > 0) || (!isLong && h1MACDv.histogram < 0)) score += 1;
+
+      // 5) RSI — room to run, not already exhausted (up to 0.5 pt)
+      const rsiOk = isLong ? (h4RSI > 40 && h4RSI < 75) : (h4RSI < 60 && h4RSI > 25);
+      if (rsiOk) score += 0.5;
+
+      // 6) Volume confirmation (up to 0.5 pt)
+      if (h1Vol && h1Vol.ratio > 1.2) score += 0.5;
+
+      // 7) Open Interest signal (up to 1 pt; contrarian signals score 0, not negative — OI is noisy)
+      if (oiData) {
+        const wantSignal = isLong ? 'BULLISH_CONTINUATION' : 'BEARISH_CONTINUATION';
+        if (oiData.signal === wantSignal) score += 1;
+        else if (oiData.signal === 'SHORT_SQUEEZE' && isLong) score += 0.5; // squeeze can still favor a long entry
+        else if (oiData.signal === 'LONG_LIQUIDATION' && !isLong) score += 0.5;
+      }
+
+      // 8) Funding bias — penalize only when CROWDED in the same direction as the trade (up to 0.5 pt)
+      const crowded = (isLong && fundingBias === 'LONGS_PAYING') || (!isLong && fundingBias === 'SHORTS_PAYING');
+      if (!crowded) score += 0.5;
+      else notes.push(`Funding crowded ${fundingBias} — contrarian risk`);
+
+      // 9) BTC trend alignment (up to 0.5 pt) — skip for BTC itself
+      if (coin !== 'BTC' && btcCloses.length) {
+        const btcUp = btcCloses[btcCloses.length-1] > btcEma20[btcEma20.length-1];
+        if ((isLong && btcUp) || (!isLong && !btcUp)) score += 0.5;
+      } else {
+        score += 0.5; // neutral credit for BTC itself
+      }
+
+      // 10) ICT confluences (up to 2 pts)
+      let ictPts = 0;
+      if (ictData?.killZone?.inKillZone) ictPts += 0.5;
+      const oteHit = ictData?.oteZone?.m15?.inZone || ictData?.oteZone?.h1?.inZone;
+      if (oteHit) ictPts += 0.5;
+      const sweep4h = ictData?.liquiditySweep?.h4?.recentSweep;
+      if (sweep4h && ((isLong && sweep4h.type === 'SELL_SIDE_SWEPT') || (!isLong && sweep4h.type === 'BUY_SIDE_SWEPT'))) ictPts += 0.5;
+      const pdZone = ictData?.premiumDiscount?.h4?.zone;
+      if ((isLong && pdZone === 'DISCOUNT') || (!isLong && pdZone === 'PREMIUM')) ictPts += 0.5;
+      score += ictPts;
+      notes.push(`ICT: ${ictPts}/2`);
+
+      return { score: Math.max(0, Math.min(10, Math.round(score * 10) / 10)), notes };
+    }
+
     const prompt = `You are a professional crypto futures trader who provides institutional-grade signals. Analyze ${coin}/USDT and respond ONLY with valid JSON.
+
 
 ${thesisContext}${earlyWarnText}${newsContext}${liquidityContext}${ictContext}${marketMemoryPromptBlock}${liqPromptBlock}
 
@@ -2352,6 +2445,46 @@ Respond with ONLY this JSON (no markdown, no explanation):
       analysis.level5.direction = fallback;
     }
 
+    // ══════════════════════════════════════════════════════════════
+    // NEW: Cross-check the AI's self-reported confluenceScore against
+    // the deterministic code-computed score, and gate grade/score on
+    // BOTH multi-timeframe structural support AND that agreement —
+    // instead of trusting the AI's number as-is. Also gives every
+    // response a `blendedScore`/`effectiveGrade` that later steps
+    // (SL sizing, R:R floor) key off, so a shaky signal doesn't get
+    // the same treatment as a genuinely strong one.
+    const tradeDirection = analysis.level5 ? analysis.level5.direction : (analysis.overallBias === 'SHORT' ? 'SHORT' : 'LONG');
+    const codeScoreResult = computeDeterministicScore(tradeDirection);
+    const scoreDivergence = Math.abs(finalScore - codeScoreResult.score);
+    // Conservative: never let the DISPLAYED confidence exceed what the
+    // code-verified indicators actually support. The AI can still be
+    // right about nuance the raw numbers miss, but it can't outscore
+    // what's independently verifiable.
+    let blendedScore = Math.min(finalScore, codeScoreResult.score + 2); // +2 slack for AI-only context (news, memory, judgment)
+    blendedScore = Math.round(blendedScore * 10) / 10;
+    const scoreDivergenceWarning = scoreDivergence >= 3
+      ? `AI self-rated confluenceScore=${finalScore}/10, but the independently code-computed score from the same indicators is ${codeScoreResult.score}/10 (${codeScoreResult.notes.join('; ')}). Large disagreement — treat the AI's grade with extra caution.`
+      : null;
+
+    // Multi-timeframe structural gate: if NEITHER H4 nor D1 structure
+    // actually supports the trade direction, this cannot be a top-tier
+    // signal no matter what score the AI or the point-system produced —
+    // cap it at grade B / score 6.
+    const isLongDir = tradeDirection === 'LONG';
+    const h4Supports = (h4Struct || '').includes(isLongDir ? 'BULLISH' : 'BEARISH');
+    const d1Supports = (d1Struct || '').includes(isLongDir ? 'BULLISH' : 'BEARISH');
+    const mtfGateApplied = !h4Supports && !d1Supports;
+    if (mtfGateApplied) {
+      blendedScore = Math.min(blendedScore, 6);
+      if (analysis.grade === 'S' || analysis.grade === 'A') analysis.grade = 'B';
+    }
+    let effectiveGrade = blendedScore >= 8.5 ? 'S' : blendedScore >= 7 ? 'A' : blendedScore >= 5 ? 'B' : 'C';
+    // Never let effectiveGrade exceed what the AI itself claimed — only downgrade, never upgrade past the AI's own assessment.
+    const gradeOrder = { S: 4, A: 3, B: 2, C: 1 };
+    if (analysis.grade && gradeOrder[effectiveGrade] > gradeOrder[analysis.grade]) effectiveGrade = analysis.grade;
+    // Make the downgrade actually visible where the frontend reads it — analysis.grade is what the S/A/B/C badge on screen renders, so it needs to reflect the cross-checked grade, not the AI's untouched claim.
+    analysis.grade = effectiveGrade;
+
     // ── SL/TP VALIDATION — SL is treated as mandatory-correct, never just
     // trusted from the AI response as-is. Checks (in order): all six
     // numbers present and numeric; SL on the correct side of entry for
@@ -2359,14 +2492,24 @@ Respond with ONLY this JSON (no markdown, no explanation):
     // side; SL distance sane relative to ATR4H (not so tight it's noise-
     // stopped, not so wide risk is excessive); TP1 R:R meets a minimum.
     // If ANY check fails, the levels are replaced with a deterministic,
-    // ATR-based fallback (the same formula the prompt itself instructs:
-    // 1.5×ATR4H stop, 1R/2R/3R targets) — never left broken, and never
-    // silently served without disclosure (see riskNote below + the
-    // `slTpAutoCorrected` flag added to the response for the frontend/
-    // admin to see when this kicked in). Tested against 5 scenarios
+    // ATR-based fallback. Tested against 5 scenarios
     // (valid levels, wrong-side SL, bad TP order, too-tight SL, too-wide
     // SL, missing values) before shipping.
-    function validateAndFixLevels(level5, currentPrice, atrH4, atrH1) {
+    //
+    // BUG FIX (confidence-scaled sizing): the fallback used to apply the
+    // SAME 1.5×ATR stop / 1R-2R-3R targets to every trade regardless of
+    // how strong the setup actually was — a borderline Grade C trade and
+    // a clean Grade S trade got identical risk sizing. The ATR multiple
+    // now scales with effectiveGrade: tighter (more capital-efficient)
+    // stop for high-conviction setups, wider stop for weaker ones (since
+    // a weak setup that still passes needs more room to be right, or
+    // should arguably not be sized the same as a strong one).
+    //
+    // BUG FIX (R:R floor too low): minimum acceptable TP1 R:R raised from
+    // 0.8 to 1.2 — 0.8 let through trades risking more than they targeted
+    // at TP1, which is a poor risk/reward floor for what's meant to be
+    // "the best entry".
+    function validateAndFixLevels(level5, currentPrice, atrH4, atrH1, grade) {
       if (!level5) return { fixed: false, warnings: ['level5 missing entirely'] };
       const isLong = level5.direction === 'LONG';
       const warnings = [];
@@ -2392,13 +2535,19 @@ Respond with ONLY this JSON (no markdown, no explanation):
           if (!needsFix) {
             const reward1 = Math.abs(tp1val - entryMid);
             const rr1 = slDistance > 0 ? reward1 / slDistance : 0;
-            if (rr1 < 0.8) { needsFix = true; warnings.push(`TP1 R:R too low (${rr1.toFixed(2)})`); }
+            if (rr1 < 1.2) { needsFix = true; warnings.push(`TP1 R:R too low (${rr1.toFixed(2)}, minimum 1.2)`); } // BUG FIX: floor raised 0.8 → 1.2
           }
         }
       }
 
       if (needsFix) {
-        const slDist = (atrH4 || currentPrice * 0.02) * 1.5; // fallback 2%-based ATR proxy if ATR itself is somehow 0
+        // BUG FIX: ATR multiplier now scales with signal confidence
+        // instead of a flat 1.5x for every trade — S/A grade gets a
+        // tighter, more capital-efficient stop; C grade (weakest signals
+        // that still passed the other gates) gets a wider stop since it
+        // needs more room to be right.
+        const gradeMultiplier = { S: 1.2, A: 1.3, B: 1.5, C: 1.8 }[grade] || 1.5;
+        const slDist = (atrH4 || currentPrice * 0.02) * gradeMultiplier;
         const newSl    = isLong ? currentPrice - slDist : currentPrice + slDist;
         const halfSpread = (atrH1 || currentPrice * 0.005) * 0.5;
         const newEntryLow  = currentPrice - halfSpread;
@@ -2411,13 +2560,13 @@ Respond with ONLY this JSON (no markdown, no explanation):
           tp1val: smartRound(newTp1), tp2val: smartRound(newTp2), tp3val: smartRound(newTp3),
           entryZone: `$${smartRound(newEntryLow)} – $${smartRound(newEntryHigh)}`,
           stopLoss: `$${smartRound(newSl)}`, tp1: `$${smartRound(newTp1)}`, tp2: `$${smartRound(newTp2)}`, tp3: `$${smartRound(newTp3)}`,
-          riskNote: `⚠️ Auto-corrected: the AI's original levels failed validation (${warnings.join('; ')}). Replaced with an ATR-based fallback (1.5×ATR4H stop, 1R/2R/3R targets).`,
+          riskNote: `⚠️ Auto-corrected: the AI's original levels failed validation (${warnings.join('; ')}). Replaced with an ATR-based fallback (${gradeMultiplier}×ATR4H stop for grade ${grade || 'B'}, 1R/2R/3R targets).`,
         });
       }
       return { fixed: needsFix, warnings };
     }
 
-    const levelCheck = validateAndFixLevels(analysis.level5, price, atr4h, atr1h);
+    const levelCheck = validateAndFixLevels(analysis.level5, price, atr4h, atr1h, effectiveGrade);
     if (levelCheck.fixed) console.warn(`/api/deep-analysis: SL/TP auto-corrected for ${symbol} — ${levelCheck.warnings.join('; ')}`);
 
     // Fill rawData entry/sl/tp from AI level5 — ALWAYS fill even if NEUTRAL
@@ -2442,6 +2591,86 @@ Respond with ONLY this JSON (no markdown, no explanation):
     }
 
 
+    // ══════════════════════════════════════════════════════════════
+    // NEW: Proactive DCA plan — previously a DCA suggestion only ever
+    // appeared reactively, mid-trade, in /api/trade-monitor (after a
+    // pullback already happened). Users had no way to see, upfront in
+    // the initial signal, where a sensible add-on point would be, or
+    // what it would do to their SL/blended R:R if they used it. Reuses
+    // the same H4 Fibonacci retracement structure the trade-monitor's
+    // own DCA logic keys off (fib618 add-on level, fib786 as the wider
+    // SL if DCA fills) — just computed once at signal time instead of
+    // waiting for it to become relevant mid-trade.
+    let dcaPlan = null;
+    if (analysis.level5 && h4Fib && typeof analysis.level5.sl === 'number' && typeof analysis.level5.tp1val === 'number') {
+      const isLongDca = analysis.level5.direction === 'LONG';
+      const fibDirectionMatches = isLongDca ? h4Fib.direction === 'BULLISH_RETRACE' : h4Fib.direction === 'BEARISH_RETRACE';
+      if (fibDirectionMatches) {
+        const entryMid = (analysis.level5.entryHigh + analysis.level5.entryLow) / 2;
+        const dcaPrice = h4Fib.f618;
+        // The DCA point only makes sense if it's further from current price than the entry itself (i.e. an actual pullback add-on, not inside the entry zone)
+        const dcaValid = isLongDca ? dcaPrice < entryMid : dcaPrice > entryMid;
+        if (dcaValid) {
+          const dcaAdjustedSL = h4Fib.f786;
+          // Only ever widen the SL if DCA fills, never tighten it
+          const finalDcaSL = isLongDca
+            ? Math.min(analysis.level5.sl, dcaAdjustedSL)
+            : Math.max(analysis.level5.sl, dcaAdjustedSL);
+          const blendedEntry = (entryMid + dcaPrice) / 2; // assumes an equal-size add-on
+          const blendedRiskDist = Math.abs(blendedEntry - finalDcaSL);
+          const blendedRRTp1 = blendedRiskDist > 0 ? round2(Math.abs(analysis.level5.tp1val - blendedEntry) / blendedRiskDist) : null;
+          dcaPlan = {
+            dcaPrice: smartRound(dcaPrice),
+            dcaCondition: `Price pulls back to the H4 61.8% Fib retracement ($${smartRound(dcaPrice)}) while D1 structure stays ${isLongDca ? 'bullish' : 'bearish'} — the same condition the live trade monitor re-checks once this trade is open.`,
+            dcaAdjustedSL: smartRound(finalDcaSL),
+            dcaSlNote: finalDcaSL !== analysis.level5.sl
+              ? `⚠️ If you DCA at this level, move your SL to $${smartRound(finalDcaSL)} (H4 78.6% Fib) — your original SL no longer makes sense once the average entry moves.`
+              : `Your original SL ($${smartRound(analysis.level5.sl)}) already covers this DCA level — no change needed if it fills.`,
+            blendedEntryPrice: smartRound(blendedEntry),
+            blendedRRTp1,
+            note: 'This is a PLANNED add-on level shown upfront, not a live trigger — confirm price action before actually adding to the position.',
+          };
+        }
+      }
+    }
+
+    // NEW: OTE-zone entry anchoring — the AI is told about the OTE zone
+    // in the prompt as text, but nothing previously verified it actually
+    // placed the entry zone there when one applied. This flags (does not
+    // silently override) a mismatch instead of trusting the AI blindly.
+    let entryOteMismatch = null;
+    if (analysis.level5 && typeof analysis.level5.entryLow === 'number' && typeof analysis.level5.entryHigh === 'number') {
+      const oteM15c = ictData?.oteZone?.m15;
+      const oteH1c = ictData?.oteZone?.h1;
+      const activeOte = oteM15c?.inZone ? oteM15c : (oteH1c?.inZone ? oteH1c : null);
+      if (activeOte) {
+        const overlaps = analysis.level5.entryLow <= activeOte.zoneHigh && analysis.level5.entryHigh >= activeOte.zoneLow;
+        if (!overlaps) {
+          entryOteMismatch = `Price is currently inside ICT's Optimal Trade Entry zone ($${activeOte.zoneLow}-$${activeOte.zoneHigh}), but this signal's entry zone ($${analysis.level5.entryLow}-$${analysis.level5.entryHigh}) doesn't overlap it. Not necessarily wrong, but worth a second look before entering.`;
+        }
+      }
+    }
+
+    // NEW: Win-rate calibration — surfaces the ACTUAL historical win rate
+    // for this grade from real recorded outcomes (same data source as
+    // /api/admin/signal-performance), instead of the grade badge being
+    // pure theory with no track record behind it. Non-blocking: a DB
+    // hiccup here never fails the analysis itself.
+    let historicalCalibration = null;
+    try {
+      const since90 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+      const gradeTrades = await PT.find({ status: 'CLOSED', grade: effectiveGrade, closedAt: { $gte: since90 } }).select('pnl').lean();
+      if (gradeTrades.length >= 10) {
+        const wins = gradeTrades.filter(t => t.pnl > 0).length;
+        const winRatePct = round2(100 * wins / gradeTrades.length);
+        historicalCalibration = { grade: effectiveGrade, sampleSize: gradeTrades.length, winRatePct, windowDays: 90 };
+        if (winRatePct < 40) {
+          historicalCalibration.warning = `Grade ${effectiveGrade} signals have only won ${winRatePct}% of the time over the last 90 days (${gradeTrades.length} closed trades) — below what the grade badge implies. Treat with extra caution until this improves.`;
+        }
+      } else {
+        historicalCalibration = { grade: effectiveGrade, sampleSize: gradeTrades.length, winRatePct: null, windowDays: 90, note: 'Not enough closed trades yet for this grade to calculate a reliable win rate.' };
+      }
+    } catch (_) { /* non-blocking */ }
 
     // ── Save thesis for next analysis comparison ───────────────
     thesisState.set(thesisKey, {
@@ -2450,6 +2679,7 @@ Respond with ONLY this JSON (no markdown, no explanation):
       d1Struct, h4Struct,
       ts:       Date.now(),
     });
+
 
     // ── Fibonacci pullback depth (for RETRACEMENT warnings) ───
     let fibLevels = null;
@@ -2475,7 +2705,14 @@ Respond with ONLY this JSON (no markdown, no explanation):
       success: true,
       coin,
       price,
-      confluenceScore: finalScore,
+      confluenceScore: blendedScore, // BUG FIX: was the AI's raw, unverified finalScore — now the cross-checked, code-verified score
+      aiRawScore: finalScore,        // NEW: the AI's original self-reported score, kept for transparency/debugging
+      codeScore: codeScoreResult.score, // NEW: the independent, deterministic code-computed score
+      scoreDivergenceWarning,        // NEW: non-null when AI vs code scores disagree by 3+
+      mtfStructureGateApplied: mtfGateApplied, // NEW: true if grade was capped because neither H4 nor D1 structure supports the direction
+      dcaPlan,                       // NEW: proactive DCA add-on plan (null if the fib structure doesn't support one)
+      entryOteMismatch,              // NEW: non-null if price is in the ICT OTE zone but the entry zone doesn't overlap it
+      historicalCalibration,         // NEW: real recorded win-rate for this grade over the last 90 days
       thesisStatus,
       fibLevels,
       earlyWarnings,
