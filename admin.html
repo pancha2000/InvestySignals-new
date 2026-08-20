@@ -880,7 +880,13 @@
                                 style="flex:1;min-width:120px;background:var(--surface);border:1px solid var(--border-soft);color:var(--text);">
                                 🧪 Test API Key
                             </button>
+                            <!-- NEW: previously there was no way to actually clear a saved key — leaving the field empty and clicking Save silently did nothing (see saveAiSettings/clearAiKey). -->
+                            <button onclick="clearAiKey()" class="btn" id="aiClearBtn"
+                                style="min-width:100px;background:var(--surface);border:1px solid var(--border-soft);color:var(--text-muted);">
+                                🗑 Clear Key
+                            </button>
                         </div>
+
                     </div>
                 </div>
 
@@ -1446,6 +1452,9 @@ window.adminSignOut = async function() {
                 // Show masked key
                 const keyDisplay = document.getElementById('aiKeyCurrentDisplay');
                 if (keyDisplay) keyDisplay.textContent = 'Current: ' + (s.groq_api_key_masked || '(using .env key)');
+                // NEW: hide the Clear button when there's nothing saved to clear
+                const clearBtn = document.getElementById('aiClearBtn');
+                if (clearBtn) clearBtn.style.display = s.groq_api_key_set ? '' : 'none';
                 // Set model
                 const modelSel = document.getElementById('aiModelSelect');
                 if (modelSel && s.groq_model) modelSel.value = s.groq_model;
@@ -1757,7 +1766,7 @@ window.adminSignOut = async function() {
         const temp     = parseFloat(document.getElementById('aiTempInput')?.value);
 
         const body = { groq_model: model, groq_max_tokens: maxTok, groq_temperature: temp };
-        if (key) body.groq_api_key = key; // only send if user typed something
+        if (key) body.groq_api_key = key; // only send if user typed something — leaving it blank means "don't touch the saved key"; use the 🗑 Clear Key button to actually remove it
 
         try {
             const idToken = await getToken();
@@ -1776,6 +1785,34 @@ window.adminSignOut = async function() {
                 if (keyInp) keyInp.value = '';
             } else {
                 showAiMsg('❌ ' + (j.error || 'Save failed'), true);
+            }
+        } catch(e) {
+            showAiMsg('❌ Network error: ' + e.message, true);
+        }
+    }
+
+    // NEW: BUG FIX companion to the above — previously there was no way
+    // to actually clear a saved key (see saveAiSettings' comment). This
+    // sends an explicit, unambiguous clear action instead of relying on
+    // an empty field, which the backend used to (and still does, by
+    // design) treat as "unchanged".
+    async function clearAiKey() {
+        if (!confirm('Clear the saved Groq API key and revert to the server .env key?')) return;
+        try {
+            const idToken = await getToken();
+            const res = await fetch('/api/admin/ai-settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+                body: JSON.stringify({ groq_api_key_clear: true })
+            });
+            const j = await res.json();
+            if (j.success) {
+                showAiMsg('✅ Saved key cleared — now using the server .env key.', false);
+                await loadAdminStats();
+                const keyInp = document.getElementById('aiApiKeyInput');
+                if (keyInp) keyInp.value = '';
+            } else {
+                showAiMsg('❌ ' + (j.error || 'Clear failed'), true);
             }
         } catch(e) {
             showAiMsg('❌ Network error: ' + e.message, true);

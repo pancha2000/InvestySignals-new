@@ -173,6 +173,42 @@ async function saveSettingToDB(key, value) {
   await Settings.findOneAndUpdate({ key }, { value }, { upsert: true, new: true });
 }
 
+// ══════════════════════════════════════════════════════════════
+// BUG FIX: "AI API key doesn't save" — root cause was that
+// `globalSettings` is a plain in-memory JS object, loaded from the DB
+// ONCE at process startup (see loadSettingsFromDB() above). If this
+// app ever runs under PM2 in CLUSTER mode (more than 1 instance), each
+// worker process has its OWN separate copy of `globalSettings` — a key
+// saved via the admin panel only updates whichever ONE worker actually
+// handled that POST request. Every other worker (including the one
+// that might handle the NEXT /api/deep-analysis request, or even the
+// next admin-panel page load) kept using its own stale in-memory copy
+// until a full restart. From the admin's perspective this looks
+// exactly like "I saved it and it didn't save" — the DB write itself
+// was actually fine the whole time.
+// Fix: the key specifically (the highest-stakes field — a stale model
+// name or token limit is harmless, a stale/missing API key breaks
+// every analysis) is now re-read from the DB with a short 30s cache
+// instead of trusted from the long-lived in-memory object. A save from
+// ANY worker becomes visible to ALL workers within 30 seconds, without
+// hitting the DB on every single AI call.
+let _groqKeyCache = { key: null, ts: 0 };
+async function getEffectiveGroqApiKey() {
+  const now = Date.now();
+  if (_groqKeyCache.key !== null && now - _groqKeyCache.ts < 30_000) return _groqKeyCache.key;
+  try {
+    const doc = await Settings.findOne({ key: 'groq_api_key' }).lean();
+    const dbKey = (doc && doc.value) ? String(doc.value).trim() : '';
+    _groqKeyCache = { key: dbKey, ts: now };
+    globalSettings.groq_api_key = dbKey; // keep the in-memory copy in sync too, for anything else that still reads it directly
+  } catch (_) {
+    // DB hiccup — don't fail the request, just fall back to whatever's already cached/in-memory and retry next call
+    if (_groqKeyCache.key === null) _groqKeyCache.key = globalSettings.groq_api_key || '';
+    _groqKeyCache.ts = now;
+  }
+  return _groqKeyCache.key;
+}
+
 // ── BUG FIX (Aug 2026): Timeout-safe fetch wrapper ───────────────
 // Several raw `fetch()` calls to Binance in this file had NO timeout at
 // all (unlike market_tools.js's fetchJSON, which times out at 6-10s).
@@ -2085,8 +2121,11 @@ Rule: If confluenceScore < ${CONFLUENCE_THRESHOLD}, set overallBias to NEUTRAL.`
 
     // ── Groq AI Analysis ─────────────────────────────────────
     // DB ලේ key set කරලා ඇත්නම් ඒක use කරනවා, නැත්නම් .env ලේ key
-    const GROQ_API_KEY = (globalSettings.groq_api_key && globalSettings.groq_api_key.trim())
-      ? globalSettings.groq_api_key.trim()
+    // BUG FIX: was reading globalSettings.groq_api_key directly — stale
+    // in a multi-worker PM2 setup (see getEffectiveGroqApiKey() above).
+    const dbGroqKey = await getEffectiveGroqApiKey();
+    const GROQ_API_KEY = (dbGroqKey && dbGroqKey.trim())
+      ? dbGroqKey.trim()
       : process.env.GROQ_API_KEY;
     if (!GROQ_API_KEY) return res.status(500).json({ success:false, error:'GROQ_API_KEY not configured. Set it in Admin Panel → AI Settings.' });
     const GROQ_MODEL       = (globalSettings.groq_model       || 'llama-3.3-70b-versatile').trim();
@@ -3557,17 +3596,28 @@ app.patch('/api/signals/:id', verifyAdmin, async (req, res) => {
 // ══════════════════════════════════════════════════════════════
 
 /* GET /api/admin/ai-settings — get current AI config */
-app.get('/api/admin/ai-settings', verifyAdmin, (req, res) => {
+app.get('/api/admin/ai-settings', verifyAdmin, async (req, res) => {
+  // BUG FIX: was reading globalSettings.groq_api_key directly, which is
+  // stale in a multi-worker PM2 setup — an admin could save a new key on
+  // one worker, reload the page, land on a DIFFERENT worker for this GET,
+  // and see the OLD key/mask reflected back. Looks exactly like "it
+  // didn't save" even though the DB write succeeded. Now reads the same
+  // DB-backed, short-cached source used by the actual AI calls.
+  const currentKey = await getEffectiveGroqApiKey();
   res.json({
     success: true,
     settings: {
-      groq_api_key:     globalSettings.groq_api_key     || '',
+      // SECURITY FIX: the raw key was previously included in this response
+      // body (unused by the frontend, which only ever displays the masked
+      // version) — needlessly exposing the secret to anyone who opened
+      // devtools/network tab. Only the masked form is sent now.
       groq_model:       globalSettings.groq_model       || 'llama-3.3-70b-versatile',
       groq_max_tokens:  globalSettings.groq_max_tokens  || 1500,
       groq_temperature: globalSettings.groq_temperature || 0.2,
-      groq_api_key_masked: globalSettings.groq_api_key
-        ? 'gsk_' + '*'.repeat(20) + globalSettings.groq_api_key.slice(-6)
+      groq_api_key_masked: currentKey
+        ? 'gsk_' + '*'.repeat(20) + currentKey.slice(-6)
         : '(using .env key)',
+      groq_api_key_set: !!currentKey, // NEW: lets the frontend show/hide the "Clear" button correctly
     }
   });
 });
@@ -3575,7 +3625,7 @@ app.get('/api/admin/ai-settings', verifyAdmin, (req, res) => {
 /* POST /api/admin/ai-settings — update AI config */
 app.post('/api/admin/ai-settings', verifyAdmin, async (req, res) => {
   try {
-    const { groq_api_key, groq_model, groq_max_tokens, groq_temperature } = req.body;
+    const { groq_api_key, groq_model, groq_max_tokens, groq_temperature, groq_api_key_clear } = req.body;
     const ALLOWED_MODELS = ['llama-3.3-70b-versatile','llama-3.1-70b-versatile','llama-3.1-8b-instant','llama3-70b-8192','llama3-8b-8192','mixtral-8x7b-32768','gemma2-9b-it'];
     if (groq_model && !ALLOWED_MODELS.includes(groq_model))
       return res.status(400).json({ success: false, error: 'Invalid model name.' });
@@ -3586,7 +3636,24 @@ app.post('/api/admin/ai-settings', verifyAdmin, async (req, res) => {
     if (!isNaN(temp) && (temp < 0 || temp > 2))
       return res.status(400).json({ success: false, error: 'temperature must be 0–2.' });
     const updates = {};
-    if (groq_api_key !== undefined) { const k=groq_api_key.trim(); updates.groq_api_key=k; globalSettings.groq_api_key=k; await saveSettingToDB('groq_api_key',k); }
+    // BUG FIX: previously there was NO way to clear a saved key — the
+    // frontend only ever sent groq_api_key when the field was non-empty
+    // (an empty field meant "leave unchanged"), so the UI's own "Leave
+    // empty to use server .env key" instruction was impossible to act on.
+    // groq_api_key_clear is now an explicit, unambiguous action, separate
+    // from "the field happened to be empty".
+    if (groq_api_key_clear === true) {
+      updates.groq_api_key = '';
+      globalSettings.groq_api_key = '';
+      await saveSettingToDB('groq_api_key', '');
+      _groqKeyCache = { key: '', ts: Date.now() }; // invalidate the short cache immediately — don't make the admin wait 30s to see their own change
+    } else if (groq_api_key !== undefined && groq_api_key.trim()) {
+      const k = groq_api_key.trim();
+      updates.groq_api_key = k;
+      globalSettings.groq_api_key = k;
+      await saveSettingToDB('groq_api_key', k);
+      _groqKeyCache = { key: k, ts: Date.now() }; // same — avoid the save appearing to "not take" for up to 30s on the very worker that just saved it
+    }
     if (groq_model) { updates.groq_model=groq_model.trim(); globalSettings.groq_model=groq_model.trim(); await saveSettingToDB('groq_model',groq_model.trim()); }
     if (groq_max_tokens) { updates.groq_max_tokens=maxTok; globalSettings.groq_max_tokens=maxTok; await saveSettingToDB('groq_max_tokens',maxTok); }
     if (!isNaN(temp) && groq_temperature!==undefined) { updates.groq_temperature=temp; globalSettings.groq_temperature=temp; await saveSettingToDB('groq_temperature',temp); }
@@ -3598,7 +3665,8 @@ app.post('/api/admin/ai-settings', verifyAdmin, async (req, res) => {
 /* POST /api/admin/ai-settings/test — test API key */
 app.post('/api/admin/ai-settings/test', verifyAdmin, async (req, res) => {
   try {
-    const keyToTest = (req.body.groq_api_key || '').trim() || (globalSettings.groq_api_key||'').trim() || process.env.GROQ_API_KEY;
+    const savedKey = await getEffectiveGroqApiKey(); // BUG FIX: was globalSettings.groq_api_key directly — same cluster-mode staleness as the GET route above
+    const keyToTest = (req.body.groq_api_key || '').trim() || savedKey || process.env.GROQ_API_KEY;
     if (!keyToTest) return res.status(400).json({ success: false, error: 'No API key to test.' });
     const modelToTest = (req.body.groq_model || globalSettings.groq_model || 'llama-3.3-70b-versatile').trim();
     const testRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
