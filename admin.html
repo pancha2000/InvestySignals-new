@@ -833,16 +833,13 @@
                                 🧠 AI Model
                             </label>
                             <select id="aiModelSelect" class="input-control" style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;">
-                                <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile ⭐ (Recommended)</option>
-                                <option value="llama-3.1-70b-versatile">llama-3.1-70b-versatile</option>
-                                <option value="llama-3.1-8b-instant">llama-3.1-8b-instant (Fast)</option>
-                                <option value="llama3-70b-8192">llama3-70b-8192</option>
-                                <option value="llama3-8b-8192">llama3-8b-8192 (Fast)</option>
-                                <option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option>
-                                <option value="gemma2-9b-it">gemma2-9b-it</option>
+                                <!-- BUG FIX: the old list (llama-3.3-70b-versatile, llama-3.1-8b-instant, llama3-70b-8192, llama3-8b-8192, mixtral-8x7b-32768, gemma2-9b-it) were ALL deprecated/shut down by Groq — that's why saving kept failing with a 404. Replaced with Groq's current active models (Aug 2026). -->
+                                <option value="openai/gpt-oss-120b">openai/gpt-oss-120b ⭐ (Recommended)</option>
+                                <option value="openai/gpt-oss-20b">openai/gpt-oss-20b (Fast)</option>
+                                <option value="qwen/qwen3.6-27b">qwen/qwen3.6-27b (Multimodal/Agentic)</option>
                             </select>
                             <div style="margin-top:4px;font-size:0.7rem;color:var(--text-muted);">
-                                Larger models = better analysis quality · Smaller models = faster response
+                                Larger models = better analysis quality · Smaller models = faster response · Groq periodically deprecates older models — if Save/Test ever starts failing with a 404 "model does not exist" error, check <a href="https://console.groq.com/docs/models" target="_blank" style="color:var(--gold);">console.groq.com/docs/models</a> for the current list.
                             </div>
                         </div>
 
@@ -1457,7 +1454,19 @@ window.adminSignOut = async function() {
                 if (clearBtn) clearBtn.style.display = s.groq_api_key_set ? '' : 'none';
                 // Set model
                 const modelSel = document.getElementById('aiModelSelect');
-                if (modelSel && s.groq_model) modelSel.value = s.groq_model;
+                if (modelSel && s.groq_model) {
+                    const matchExists = Array.from(modelSel.options).some(o => o.value === s.groq_model);
+                    if (matchExists) {
+                        modelSel.value = s.groq_model;
+                    } else {
+                        // NEW: the saved model isn't in the current dropdown — almost
+                        // always because Groq deprecated it (exactly what happened with
+                        // llama-3.3-70b-versatile). Surface this instead of silently
+                        // falling back, so the admin knows WHY analysis is failing and
+                        // that they need to re-save with a current model.
+                        showAiMsg(`⚠️ Saved model "${s.groq_model}" is no longer in the available list — Groq likely deprecated it. Pick a current model below and click Save.`, true);
+                    }
+                }
                 // Set tokens
                 const tokInput = document.getElementById('aiMaxTokensInput');
                 if (tokInput && s.groq_max_tokens) tokInput.value = s.groq_max_tokens;

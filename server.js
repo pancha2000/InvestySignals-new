@@ -113,7 +113,10 @@ const SETTINGS_DEFAULTS = {
   highImpactMode: false,
   highImpactMsg: 'High impact news period — signals temporarily paused.',
   groq_api_key: '',      // overrides .env GROQ_API_KEY if set
-  groq_model: 'llama-3.3-70b-versatile',
+  // BUG FIX: llama-3.3-70b-versatile was deprecated by Groq and fully
+  // shut down Aug 16, 2026 — every /api/deep-analysis call was 404ing.
+  // openai/gpt-oss-120b is Groq's own recommended replacement.
+  groq_model: 'openai/gpt-oss-120b',
   groq_max_tokens: 2000, // BUG FIX: 1500 too low — AI truncates JSON causing parse errors
   groq_temperature: 0, // FIX: was 0.2 — same input could give slightly different output; 0 = deterministic
   // ── Market Memory (24/7 historical collector) — admin-configurable ──
@@ -2128,7 +2131,7 @@ Rule: If confluenceScore < ${CONFLUENCE_THRESHOLD}, set overallBias to NEUTRAL.`
       ? dbGroqKey.trim()
       : process.env.GROQ_API_KEY;
     if (!GROQ_API_KEY) return res.status(500).json({ success:false, error:'GROQ_API_KEY not configured. Set it in Admin Panel → AI Settings.' });
-    const GROQ_MODEL       = (globalSettings.groq_model       || 'llama-3.3-70b-versatile').trim();
+    const GROQ_MODEL       = (globalSettings.groq_model       || 'openai/gpt-oss-120b').trim(); // BUG FIX: llama-3.3-70b-versatile deprecated/shut down by Groq Aug 16, 2026
     const GROQ_MAX_TOKENS  = parseInt(globalSettings.groq_max_tokens)  || 2000; // BUG FIX: increased default
     const GROQ_TEMPERATURE = parseFloat(globalSettings.groq_temperature) || 0.2;
 
@@ -2405,16 +2408,24 @@ Respond with ONLY this JSON (no markdown, no explanation):
     //      ONE retry call to Groq with an explicit "reply with ONLY the
     //      JSON object, nothing else" reminder appended.
     //   4. Only after all of that fails do we surface an error to the user.
-    async function callGroq(promptText) {
+    // NEW: if the currently-configured model has been deprecated/removed
+    // by Groq (exactly what just happened with llama-3.3-70b-versatile,
+    // shut down Aug 16, 2026), every analysis would otherwise fail
+    // outright with a 404 until an admin notices and manually updates
+    // the model in the panel. Auto-retry once with a known-current safe
+    // default instead of failing the whole request.
+    const GROQ_SAFE_FALLBACK_MODEL = 'openai/gpt-oss-120b';
+    async function callGroq(promptText, _isRetry = false) {
       const ctrl = new AbortController();
       const timeout = setTimeout(() => ctrl.abort(), 60000); // 60s — Groq can be slow
       try {
+        const modelToUse = _isRetry ? GROQ_SAFE_FALLBACK_MODEL : GROQ_MODEL;
         const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
           signal: ctrl.signal,
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_API_KEY },
           body: JSON.stringify({
-            model: GROQ_MODEL,
+            model: modelToUse,
             max_tokens: GROQ_MAX_TOKENS,
             temperature: GROQ_TEMPERATURE,
             messages: [{ role: 'user', content: promptText }],
@@ -2422,6 +2433,12 @@ Respond with ONLY this JSON (no markdown, no explanation):
         });
         if (!r.ok) {
           const errText = await r.text();
+          const modelGone = r.status === 404 && /does not exist|decommissioned|deprecated/i.test(errText);
+          if (modelGone && !_isRetry && modelToUse !== GROQ_SAFE_FALLBACK_MODEL) {
+            console.warn(`[Groq] Configured model "${modelToUse}" was rejected as removed/deprecated — retrying once with fallback "${GROQ_SAFE_FALLBACK_MODEL}". An admin should update AI Settings so this stops happening on every request.`);
+            clearTimeout(timeout);
+            return callGroq(promptText, true);
+          }
           throw new Error(`Groq API error: ${r.status} — ${errText.slice(0, 200)}`);
         }
         const data = await r.json();
@@ -3611,7 +3628,7 @@ app.get('/api/admin/ai-settings', verifyAdmin, async (req, res) => {
       // body (unused by the frontend, which only ever displays the masked
       // version) — needlessly exposing the secret to anyone who opened
       // devtools/network tab. Only the masked form is sent now.
-      groq_model:       globalSettings.groq_model       || 'llama-3.3-70b-versatile',
+      groq_model:       globalSettings.groq_model       || 'openai/gpt-oss-120b', // BUG FIX: old default was a now-deprecated/dead Groq model
       groq_max_tokens:  globalSettings.groq_max_tokens  || 1500,
       groq_temperature: globalSettings.groq_temperature || 0.2,
       groq_api_key_masked: currentKey
@@ -3626,7 +3643,14 @@ app.get('/api/admin/ai-settings', verifyAdmin, async (req, res) => {
 app.post('/api/admin/ai-settings', verifyAdmin, async (req, res) => {
   try {
     const { groq_api_key, groq_model, groq_max_tokens, groq_temperature, groq_api_key_clear } = req.body;
-    const ALLOWED_MODELS = ['llama-3.3-70b-versatile','llama-3.1-70b-versatile','llama-3.1-8b-instant','llama3-70b-8192','llama3-8b-8192','mixtral-8x7b-32768','gemma2-9b-it'];
+    // BUG FIX: this whitelist was almost entirely dead models — Groq shut
+    // down llama-3.3-70b-versatile and llama-3.1-8b-instant on Aug 16,
+    // 2026 (this is exactly why the admin's save kept 404ing); llama3-
+    // 70b-8192/llama3-8b-8192 were deprecated back in May 2025; mixtral-
+    // 8x7b-32768 and gemma2-9b-it are no longer offered either. Replaced
+    // with Groq's current active lineup (per console.groq.com/docs/models
+    // as of Aug 2026) — update this list again if Groq deprecates further.
+    const ALLOWED_MODELS = ['openai/gpt-oss-120b','openai/gpt-oss-20b','qwen/qwen3.6-27b'];
     if (groq_model && !ALLOWED_MODELS.includes(groq_model))
       return res.status(400).json({ success: false, error: 'Invalid model name.' });
     const maxTok = parseInt(groq_max_tokens);
@@ -3668,7 +3692,7 @@ app.post('/api/admin/ai-settings/test', verifyAdmin, async (req, res) => {
     const savedKey = await getEffectiveGroqApiKey(); // BUG FIX: was globalSettings.groq_api_key directly — same cluster-mode staleness as the GET route above
     const keyToTest = (req.body.groq_api_key || '').trim() || savedKey || process.env.GROQ_API_KEY;
     if (!keyToTest) return res.status(400).json({ success: false, error: 'No API key to test.' });
-    const modelToTest = (req.body.groq_model || globalSettings.groq_model || 'llama-3.3-70b-versatile').trim();
+    const modelToTest = (req.body.groq_model || globalSettings.groq_model || 'openai/gpt-oss-120b').trim(); // BUG FIX: old default was a now-deprecated/dead Groq model
     const testRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+keyToTest },
