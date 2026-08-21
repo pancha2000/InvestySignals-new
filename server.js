@@ -112,21 +112,36 @@ const SETTINGS_DEFAULTS = {
   allowRegistrations: true,
   highImpactMode: false,
   highImpactMsg: 'High impact news period — signals temporarily paused.',
-  groq_api_key: '',      // overrides .env GROQ_API_KEY if set
-  // BUG FIX: llama-3.3-70b-versatile was deprecated by Groq and fully
-  // shut down Aug 16, 2026 — every /api/deep-analysis call was 404ing.
-  // openai/gpt-oss-120b is Groq's own recommended replacement.
-  groq_model: 'openai/gpt-oss-120b',
-  groq_max_tokens: 2000, // BUG FIX: 1500 too low — AI truncates JSON causing parse errors
-  groq_temperature: 0, // FIX: was 0.2 — same input could give slightly different output; 0 = deterministic
-  // NEW: optional free-tier fallback provider. Cerebras serves the SAME
-  // openai/gpt-oss-120b model (OpenAI-compatible API, same request/response
-  // shape) but with a much higher free-tier token-per-minute ceiling than
-  // Groq (~30-60K TPM vs Groq's 8K TPM on this model) plus a 1M-tokens/day
-  // cap. When set, a Groq 429 (rate limit) automatically retries against
-  // Cerebras instead of failing the whole analysis — get a free key at
-  // cloud.cerebras.ai, no credit card required.
+  // ── AI providers for /api/deep-analysis: multi-provider, each with an
+  // independent ON/OFF toggle (Admin Panel → AI Settings). Tried in
+  // priority order — Gemini → Cerebras → Groq — skipping any that are
+  // OFF or missing a key; if the first enabled one fails for any reason
+  // (rate limit, deprecated model, outage), the next enabled one is
+  // tried automatically. Worth knowing for the future: Gemini's own
+  // model churn in 2026 has actually been FASTER than Groq's (2.5 → 3 →
+  // 3.1 → 3.5 → 3.6 → 3.7 inside months, several with only weeks of
+  // preview-stage notice) — no single provider removes the "a model
+  // gets killed out from under you" risk, which is exactly why this is
+  // multi-provider with automatic failover rather than a hard swap.
+  gemini_enabled: true,   // default ON — best free TPM ceiling of the three
+  gemini_api_key: '',     // overrides .env GEMINI_API_KEY if set
+  // gemini-2.5-flash: GA (stable, not preview), 250K TPM free tier —
+  // the most generous free ceiling of any option checked. Known
+  // deprecation date: Oct 16, 2026 (Google's own schedule) — re-check
+  // ai.google.dev/gemini-api/docs/models before then.
+  gemini_model: 'gemini-2.5-flash',
+  gemini_max_tokens: 2000,
+  gemini_temperature: 0, // 0 = deterministic — same input should give the same signal
+
+  cerebras_enabled: true, // default ON — independent second opinion, own free quota
+  // Cerebras serves openai/gpt-oss-120b (OpenAI-compatible API, different
+  // request/response shape than Gemini's) with ~30-60K TPM + 1M
+  // tokens/day free. Get a free key (no card) at cloud.cerebras.ai.
   cerebras_api_key: '',
+
+  groq_enabled: false,    // default OFF — per explicit request; flip on any time in Admin Panel
+  groq_api_key: '',
+  groq_model: 'openai/gpt-oss-120b',
   // ── Market Memory (24/7 historical collector) — admin-configurable ──
   marketMemoryEnabled: true,
   marketMemorySymbols: 'BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT', // comma-separated
@@ -218,6 +233,25 @@ async function getEffectiveGroqApiKey() {
     _groqKeyCache.ts = now;
   }
   return _groqKeyCache.key;
+}
+
+// NEW: same DB-backed short-cache pattern as getEffectiveGroqApiKey()
+// above, applied to Gemini from day one — no reason to wait for the
+// same PM2 multi-worker staleness bug to bite this key too.
+let _geminiKeyCache = { key: null, ts: 0 };
+async function getEffectiveGeminiApiKey() {
+  const now = Date.now();
+  if (_geminiKeyCache.key !== null && now - _geminiKeyCache.ts < 30_000) return _geminiKeyCache.key;
+  try {
+    const doc = await Settings.findOne({ key: 'gemini_api_key' }).lean();
+    const dbKey = (doc && doc.value) ? String(doc.value).trim() : '';
+    _geminiKeyCache = { key: dbKey, ts: now };
+    globalSettings.gemini_api_key = dbKey;
+  } catch (_) {
+    if (_geminiKeyCache.key === null) _geminiKeyCache.key = globalSettings.gemini_api_key || '';
+    _geminiKeyCache.ts = now;
+  }
+  return _geminiKeyCache.key;
 }
 
 // ── BUG FIX (Aug 2026): Timeout-safe fetch wrapper ───────────────
@@ -455,15 +489,22 @@ const aiChatLimiter = rateLimit({
 
 /** Shared resolver so both AI routes always use the SAME Groq credentials
  *  and model the admin already configured for the rest of the app
- *  (Settings → groq_api_key/groq_model/groq_temperature), exactly mirroring
- *  how /api/deep-analysis resolves its own Groq config. */
+ *  (Settings → groq_api_key/groq_model), exactly mirroring how
+ *  /api/deep-analysis used to resolve its own Groq config before that
+ *  route switched to the multi-provider Gemini/Cerebras/Groq chain.
+ *  This agent tool still calls Groq directly (its own separate,
+ *  tool-calling-capable code path) — groq_temperature was removed from
+ *  SETTINGS_DEFAULTS when /api/deep-analysis stopped reading it, so a
+ *  fallback default is applied here instead of silently sending
+ *  `undefined` as the temperature. */
 function resolveAgentConfig() {
   return {
     apiKey: globalSettings.groq_api_key || process.env.GROQ_API_KEY,
     modelName: globalSettings.groq_model,
-    temperature: globalSettings.groq_temperature,
+    temperature: globalSettings.groq_temperature ?? 0.2,
   };
 }
+
 
 // 1) TRADE COPILOT — side-panel chat scoped to one already-generated report
 app.post('/api/agent/trade-chat', verifyToken, aiChatLimiter, async (req, res) => {
@@ -2130,18 +2171,36 @@ Rule: If confluenceScore < ${CONFLUENCE_THRESHOLD}, set overallBias to NEUTRAL.`
         + '\n(These levels can act as magnets — price is sometimes drawn back to sweep resting liquidity near them — or as reaction zones after a large one-sided liquidation cascade already happened. Consider a nearby cluster as a plausible TP target or as extra caution before placing a SL exactly at/before one, since the cluster represents where a wave of forced closures already occurred, not necessarily where the NEXT one will.)'
       : '';
 
-    // ── Groq AI Analysis ─────────────────────────────────────
-    // DB ලේ key set කරලා ඇත්නම් ඒක use කරනවා, නැත්නම් .env ලේ key
-    // BUG FIX: was reading globalSettings.groq_api_key directly — stale
-    // in a multi-worker PM2 setup (see getEffectiveGroqApiKey() above).
-    const dbGroqKey = await getEffectiveGroqApiKey();
-    const GROQ_API_KEY = (dbGroqKey && dbGroqKey.trim())
-      ? dbGroqKey.trim()
-      : process.env.GROQ_API_KEY;
-    if (!GROQ_API_KEY) return res.status(500).json({ success:false, error:'GROQ_API_KEY not configured. Set it in Admin Panel → AI Settings.' });
-    const GROQ_MODEL       = (globalSettings.groq_model       || 'openai/gpt-oss-120b').trim(); // BUG FIX: llama-3.3-70b-versatile deprecated/shut down by Groq Aug 16, 2026
-    const GROQ_MAX_TOKENS  = parseInt(globalSettings.groq_max_tokens)  || 2000; // BUG FIX: increased default
-    const GROQ_TEMPERATURE = parseFloat(globalSettings.groq_temperature) || 0.2;
+    // ── AI Analysis — MULTI-PROVIDER with per-provider ON/OFF toggles ──
+    // Each provider (Gemini / Cerebras / Groq) can be independently
+    // enabled or disabled from Admin Panel → AI Settings. Whichever are
+    // ON and have a key configured get tried in that priority order —
+    // Gemini first (best free TPM ceiling), then Cerebras, then Groq
+    // last (off by default, per explicit request, but can be switched
+    // back on any time). If the first enabled provider fails for ANY
+    // reason (rate limit, deprecated model, timeout, outage), the next
+    // enabled one is tried automatically before the request fails.
+    const geminiEnabled   = globalSettings.gemini_enabled   !== false; // default ON
+    const cerebrasEnabled = globalSettings.cerebras_enabled !== false; // default ON
+    const groqEnabled     = globalSettings.groq_enabled     === true;  // default OFF
+
+    const dbGeminiKey = geminiEnabled ? await getEffectiveGeminiApiKey() : '';
+    const GEMINI_API_KEY = (dbGeminiKey && dbGeminiKey.trim()) ? dbGeminiKey.trim() : process.env.GEMINI_API_KEY;
+    const GEMINI_MODEL   = (globalSettings.gemini_model || 'gemini-2.5-flash').trim();
+
+    const cerebrasKey = cerebrasEnabled ? ((globalSettings.cerebras_api_key || '').trim() || process.env.CEREBRAS_API_KEY) : '';
+
+    const dbGroqKey = groqEnabled ? await getEffectiveGroqApiKey() : '';
+    const GROQ_API_KEY = (dbGroqKey && dbGroqKey.trim()) ? dbGroqKey.trim() : process.env.GROQ_API_KEY;
+    const GROQ_MODEL   = (globalSettings.groq_model || 'openai/gpt-oss-120b').trim();
+
+    const AI_MAX_TOKENS  = parseInt(globalSettings.gemini_max_tokens)  || 2000;
+    const AI_TEMPERATURE = parseFloat(globalSettings.gemini_temperature) ?? 0;
+
+    const anyProviderReady = (geminiEnabled && GEMINI_API_KEY) || (cerebrasEnabled && cerebrasKey) || (groqEnabled && GROQ_API_KEY);
+    if (!anyProviderReady) {
+      return res.status(500).json({ success:false, error:'No AI provider is both enabled AND has a key configured. Go to Admin Panel → AI Settings and turn on at least one provider (Gemini/Cerebras/Groq) with a valid key.' });
+    }
 
     const earlyWarnText = earlyWarnings.length ? '\nEARLY WARNINGS (M15/H1 signals):\n' + earlyWarnings.map((w,i) => (i+1)+'. '+w).join('\n') : '';
     // NEW: VWAP (session-reset daily) on the 1H timeframe — a genuinely
@@ -2401,7 +2460,7 @@ Respond with ONLY this JSON (no markdown, no explanation):
   }
 }`;
 
-    // ── RELIABILITY UPGRADE: Groq call + JSON parse, with repair + 1 retry ──
+    // ── RELIABILITY UPGRADE: AI call + JSON parse, with repair + 1 retry ──
     // Root cause of most "analysis failed" errors reported in production:
     // the model occasionally (a) truncates JSON when it runs long, (b) adds
     // a stray sentence before/after the JSON block despite instructions, or
@@ -2413,43 +2472,100 @@ Respond with ONLY this JSON (no markdown, no explanation):
     //      '{' and the last '}' — recovers the common "extra prose around
     //      valid JSON" case without needing another API call.
     //   3. If that STILL fails (truly truncated/broken JSON), make exactly
-    //      ONE retry call to Groq with an explicit "reply with ONLY the
-    //      JSON object, nothing else" reminder appended.
+    //      ONE retry call with an explicit "reply with ONLY the JSON
+    //      object, nothing else" reminder appended.
     //   4. Only after all of that fails do we surface an error to the user.
-    // NEW: if the currently-configured model has been deprecated/removed
-    // by Groq (exactly what just happened with llama-3.3-70b-versatile,
-    // shut down Aug 16, 2026), every analysis would otherwise fail
-    // outright with a 404 until an admin notices and manually updates
-    // the model in the panel. Auto-retry once with a known-current safe
-    // default instead of failing the whole request.
+    // Model-deprecation auto-retry: if the configured Gemini model gets
+    // removed/deprecated (exactly what happened to Groq's
+    // llama-3.3-70b-versatile), auto-retry once with a second, separately
+    // configured Gemini model instead of failing every request outright.
+    const GEMINI_SAFE_FALLBACK_MODEL = 'gemini-2.5-flash-lite';
     const GROQ_SAFE_FALLBACK_MODEL = 'openai/gpt-oss-120b';
-    // NEW: optional Cerebras failover for rate-limit (429) errors — see the
-    // cerebras_api_key comment in SETTINGS_DEFAULTS above for why. Cerebras
-    // uses the same OpenAI-compatible request/response shape as Groq, just
-    // a different base URL, so the same prompt/model works unmodified.
-    const cerebrasKey = (globalSettings.cerebras_api_key || '').trim() || process.env.CEREBRAS_API_KEY;
-    async function callProvider(promptText, provider, modelOverride) {
+
+    async function callGeminiOnce(promptText, model) {
       const ctrl = new AbortController();
       const timeout = setTimeout(() => ctrl.abort(), 60000); // 60s — inference can be slow under load
       try {
-        const isCerebras = provider === 'cerebras';
-        const url = isCerebras ? 'https://api.cerebras.ai/v1/chat/completions' : 'https://api.groq.com/openai/v1/chat/completions';
-        const key = isCerebras ? cerebrasKey : GROQ_API_KEY;
-        const model = modelOverride || GROQ_MODEL;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
         const r = await fetch(url, {
           method: 'POST',
           signal: ctrl.signal,
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY },
           body: JSON.stringify({
-            model,
-            max_tokens: GROQ_MAX_TOKENS,
-            temperature: GROQ_TEMPERATURE,
+            contents: [{ parts: [{ text: promptText }] }],
+            generationConfig: {
+              maxOutputTokens: AI_MAX_TOKENS,
+              temperature: AI_TEMPERATURE,
+              responseMimeType: 'application/json', // Gemini-native JSON mode — more reliable than prompt-only instructions
+            },
+          }),
+        });
+        if (!r.ok) {
+          const errText = await r.text();
+          const err = new Error(`Gemini API error: ${r.status} — ${errText.slice(0, 200)}`);
+          err.status = r.status;
+          err.body = errText;
+          throw err;
+        }
+        const data = await r.json();
+        return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      } catch (fetchErr) {
+        if (fetchErr.name === 'AbortError') throw new Error('Gemini AI timed out (>60s) — server is overloaded. Please try again in a moment.');
+        throw fetchErr;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    async function callCerebrasOnce(promptText) {
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), 60000);
+      try {
+        const r = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+          method: 'POST',
+          signal: ctrl.signal,
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cerebrasKey },
+          body: JSON.stringify({
+            model: 'gpt-oss-120b',
+            max_tokens: AI_MAX_TOKENS,
+            temperature: AI_TEMPERATURE,
             messages: [{ role: 'user', content: promptText }],
           }),
         });
         if (!r.ok) {
           const errText = await r.text();
-          const err = new Error(`${isCerebras ? 'Cerebras' : 'Groq'} API error: ${r.status} — ${errText.slice(0, 200)}`);
+          const err = new Error(`Cerebras API error: ${r.status} — ${errText.slice(0, 200)}`);
+          err.status = r.status;
+          throw err;
+        }
+        const data = await r.json();
+        return data.choices?.[0]?.message?.content || '';
+      } catch (fetchErr) {
+        if (fetchErr.name === 'AbortError') throw new Error('Cerebras AI timed out (>60s) — server is overloaded. Please try again in a moment.');
+        throw fetchErr;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    async function callGroqOnce(promptText, model) {
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), 60000);
+      try {
+        const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          signal: ctrl.signal,
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_API_KEY },
+          body: JSON.stringify({
+            model,
+            max_tokens: AI_MAX_TOKENS,
+            temperature: AI_TEMPERATURE,
+            messages: [{ role: 'user', content: promptText }],
+          }),
+        });
+        if (!r.ok) {
+          const errText = await r.text();
+          const err = new Error(`Groq API error: ${r.status} — ${errText.slice(0, 200)}`);
           err.status = r.status;
           err.body = errText;
           throw err;
@@ -2457,40 +2573,72 @@ Respond with ONLY this JSON (no markdown, no explanation):
         const data = await r.json();
         return data.choices?.[0]?.message?.content || '';
       } catch (fetchErr) {
-        if (fetchErr.name === 'AbortError') throw new Error(`${provider === 'cerebras' ? 'Cerebras' : 'Groq'} AI timed out (>60s) — server is overloaded. Please try again in a moment.`);
+        if (fetchErr.name === 'AbortError') throw new Error('Groq AI timed out (>60s) — server is overloaded. Please try again in a moment.');
         throw fetchErr;
       } finally {
         clearTimeout(timeout);
       }
     }
-    async function callGroq(promptText, _isRetry = false) {
-      const modelToUse = _isRetry ? GROQ_SAFE_FALLBACK_MODEL : GROQ_MODEL;
+
+    // Each provider function below handles its OWN model-deprecation
+    // retry (try primary model, and if it comes back "removed/
+    // deprecated", retry once with a known-current secondary model of
+    // the SAME provider) before giving up on that provider entirely.
+    async function tryGemini(promptText) {
       try {
-        return await callProvider(promptText, 'groq', modelToUse);
+        return await callGeminiOnce(promptText, GEMINI_MODEL);
       } catch (err) {
-        const modelGone = err.status === 404 && /does not exist|decommissioned|deprecated/i.test(err.body || '');
-        if (modelGone && !_isRetry && modelToUse !== GROQ_SAFE_FALLBACK_MODEL) {
-          console.warn(`[Groq] Configured model "${modelToUse}" was rejected as removed/deprecated — retrying once with fallback "${GROQ_SAFE_FALLBACK_MODEL}". An admin should update AI Settings so this stops happening on every request.`);
-          return callGroq(promptText, true);
-        }
-        // NEW: rate-limited on Groq and a Cerebras key is configured — try
-        // there instead of failing the whole scan/analysis. Same model
-        // (gpt-oss-120b) is served by both, so quality is unchanged; only
-        // the provider (and its separate, much higher free TPM ceiling) is
-        // different. If Cerebras also fails, the ORIGINAL Groq error is
-        // what reaches the user — a Cerebras problem shouldn't obscure the
-        // real Groq one when neither key is actually the issue.
-        if (err.status === 429 && cerebrasKey) {
-          console.warn(`[Groq] Rate limited (429) — falling back to Cerebras for this request.`);
-          try {
-            return await callProvider(promptText, 'cerebras', 'gpt-oss-120b');
-          } catch (cerebrasErr) {
-            console.warn(`[Cerebras fallback] also failed: ${cerebrasErr.message}`);
-            throw err; // surface the original Groq error, not the fallback's
-          }
+        const modelGone = (err.status === 404 || err.status === 400) && /not found|not supported|deprecated|does not exist/i.test(err.body || '');
+        if (modelGone && GEMINI_MODEL !== GEMINI_SAFE_FALLBACK_MODEL) {
+          console.warn(`[Gemini] Configured model "${GEMINI_MODEL}" was rejected as removed/deprecated — retrying once with fallback "${GEMINI_SAFE_FALLBACK_MODEL}".`);
+          return await callGeminiOnce(promptText, GEMINI_SAFE_FALLBACK_MODEL);
         }
         throw err;
       }
+    }
+    async function tryGroq(promptText) {
+      try {
+        return await callGroqOnce(promptText, GROQ_MODEL);
+      } catch (err) {
+        const modelGone = err.status === 404 && /does not exist|decommissioned|deprecated/i.test(err.body || '');
+        if (modelGone && GROQ_MODEL !== GROQ_SAFE_FALLBACK_MODEL) {
+          console.warn(`[Groq] Configured model "${GROQ_MODEL}" was rejected as removed/deprecated — retrying once with fallback "${GROQ_SAFE_FALLBACK_MODEL}".`);
+          return await callGroqOnce(promptText, GROQ_SAFE_FALLBACK_MODEL);
+        }
+        throw err;
+      }
+    }
+
+    // ── Multi-provider priority chain ──────────────────────────────
+    // Tries every ENABLED-AND-KEYED provider in order (Gemini → Cerebras
+    // → Groq) and returns the first successful response. Each provider
+    // is fully independent — a rate limit, an outage, or a deprecated
+    // model on one never blocks the others from being tried. Only if
+    // EVERY enabled provider fails does the request actually fail, and
+    // the error surfaced is from the LAST provider tried (most likely
+    // to be the most relevant one for the admin to act on).
+    async function callGroq(promptText) {
+      // NOTE: function name kept as callGroq to avoid touching call
+      // sites below — it now tries multiple providers, Groq is just one
+      // of them (off by default).
+      const chain = [];
+      if (geminiEnabled && GEMINI_API_KEY) chain.push({ name: 'Gemini', run: tryGemini });
+      if (cerebrasEnabled && cerebrasKey) chain.push({ name: 'Cerebras', run: callCerebrasOnce });
+      if (groqEnabled && GROQ_API_KEY) chain.push({ name: 'Groq', run: tryGroq });
+
+      let lastErr = null;
+      for (let i = 0; i < chain.length; i++) {
+        try {
+          const result = await chain[i].run(promptText);
+          if (i > 0) console.warn(`[AI] "${chain[i].name}" succeeded after ${i} earlier provider(s) failed this request.`);
+          return result;
+        } catch (err) {
+          console.warn(`[AI] Provider "${chain[i].name}" failed: ${err.message}`);
+          lastErr = err;
+          // fall through to the next enabled provider
+        }
+      }
+      throw lastErr || new Error('No AI provider is enabled/configured.');
     }
 
     function tryParseAnalysis(rawText) {
@@ -3662,25 +3810,35 @@ app.get('/api/admin/ai-settings', verifyAdmin, async (req, res) => {
   // and see the OLD key/mask reflected back. Looks exactly like "it
   // didn't save" even though the DB write succeeded. Now reads the same
   // DB-backed, short-cached source used by the actual AI calls.
-  const currentKey = await getEffectiveGroqApiKey();
+  const currentGeminiKey = await getEffectiveGeminiApiKey();
+  const currentGroqKey   = await getEffectiveGroqApiKey();
   res.json({
     success: true,
     settings: {
-      // SECURITY FIX: the raw key was previously included in this response
-      // body (unused by the frontend, which only ever displays the masked
-      // version) — needlessly exposing the secret to anyone who opened
-      // devtools/network tab. Only the masked form is sent now.
-      groq_model:       globalSettings.groq_model       || 'openai/gpt-oss-120b', // BUG FIX: old default was a now-deprecated/dead Groq model
-      groq_max_tokens:  globalSettings.groq_max_tokens  || 1500,
-      groq_temperature: globalSettings.groq_temperature || 0.2,
-      groq_api_key_masked: currentKey
-        ? 'gsk_' + '*'.repeat(20) + currentKey.slice(-6)
-        : '(using .env key)',
-      groq_api_key_set: !!currentKey, // NEW: lets the frontend show/hide the "Clear" button correctly
-      // NEW: Cerebras fallback key — same masking/set pattern as the Groq key above
+      // NEW: multi-provider — each independently ON/OFF. Gemini/Cerebras
+      // default ON, Groq defaults OFF (per explicit request to remove it
+      // from the active path), but can be switched back on any time.
+      gemini_enabled:   globalSettings.gemini_enabled   !== false,
+      cerebras_enabled: globalSettings.cerebras_enabled !== false,
+      groq_enabled:     globalSettings.groq_enabled     === true,
+
+      gemini_model:      globalSettings.gemini_model      || 'gemini-2.5-flash',
+      gemini_max_tokens: globalSettings.gemini_max_tokens || 2000,
+      gemini_temperature: globalSettings.gemini_temperature ?? 0,
+      gemini_api_key_masked: currentGeminiKey
+        ? '*'.repeat(20) + currentGeminiKey.slice(-6)
+        : '(not set)',
+      gemini_api_key_set: !!currentGeminiKey,
+
+      groq_model: globalSettings.groq_model || 'openai/gpt-oss-120b',
+      groq_api_key_masked: currentGroqKey
+        ? 'gsk_' + '*'.repeat(20) + currentGroqKey.slice(-6)
+        : '(not set)',
+      groq_api_key_set: !!currentGroqKey,
+
       cerebras_api_key_masked: globalSettings.cerebras_api_key
         ? '*'.repeat(20) + globalSettings.cerebras_api_key.slice(-6)
-        : '(not set — no fallback on Groq rate limits)',
+        : '(not set)',
       cerebras_api_key_set: !!globalSettings.cerebras_api_key,
     }
   });
@@ -3689,46 +3847,75 @@ app.get('/api/admin/ai-settings', verifyAdmin, async (req, res) => {
 /* POST /api/admin/ai-settings — update AI config */
 app.post('/api/admin/ai-settings', verifyAdmin, async (req, res) => {
   try {
-    const { groq_api_key, groq_model, groq_max_tokens, groq_temperature, groq_api_key_clear, cerebras_api_key, cerebras_api_key_clear } = req.body;
+    const {
+      gemini_api_key, gemini_api_key_clear, gemini_model, gemini_max_tokens, gemini_temperature, gemini_enabled,
+      groq_api_key, groq_api_key_clear, groq_model, groq_enabled,
+      cerebras_api_key, cerebras_api_key_clear, cerebras_enabled,
+    } = req.body;
+
+    const GEMINI_ALLOWED_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3-flash-preview'];
+    if (gemini_model && !GEMINI_ALLOWED_MODELS.includes(gemini_model))
+      return res.status(400).json({ success: false, error: 'Invalid Gemini model name.' });
     // BUG FIX: this whitelist was almost entirely dead models — Groq shut
     // down llama-3.3-70b-versatile and llama-3.1-8b-instant on Aug 16,
-    // 2026 (this is exactly why the admin's save kept 404ing); llama3-
-    // 70b-8192/llama3-8b-8192 were deprecated back in May 2025; mixtral-
-    // 8x7b-32768 and gemma2-9b-it are no longer offered either. Replaced
-    // with Groq's current active lineup (per console.groq.com/docs/models
-    // as of Aug 2026) — update this list again if Groq deprecates further.
-    const ALLOWED_MODELS = ['openai/gpt-oss-120b','openai/gpt-oss-20b','qwen/qwen3.6-27b'];
-    if (groq_model && !ALLOWED_MODELS.includes(groq_model))
-      return res.status(400).json({ success: false, error: 'Invalid model name.' });
-    const maxTok = parseInt(groq_max_tokens);
+    // 2026; llama3-70b-8192/llama3-8b-8192 were deprecated back in May
+    // 2025; mixtral-8x7b-32768 and gemma2-9b-it are no longer offered
+    // either. Replaced with Groq's current active lineup.
+    const GROQ_ALLOWED_MODELS = ['openai/gpt-oss-120b','openai/gpt-oss-20b','qwen/qwen3.6-27b'];
+    if (groq_model && !GROQ_ALLOWED_MODELS.includes(groq_model))
+      return res.status(400).json({ success: false, error: 'Invalid Groq model name.' });
+    const maxTok = parseInt(gemini_max_tokens);
     if (maxTok && (maxTok < 100 || maxTok > 8000))
       return res.status(400).json({ success: false, error: 'max_tokens must be 100–8000.' });
-    const temp = parseFloat(groq_temperature);
+    const temp = parseFloat(gemini_temperature);
     if (!isNaN(temp) && (temp < 0 || temp > 2))
       return res.status(400).json({ success: false, error: 'temperature must be 0–2.' });
+
     const updates = {};
+
+    // ── Per-provider ON/OFF toggles ──
+    if (gemini_enabled !== undefined)   { updates.gemini_enabled = !!gemini_enabled;     globalSettings.gemini_enabled = !!gemini_enabled;     await saveSettingToDB('gemini_enabled', !!gemini_enabled); }
+    if (cerebras_enabled !== undefined) { updates.cerebras_enabled = !!cerebras_enabled; globalSettings.cerebras_enabled = !!cerebras_enabled; await saveSettingToDB('cerebras_enabled', !!cerebras_enabled); }
+    if (groq_enabled !== undefined)     { updates.groq_enabled = !!groq_enabled;         globalSettings.groq_enabled = !!groq_enabled;         await saveSettingToDB('groq_enabled', !!groq_enabled); }
+
+    // ── Gemini key (BUG FIX pattern: explicit clear, same as Groq below) ──
+    if (gemini_api_key_clear === true) {
+      updates.gemini_api_key = '';
+      globalSettings.gemini_api_key = '';
+      await saveSettingToDB('gemini_api_key', '');
+      _geminiKeyCache = { key: '', ts: Date.now() };
+    } else if (gemini_api_key !== undefined && gemini_api_key.trim()) {
+      const k = gemini_api_key.trim();
+      updates.gemini_api_key = k;
+      globalSettings.gemini_api_key = k;
+      await saveSettingToDB('gemini_api_key', k);
+      _geminiKeyCache = { key: k, ts: Date.now() };
+    }
+    if (gemini_model) { updates.gemini_model=gemini_model.trim(); globalSettings.gemini_model=gemini_model.trim(); await saveSettingToDB('gemini_model',gemini_model.trim()); }
+    if (gemini_max_tokens) { updates.gemini_max_tokens=maxTok; globalSettings.gemini_max_tokens=maxTok; await saveSettingToDB('gemini_max_tokens',maxTok); }
+    if (!isNaN(temp) && gemini_temperature!==undefined) { updates.gemini_temperature=temp; globalSettings.gemini_temperature=temp; await saveSettingToDB('gemini_temperature',temp); }
+
+    // ── Groq key ──
     // BUG FIX: previously there was NO way to clear a saved key — the
-    // frontend only ever sent groq_api_key when the field was non-empty
-    // (an empty field meant "leave unchanged"), so the UI's own "Leave
-    // empty to use server .env key" instruction was impossible to act on.
-    // groq_api_key_clear is now an explicit, unambiguous action, separate
-    // from "the field happened to be empty".
+    // frontend only ever sent the key when the field was non-empty (an
+    // empty field meant "leave unchanged"), so the UI's own "leave empty
+    // to clear" instruction was impossible to act on. *_api_key_clear is
+    // now an explicit, unambiguous action, separate from "field was empty".
     if (groq_api_key_clear === true) {
       updates.groq_api_key = '';
       globalSettings.groq_api_key = '';
       await saveSettingToDB('groq_api_key', '');
-      _groqKeyCache = { key: '', ts: Date.now() }; // invalidate the short cache immediately — don't make the admin wait 30s to see their own change
+      _groqKeyCache = { key: '', ts: Date.now() };
     } else if (groq_api_key !== undefined && groq_api_key.trim()) {
       const k = groq_api_key.trim();
       updates.groq_api_key = k;
       globalSettings.groq_api_key = k;
       await saveSettingToDB('groq_api_key', k);
-      _groqKeyCache = { key: k, ts: Date.now() }; // same — avoid the save appearing to "not take" for up to 30s on the very worker that just saved it
+      _groqKeyCache = { key: k, ts: Date.now() };
     }
     if (groq_model) { updates.groq_model=groq_model.trim(); globalSettings.groq_model=groq_model.trim(); await saveSettingToDB('groq_model',groq_model.trim()); }
-    if (groq_max_tokens) { updates.groq_max_tokens=maxTok; globalSettings.groq_max_tokens=maxTok; await saveSettingToDB('groq_max_tokens',maxTok); }
-    if (!isNaN(temp) && groq_temperature!==undefined) { updates.groq_temperature=temp; globalSettings.groq_temperature=temp; await saveSettingToDB('groq_temperature',temp); }
-    // NEW: Cerebras fallback key — same clear/set pattern as the Groq key
+
+    // ── Cerebras key ──
     if (cerebras_api_key_clear === true) {
       updates.cerebras_api_key = '';
       globalSettings.cerebras_api_key = '';
@@ -3739,18 +3926,49 @@ app.post('/api/admin/ai-settings', verifyAdmin, async (req, res) => {
       globalSettings.cerebras_api_key = ck;
       await saveSettingToDB('cerebras_api_key', ck);
     }
+
     console.log(`[Admin] AI settings updated by ${req.dbUser?.email}:`, Object.keys(updates).join(', '));
     res.json({ success: true, message: 'AI settings updated.', updated: Object.keys(updates) });
   } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-/* POST /api/admin/ai-settings/test — test API key */
+/* POST /api/admin/ai-settings/test — test a provider's API key */
 app.post('/api/admin/ai-settings/test', verifyAdmin, async (req, res) => {
   try {
+    const provider = req.body.provider || 'gemini'; // 'gemini' | 'groq' | 'cerebras'
+    if (provider === 'gemini') {
+      const savedKey = await getEffectiveGeminiApiKey();
+      const keyToTest = (req.body.gemini_api_key || '').trim() || savedKey || process.env.GEMINI_API_KEY;
+      if (!keyToTest) return res.status(400).json({ success: false, error: 'No Gemini API key to test.' });
+      const modelToTest = (req.body.gemini_model || globalSettings.gemini_model || 'gemini-2.5-flash').trim();
+      const testRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelToTest}:generateContent`, {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json', 'x-goog-api-key': keyToTest },
+        body: JSON.stringify({ contents: [{ parts: [{ text: 'Reply with OK only.' }] }], generationConfig: { maxOutputTokens: 10 } })
+      });
+      if (!testRes.ok) { const e=await testRes.text(); return res.json({ success:false, error:`API returned ${testRes.status}: ${e.slice(0,150)}` }); }
+      const data = await testRes.json();
+      const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      return res.json({ success: true, message: `✅ Gemini key works! Model "${modelToTest}" responded: "${reply.slice(0,50)}"` });
+    }
+    if (provider === 'cerebras') {
+      const keyToTest = (req.body.cerebras_api_key || '').trim() || globalSettings.cerebras_api_key || process.env.CEREBRAS_API_KEY;
+      if (!keyToTest) return res.status(400).json({ success: false, error: 'No Cerebras API key to test.' });
+      const testRes = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+keyToTest },
+        body: JSON.stringify({ model: 'gpt-oss-120b', max_tokens: 10, temperature: 0.1, messages: [{ role:'user', content:'Reply with OK only.' }] })
+      });
+      if (!testRes.ok) { const e=await testRes.text(); return res.json({ success:false, error:`API returned ${testRes.status}: ${e.slice(0,150)}` }); }
+      const data = await testRes.json();
+      const reply = data.choices?.[0]?.message?.content || '';
+      return res.json({ success: true, message: `✅ Cerebras key works! Responded: "${reply.slice(0,50)}"` });
+    }
+    // groq
     const savedKey = await getEffectiveGroqApiKey(); // BUG FIX: was globalSettings.groq_api_key directly — same cluster-mode staleness as the GET route above
     const keyToTest = (req.body.groq_api_key || '').trim() || savedKey || process.env.GROQ_API_KEY;
-    if (!keyToTest) return res.status(400).json({ success: false, error: 'No API key to test.' });
-    const modelToTest = (req.body.groq_model || globalSettings.groq_model || 'openai/gpt-oss-120b').trim(); // BUG FIX: old default was a now-deprecated/dead Groq model
+    if (!keyToTest) return res.status(400).json({ success: false, error: 'No Groq API key to test.' });
+    const modelToTest = (req.body.groq_model || globalSettings.groq_model || 'openai/gpt-oss-120b').trim();
     const testRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+keyToTest },
@@ -3759,7 +3977,7 @@ app.post('/api/admin/ai-settings/test', verifyAdmin, async (req, res) => {
     if (!testRes.ok) { const e=await testRes.text(); return res.json({ success:false, error:`API returned ${testRes.status}: ${e.slice(0,150)}` }); }
     const data = await testRes.json();
     const reply = data.choices?.[0]?.message?.content || '';
-    res.json({ success: true, message: `✅ API key works! Model "${modelToTest}" responded: "${reply.slice(0,50)}"` });
+    res.json({ success: true, message: `✅ Groq key works! Model "${modelToTest}" responded: "${reply.slice(0,50)}"` });
   } catch(e) { res.json({ success: false, error: 'Connection error: ' + e.message }); }
 });
 

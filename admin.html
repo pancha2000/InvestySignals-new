@@ -797,114 +797,155 @@
                 </div>
 
                 <!-- ═══════════════════════════════════════════════════ -->
-                <!-- AI SETTINGS PANEL                                   -->
+                <!-- AI SETTINGS PANEL — multi-provider, each independently ON/OFF -->
                 <!-- ═══════════════════════════════════════════════════ -->
                 <div class="data-panel" style="margin-top:20px;">
                     <div class="panel-header">
                         <div class="panel-title">🤖 AI Analysis Settings</div>
-                        <div style="font-size:0.75rem;color:var(--text-muted);">Groq AI API configuration for deep analysis</div>
+                        <div style="font-size:0.75rem;color:var(--text-muted);">Multiple AI providers — toggle each on/off. Tried in order top-to-bottom; if one fails (rate limit, outage, deprecated model), the next enabled one is used automatically.</div>
                     </div>
-                    <div style="padding:20px;display:flex;flex-direction:column;gap:16px;">
+                    <div style="padding:20px;display:flex;flex-direction:column;gap:20px;">
 
-                        <!-- API Key -->
-                        <div>
-                            <label style="font-size:0.8rem;font-weight:600;color:var(--text-sub);display:block;margin-bottom:6px;">
-                                🔑 Groq API Key
-                            </label>
-                            <div style="display:flex;gap:8px;">
-                                <input type="password" id="aiApiKeyInput" class="input-control"
-                                    placeholder="gsk_••••••••••••••••••••••••••"
-                                    style="flex:1;font-family:'JetBrains Mono',monospace;font-size:0.82rem;">
-                                <button onclick="toggleApiKeyVisibility()" class="btn" id="aiKeyToggleBtn"
-                                    style="padding:0 12px;background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--radius-sm);cursor:pointer;font-size:0.75rem;color:var(--text-sub);">
-                                    👁 Show
+                        <!-- ── GEMINI (primary) ───────────────────────── -->
+                        <div style="border:1px solid var(--border-soft);border-radius:var(--radius-sm);padding:14px;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                                <div style="font-weight:700;font-size:0.9rem;">✨ Gemini <span style="font-weight:400;color:var(--text-muted);font-size:0.75rem;">(recommended primary — 250K TPM free)</span></div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="geminiEnabledToggle" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div id="geminiFields">
+                                <label style="font-size:0.78rem;font-weight:600;color:var(--text-sub);display:block;margin-bottom:6px;">🔑 API Key</label>
+                                <div style="display:flex;gap:8px;">
+                                    <input type="password" id="geminiApiKeyInput" class="input-control"
+                                        placeholder="AIza••••••••••••••••••••••••••"
+                                        style="flex:1;font-family:'JetBrains Mono',monospace;font-size:0.82rem;">
+                                    <button onclick="clearProviderKey('gemini')" class="btn" id="geminiClearBtn"
+                                        style="padding:0 12px;background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--radius-sm);cursor:pointer;font-size:0.75rem;color:var(--text-muted);">
+                                        🗑 Clear
+                                    </button>
+                                </div>
+                                <div id="geminiKeyCurrentDisplay" style="margin-top:6px;font-size:0.72rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace;"></div>
+                                <div style="margin-top:4px;margin-bottom:10px;font-size:0.7rem;color:var(--text-muted);">
+                                    Free key (no card) at <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--gold);">aistudio.google.com/apikey</a>
+                                </div>
+                                <label style="font-size:0.78rem;font-weight:600;color:var(--text-sub);display:block;margin-bottom:6px;">🧠 Model</label>
+                                <select id="geminiModelSelect" class="input-control" style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;">
+                                    <option value="gemini-2.5-flash">gemini-2.5-flash ⭐ (Recommended — 250K TPM free)</option>
+                                    <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (Faster/lighter)</option>
+                                    <option value="gemini-3-flash-preview">gemini-3-flash-preview (Newest — preview, less stable)</option>
+                                </select>
+                                <div style="margin-top:4px;font-size:0.7rem;color:var(--text-muted);">
+                                    ⚠️ Google retires models frequently (faster than Groq in 2026) — gemini-2.5-flash's known retirement is Oct 16, 2026. If Save/Test starts failing with a "model not found" error, check <a href="https://ai.google.dev/gemini-api/docs/models" target="_blank" style="color:var(--gold);">ai.google.dev/gemini-api/docs/models</a>.
+                                </div>
+                                <button onclick="testProviderKey('gemini')" class="btn" id="geminiTestBtn"
+                                    style="margin-top:10px;width:100%;background:var(--surface);border:1px solid var(--border-soft);color:var(--text);">
+                                    🧪 Test Gemini Key
                                 </button>
                             </div>
-                            <div id="aiKeyCurrentDisplay" style="margin-top:6px;font-size:0.72rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace;"></div>
-                            <div style="margin-top:4px;font-size:0.7rem;color:var(--text-muted);">
-                                Get your key at <a href="https://console.groq.com" target="_blank" style="color:var(--gold);">console.groq.com</a>
-                                · Leave empty to use server .env key
+                        </div>
+
+                        <!-- ── CEREBRAS (secondary) ───────────────────── -->
+                        <div style="border:1px solid var(--border-soft);border-radius:var(--radius-sm);padding:14px;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                                <div style="font-weight:700;font-size:0.9rem;">🌩️ Cerebras <span style="font-weight:400;color:var(--text-muted);font-size:0.75rem;">(secondary — used if Gemini fails)</span></div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="cerebrasEnabledToggle" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div id="cerebrasFields">
+                                <label style="font-size:0.78rem;font-weight:600;color:var(--text-sub);display:block;margin-bottom:6px;">🔑 API Key</label>
+                                <div style="display:flex;gap:8px;">
+                                    <input type="password" id="cerebrasApiKeyInput" class="input-control"
+                                        placeholder="csk-••••••••••••••••••••••••••"
+                                        style="flex:1;font-family:'JetBrains Mono',monospace;font-size:0.82rem;">
+                                    <button onclick="clearProviderKey('cerebras')" class="btn" id="cerebrasClearBtn"
+                                        style="padding:0 12px;background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--radius-sm);cursor:pointer;font-size:0.75rem;color:var(--text-muted);">
+                                        🗑 Clear
+                                    </button>
+                                </div>
+                                <div id="cerebrasKeyCurrentDisplay" style="margin-top:6px;font-size:0.72rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace;"></div>
+                                <div style="margin-top:4px;font-size:0.7rem;color:var(--text-muted);">
+                                    Serves openai/gpt-oss-120b, ~30-60K TPM + 1M tokens/day free. Free key (no card) at <a href="https://cloud.cerebras.ai" target="_blank" style="color:var(--gold);">cloud.cerebras.ai</a>.
+                                </div>
+                                <button onclick="testProviderKey('cerebras')" class="btn" id="cerebrasTestBtn"
+                                    style="margin-top:10px;width:100%;background:var(--surface);border:1px solid var(--border-soft);color:var(--text);">
+                                    🧪 Test Cerebras Key
+                                </button>
                             </div>
                         </div>
 
-                        <!-- Model Select -->
-                        <div>
-                            <label style="font-size:0.8rem;font-weight:600;color:var(--text-sub);display:block;margin-bottom:6px;">
-                                🧠 AI Model
-                            </label>
-                            <select id="aiModelSelect" class="input-control" style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;">
-                                <!-- BUG FIX: the old list (llama-3.3-70b-versatile, llama-3.1-8b-instant, llama3-70b-8192, llama3-8b-8192, mixtral-8x7b-32768, gemma2-9b-it) were ALL deprecated/shut down by Groq — that's why saving kept failing with a 404. Replaced with Groq's current active models (Aug 2026). -->
-                                <option value="openai/gpt-oss-120b">openai/gpt-oss-120b ⭐ (Recommended)</option>
-                                <option value="openai/gpt-oss-20b">openai/gpt-oss-20b (Fast)</option>
-                                <option value="qwen/qwen3.6-27b">qwen/qwen3.6-27b (Multimodal/Agentic)</option>
-                            </select>
-                            <div style="margin-top:4px;font-size:0.7rem;color:var(--text-muted);">
-                                Larger models = better analysis quality · Smaller models = faster response · Groq periodically deprecates older models — if Save/Test ever starts failing with a 404 "model does not exist" error, check <a href="https://console.groq.com/docs/models" target="_blank" style="color:var(--gold);">console.groq.com/docs/models</a> for the current list.
+                        <!-- ── GROQ (tertiary, off by default) ────────── -->
+                        <div style="border:1px solid var(--border-soft);border-radius:var(--radius-sm);padding:14px;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                                <div style="font-weight:700;font-size:0.9rem;">⚡ Groq <span style="font-weight:400;color:var(--text-muted);font-size:0.75rem;">(off by default — turn on if you want it as a 3rd fallback)</span></div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="groqEnabledToggle">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div id="groqFields">
+                                <label style="font-size:0.78rem;font-weight:600;color:var(--text-sub);display:block;margin-bottom:6px;">🔑 API Key</label>
+                                <div style="display:flex;gap:8px;">
+                                    <input type="password" id="groqApiKeyInput" class="input-control"
+                                        placeholder="gsk_••••••••••••••••••••••••••"
+                                        style="flex:1;font-family:'JetBrains Mono',monospace;font-size:0.82rem;">
+                                    <button onclick="clearProviderKey('groq')" class="btn" id="groqClearBtn"
+                                        style="padding:0 12px;background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--radius-sm);cursor:pointer;font-size:0.75rem;color:var(--text-muted);">
+                                        🗑 Clear
+                                    </button>
+                                </div>
+                                <div id="groqKeyCurrentDisplay" style="margin-top:6px;font-size:0.72rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace;"></div>
+                                <div style="margin-top:4px;margin-bottom:10px;font-size:0.7rem;color:var(--text-muted);">
+                                    Get your key at <a href="https://console.groq.com" target="_blank" style="color:var(--gold);">console.groq.com</a>
+                                </div>
+                                <label style="font-size:0.78rem;font-weight:600;color:var(--text-sub);display:block;margin-bottom:6px;">🧠 Model</label>
+                                <select id="groqModelSelect" class="input-control" style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;">
+                                    <option value="openai/gpt-oss-120b">openai/gpt-oss-120b ⭐ (Recommended)</option>
+                                    <option value="openai/gpt-oss-20b">openai/gpt-oss-20b (Fast)</option>
+                                    <option value="qwen/qwen3.6-27b">qwen/qwen3.6-27b (Multimodal/Agentic)</option>
+                                </select>
+                                <div style="margin-top:4px;font-size:0.7rem;color:var(--text-muted);">
+                                    ⚠️ Groq periodically deprecates older models (llama-3.3-70b-versatile was shut down Aug 16, 2026). If Save/Test fails with "model does not exist", check <a href="https://console.groq.com/docs/models" target="_blank" style="color:var(--gold);">console.groq.com/docs/models</a>.
+                                </div>
+                                <button onclick="testProviderKey('groq')" class="btn" id="groqTestBtn"
+                                    style="margin-top:10px;width:100%;background:var(--surface);border:1px solid var(--border-soft);color:var(--text);">
+                                    🧪 Test Groq Key
+                                </button>
                             </div>
                         </div>
 
-                        <!-- Max Tokens + Temperature -->
+                        <!-- Shared Max Tokens + Temperature (applies to whichever provider ends up being used) -->
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                             <div>
                                 <label style="font-size:0.8rem;font-weight:600;color:var(--text-sub);display:block;margin-bottom:6px;">
                                     📊 Max Tokens
                                 </label>
                                 <input type="number" id="aiMaxTokensInput" class="input-control"
-                                    value="1500" min="100" max="8000" step="100"
+                                    value="2000" min="100" max="8000" step="100"
                                     style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;">
-                                <div style="margin-top:4px;font-size:0.7rem;color:var(--text-muted);">100 – 8000 (1500 recommended)</div>
+                                <div style="margin-top:4px;font-size:0.7rem;color:var(--text-muted);">100 – 8000 (2000 recommended)</div>
                             </div>
                             <div>
                                 <label style="font-size:0.8rem;font-weight:600;color:var(--text-sub);display:block;margin-bottom:6px;">
                                     🌡️ Temperature
                                 </label>
                                 <input type="number" id="aiTempInput" class="input-control"
-                                    value="0.2" min="0" max="2" step="0.1"
+                                    value="0" min="0" max="2" step="0.1"
                                     style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;">
-                                <div style="margin-top:4px;font-size:0.7rem;color:var(--text-muted);">0.0 = precise · 1.0 = creative</div>
-                            </div>
-                        </div>
-
-                        <!-- NEW: optional Cerebras fallback — same gpt-oss-120b model, much
-                             higher free-tier TPM ceiling than Groq. Used automatically only
-                             when Groq returns a 429 rate-limit error. -->
-                        <div style="border-top:1px dashed var(--border-soft);padding-top:14px;">
-                            <label style="font-size:0.8rem;font-weight:600;color:var(--text-sub);display:block;margin-bottom:6px;">
-                                🌩️ Cerebras Fallback Key (optional)
-                            </label>
-                            <div style="display:flex;gap:8px;">
-                                <input type="password" id="cerebrasApiKeyInput" class="input-control"
-                                    placeholder="csk-••••••••••••••••••••••••••"
-                                    style="flex:1;font-family:'JetBrains Mono',monospace;font-size:0.82rem;">
-                                <button onclick="clearCerebrasKey()" class="btn" id="cerebrasClearBtn"
-                                    style="padding:0 12px;background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--radius-sm);cursor:pointer;font-size:0.75rem;color:var(--text-muted);">
-                                    🗑 Clear
-                                </button>
-                            </div>
-                            <div id="cerebrasKeyCurrentDisplay" style="margin-top:6px;font-size:0.72rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace;"></div>
-                            <div style="margin-top:4px;font-size:0.7rem;color:var(--text-muted);">
-                                When Groq hits a rate limit (429), analysis automatically retries on Cerebras instead of failing. Same model, separate free quota. Get a free key (no card) at <a href="https://cloud.cerebras.ai" target="_blank" style="color:var(--gold);">cloud.cerebras.ai</a>.
+                                <div style="margin-top:4px;font-size:0.7rem;color:var(--text-muted);">0.0 = precise/deterministic · 1.0 = creative</div>
                             </div>
                         </div>
 
                         <!-- Result message -->
                         <div id="aiSettingsMsg" style="display:none;padding:10px 14px;border-radius:var(--radius-sm);font-size:0.82rem;font-weight:600;"></div>
 
-                        <!-- Buttons -->
-                        <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                            <button onclick="saveAiSettings()" class="btn btn-gold" style="flex:1;min-width:120px;">
-                                💾 Save Settings
-                            </button>
-                            <button onclick="testAiKey()" class="btn" id="aiTestBtn"
-                                style="flex:1;min-width:120px;background:var(--surface);border:1px solid var(--border-soft);color:var(--text);">
-                                🧪 Test API Key
-                            </button>
-                            <!-- NEW: previously there was no way to actually clear a saved key — leaving the field empty and clicking Save silently did nothing (see saveAiSettings/clearAiKey). -->
-                            <button onclick="clearAiKey()" class="btn" id="aiClearBtn"
-                                style="min-width:100px;background:var(--surface);border:1px solid var(--border-soft);color:var(--text-muted);">
-                                🗑 Clear Key
-                            </button>
-                        </div>
+                        <!-- Save (applies all provider toggles/keys/models at once) -->
+                        <button onclick="saveAiSettings()" class="btn btn-gold" style="width:100%;">
+                            💾 Save All AI Settings
+                        </button>
 
                     </div>
                 </div>
@@ -1468,38 +1509,40 @@ window.adminSignOut = async function() {
             }).then(r => r.json()).catch(() => ({ success: false }));
             if (aiR.success && aiR.settings) {
                 const s = aiR.settings;
-                // Show masked key
-                const keyDisplay = document.getElementById('aiKeyCurrentDisplay');
-                if (keyDisplay) keyDisplay.textContent = 'Current: ' + (s.groq_api_key_masked || '(using .env key)');
-                // NEW: hide the Clear button when there's nothing saved to clear
-                const clearBtn = document.getElementById('aiClearBtn');
-                if (clearBtn) clearBtn.style.display = s.groq_api_key_set ? '' : 'none';
-                // NEW: Cerebras fallback key display
+
+                // ── Toggles ──
+                const geminiToggle = document.getElementById('geminiEnabledToggle');
+                if (geminiToggle) geminiToggle.checked = !!s.gemini_enabled;
+                const cerebrasToggle = document.getElementById('cerebrasEnabledToggle');
+                if (cerebrasToggle) cerebrasToggle.checked = !!s.cerebras_enabled;
+                const groqToggle = document.getElementById('groqEnabledToggle');
+                if (groqToggle) groqToggle.checked = !!s.groq_enabled;
+
+                // ── Gemini ──
+                const geminiKeyDisplay = document.getElementById('geminiKeyCurrentDisplay');
+                if (geminiKeyDisplay) geminiKeyDisplay.textContent = 'Current: ' + (s.gemini_api_key_masked || '(not set)');
+                const geminiClearBtn = document.getElementById('geminiClearBtn');
+                if (geminiClearBtn) geminiClearBtn.style.display = s.gemini_api_key_set ? '' : 'none';
+                setModelIfExists('geminiModelSelect', s.gemini_model, 'Gemini');
+
+                // ── Cerebras ──
                 const cerebrasDisplay = document.getElementById('cerebrasKeyCurrentDisplay');
                 if (cerebrasDisplay) cerebrasDisplay.textContent = 'Current: ' + (s.cerebras_api_key_masked || '(not set)');
                 const cerebrasClearBtn = document.getElementById('cerebrasClearBtn');
                 if (cerebrasClearBtn) cerebrasClearBtn.style.display = s.cerebras_api_key_set ? '' : 'none';
-                // Set model
-                const modelSel = document.getElementById('aiModelSelect');
-                if (modelSel && s.groq_model) {
-                    const matchExists = Array.from(modelSel.options).some(o => o.value === s.groq_model);
-                    if (matchExists) {
-                        modelSel.value = s.groq_model;
-                    } else {
-                        // NEW: the saved model isn't in the current dropdown — almost
-                        // always because Groq deprecated it (exactly what happened with
-                        // llama-3.3-70b-versatile). Surface this instead of silently
-                        // falling back, so the admin knows WHY analysis is failing and
-                        // that they need to re-save with a current model.
-                        showAiMsg(`⚠️ Saved model "${s.groq_model}" is no longer in the available list — Groq likely deprecated it. Pick a current model below and click Save.`, true);
-                    }
-                }
-                // Set tokens
+
+                // ── Groq ──
+                const groqKeyDisplay = document.getElementById('groqKeyCurrentDisplay');
+                if (groqKeyDisplay) groqKeyDisplay.textContent = 'Current: ' + (s.groq_api_key_masked || '(not set)');
+                const groqClearBtn = document.getElementById('groqClearBtn');
+                if (groqClearBtn) groqClearBtn.style.display = s.groq_api_key_set ? '' : 'none';
+                setModelIfExists('groqModelSelect', s.groq_model, 'Groq');
+
+                // ── Shared tokens/temperature ──
                 const tokInput = document.getElementById('aiMaxTokensInput');
-                if (tokInput && s.groq_max_tokens) tokInput.value = s.groq_max_tokens;
-                // Set temperature
+                if (tokInput && s.gemini_max_tokens) tokInput.value = s.gemini_max_tokens;
                 const tempInput = document.getElementById('aiTempInput');
-                if (tempInput && s.groq_temperature !== undefined) tempInput.value = s.groq_temperature;
+                if (tempInput && s.gemini_temperature !== undefined) tempInput.value = s.gemini_temperature;
             }
         } catch(_) {}
 
@@ -1773,15 +1816,21 @@ window.adminSignOut = async function() {
 
     // ── Settings Toggles (Maintenance, Engine, Registrations) ──
     // FIX: maintToggle had no event listener — wires all three toggles to API
-    // ── AI Settings Functions ──────────────────────────────────
-    let _aiKeyVisible = false;
-    function toggleApiKeyVisibility() {
-        _aiKeyVisible = !_aiKeyVisible;
-        const inp = document.getElementById('aiApiKeyInput');
-        const btn = document.getElementById('aiKeyToggleBtn');
-        if (!inp || !btn) return;
-        inp.type = _aiKeyVisible ? 'text' : 'password';
-        btn.textContent = _aiKeyVisible ? '🙈 Hide' : '👁 Show';
+    // ── AI Settings Functions (multi-provider: Gemini / Cerebras / Groq) ──
+    // NEW: shared helper — the saved model isn't in the current dropdown
+    // means the provider almost certainly deprecated it (exactly what
+    // happened with Groq's llama-3.3-70b-versatile). Surface this instead
+    // of silently falling back, so the admin knows WHY analysis is
+    // failing and that they need to re-save with a current model.
+    function setModelIfExists(selectId, savedModel, providerLabel) {
+        const sel = document.getElementById(selectId);
+        if (!sel || !savedModel) return;
+        const matchExists = Array.from(sel.options).some(o => o.value === savedModel);
+        if (matchExists) {
+            sel.value = savedModel;
+        } else {
+            showAiMsg(`⚠️ Saved ${providerLabel} model "${savedModel}" is no longer in the available list — likely deprecated. Pick a current model and click Save.`, true);
+        }
     }
 
     function showAiMsg(msg, isError) {
@@ -1796,15 +1845,24 @@ window.adminSignOut = async function() {
     }
 
     async function saveAiSettings() {
-        const key      = document.getElementById('aiApiKeyInput')?.value.trim();
-        const model    = document.getElementById('aiModelSelect')?.value;
-        const maxTok   = parseInt(document.getElementById('aiMaxTokensInput')?.value);
-        const temp     = parseFloat(document.getElementById('aiTempInput')?.value);
-        const cerebrasKey = document.getElementById('cerebrasApiKeyInput')?.value.trim(); // NEW
-
-        const body = { groq_model: model, groq_max_tokens: maxTok, groq_temperature: temp };
-        if (key) body.groq_api_key = key; // only send if user typed something — leaving it blank means "don't touch the saved key"; use the 🗑 Clear Key button to actually remove it
-        if (cerebrasKey) body.cerebras_api_key = cerebrasKey; // NEW — same "only send if typed" rule as the Groq key
+        const body = {
+            gemini_enabled:   document.getElementById('geminiEnabledToggle')?.checked,
+            cerebras_enabled: document.getElementById('cerebrasEnabledToggle')?.checked,
+            groq_enabled:     document.getElementById('groqEnabledToggle')?.checked,
+            gemini_model:     document.getElementById('geminiModelSelect')?.value,
+            groq_model:       document.getElementById('groqModelSelect')?.value,
+            gemini_max_tokens: parseInt(document.getElementById('aiMaxTokensInput')?.value),
+            gemini_temperature: parseFloat(document.getElementById('aiTempInput')?.value),
+        };
+        // Keys — only send if the admin actually typed something; an empty
+        // field means "don't touch the saved key" (use the 🗑 Clear button
+        // for that instead — see clearProviderKey()).
+        const geminiKey = document.getElementById('geminiApiKeyInput')?.value.trim();
+        if (geminiKey) body.gemini_api_key = geminiKey;
+        const cerebrasKey = document.getElementById('cerebrasApiKeyInput')?.value.trim();
+        if (cerebrasKey) body.cerebras_api_key = cerebrasKey;
+        const groqKey = document.getElementById('groqApiKeyInput')?.value.trim();
+        if (groqKey) body.groq_api_key = groqKey;
 
         try {
             const idToken = await getToken();
@@ -1816,13 +1874,12 @@ window.adminSignOut = async function() {
             const j = await res.json();
             if (j.success) {
                 showAiMsg('✅ AI settings saved! Updated: ' + (j.updated || []).join(', '), false);
-                // Reload to show new masked key
-                await loadAdminStats();
-                // Clear API key inputs after save
-                const keyInp = document.getElementById('aiApiKeyInput');
-                if (keyInp) keyInp.value = '';
-                const cerebrasInp = document.getElementById('cerebrasApiKeyInput'); // NEW
-                if (cerebrasInp) cerebrasInp.value = '';
+                await loadAdminStats(); // reload to show new masked keys
+                // Clear all key inputs after save (masked display takes over)
+                ['geminiApiKeyInput','cerebrasApiKeyInput','groqApiKeyInput'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.value = '';
+                });
             } else {
                 showAiMsg('❌ ' + (j.error || 'Save failed'), true);
             }
@@ -1831,49 +1888,24 @@ window.adminSignOut = async function() {
         }
     }
 
-    // NEW: BUG FIX companion to the above — previously there was no way
-    // to actually clear a saved key (see saveAiSettings' comment). This
-    // sends an explicit, unambiguous clear action instead of relying on
-    // an empty field, which the backend used to (and still does, by
-    // design) treat as "unchanged".
-    async function clearAiKey() {
-        if (!confirm('Clear the saved Groq API key and revert to the server .env key?')) return;
+    // NEW: explicit clear action per provider — previously there was no
+    // way to actually clear a saved key (an empty field meant "leave
+    // unchanged"). provider is 'gemini' | 'cerebras' | 'groq'.
+    async function clearProviderKey(provider) {
+        const labels = { gemini: 'Gemini', cerebras: 'Cerebras', groq: 'Groq' };
+        if (!confirm(`Clear the saved ${labels[provider]} API key?`)) return;
         try {
             const idToken = await getToken();
             const res = await fetch('/api/admin/ai-settings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
-                body: JSON.stringify({ groq_api_key_clear: true })
+                body: JSON.stringify({ [provider + '_api_key_clear']: true })
             });
             const j = await res.json();
             if (j.success) {
-                showAiMsg('✅ Saved key cleared — now using the server .env key.', false);
+                showAiMsg(`✅ ${labels[provider]} key cleared.`, false);
                 await loadAdminStats();
-                const keyInp = document.getElementById('aiApiKeyInput');
-                if (keyInp) keyInp.value = '';
-            } else {
-                showAiMsg('❌ ' + (j.error || 'Clear failed'), true);
-            }
-        } catch(e) {
-            showAiMsg('❌ Network error: ' + e.message, true);
-        }
-    }
-
-    // NEW: same pattern as clearAiKey(), for the optional Cerebras fallback key
-    async function clearCerebrasKey() {
-        if (!confirm('Clear the saved Cerebras fallback key? Groq rate limits will no longer auto-fallback.')) return;
-        try {
-            const idToken = await getToken();
-            const res = await fetch('/api/admin/ai-settings', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
-                body: JSON.stringify({ cerebras_api_key_clear: true })
-            });
-            const j = await res.json();
-            if (j.success) {
-                showAiMsg('✅ Cerebras fallback key cleared.', false);
-                await loadAdminStats();
-                const inp = document.getElementById('cerebrasApiKeyInput');
+                const inp = document.getElementById(provider + 'ApiKeyInput');
                 if (inp) inp.value = '';
             } else {
                 showAiMsg('❌ ' + (j.error || 'Clear failed'), true);
@@ -1883,15 +1915,18 @@ window.adminSignOut = async function() {
         }
     }
 
-    async function testAiKey() {
-        const btn  = document.getElementById('aiTestBtn');
-        const key  = document.getElementById('aiApiKeyInput')?.value.trim();
-        const model= document.getElementById('aiModelSelect')?.value;
-        if (btn) { btn.textContent = '⏳ Testing...'; btn.disabled = true; }
+    // NEW: test a specific provider's key — provider is 'gemini' | 'cerebras' | 'groq'
+    async function testProviderKey(provider) {
+        const btn = document.getElementById(provider + 'TestBtn');
+        const key = document.getElementById(provider + 'ApiKeyInput')?.value.trim();
+        const modelField = provider === 'gemini' ? 'gemini_model' : provider === 'groq' ? 'groq_model' : null;
+        const modelSelId = provider === 'gemini' ? 'geminiModelSelect' : provider === 'groq' ? 'groqModelSelect' : null;
+        if (btn) { btn.dataset.orig = btn.textContent; btn.textContent = '⏳ Testing...'; btn.disabled = true; }
         try {
             const idToken = await getToken();
-            const body = { groq_model: model };
-            if (key) body.groq_api_key = key;
+            const body = { provider };
+            if (key) body[provider + '_api_key'] = key;
+            if (modelField && modelSelId) body[modelField] = document.getElementById(modelSelId)?.value;
             const res = await fetch('/api/admin/ai-settings/test', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
@@ -1906,7 +1941,7 @@ window.adminSignOut = async function() {
         } catch(e) {
             showAiMsg('❌ ' + e.message, true);
         } finally {
-            if (btn) { btn.textContent = '🧪 Test API Key'; btn.disabled = false; }
+            if (btn) { btn.textContent = btn.dataset.orig || '🧪 Test'; btn.disabled = false; }
         }
     }
     // ─────────────────────────────────────────────────────────
