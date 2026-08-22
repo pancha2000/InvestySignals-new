@@ -2447,6 +2447,22 @@ Respond with ONLY this JSON (no markdown, no explanation):
       const timeout = setTimeout(() => ctrl.abort(), 60000); // 60s — inference can be slow under load
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+        // BUG FIX: Gemini 3.x (and 2.5) are "thinking" models by default —
+        // they can spend a chunk of the token budget on internal reasoning
+        // before writing the actual answer, and that reasoning shows up as
+        // separate "thought" parts in content.parts BEFORE the real answer
+        // part. This is exactly why gemini-3-flash-preview kept returning
+        // "invalid response (expected JSON object)": the old code below
+        // only ever read parts[0].text, which for a thinking model is
+        // often the thought summary (or empty), not the JSON. Two fixes:
+        //  1. thinkingConfig turned down to the minimum for each model
+        //     family, so the token budget goes to the actual JSON answer
+        //     instead of reasoning text we never use anyway.
+        //  2. Text extraction now concatenates every non-thought part
+        //     instead of blindly trusting parts[0].
+        const thinkingConfig = model.startsWith('gemini-3')
+          ? { thinkingLevel: 'low' }   // Gemini 3.x family uses thinkingLevel (low/medium/high)
+          : { thinkingBudget: 0 };      // Gemini 2.5 family uses a numeric token budget — 0 disables it
         const r = await fetch(url, {
           method: 'POST',
           signal: ctrl.signal,
@@ -2457,6 +2473,7 @@ Respond with ONLY this JSON (no markdown, no explanation):
               maxOutputTokens: AI_MAX_TOKENS,
               temperature: AI_TEMPERATURE,
               responseMimeType: 'application/json', // Gemini-native JSON mode — more reliable than prompt-only instructions
+              thinkingConfig,
             },
           }),
         });
@@ -2468,7 +2485,19 @@ Respond with ONLY this JSON (no markdown, no explanation):
           throw err;
         }
         const data = await r.json();
-        return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const parts = data.candidates?.[0]?.content?.parts || [];
+        // BUG FIX: concatenate every non-thought part instead of trusting
+        // parts[0] — see the comment above thinkingConfig for why.
+        const text = parts.filter(p => !p.thought && p.text).map(p => p.text).join('');
+        if (!text) {
+          const finishReason = data.candidates?.[0]?.finishReason;
+          // Common case worth naming explicitly: MAX_TOKENS means the model
+          // ran out of budget (often mid-thought on a thinking model)
+          // before writing any real answer — surfaced clearly instead of
+          // a generic "empty response" the caller can't act on.
+          throw new Error(`Gemini returned no usable text (finishReason: ${finishReason || 'unknown'})`);
+        }
+        return text;
       } catch (fetchErr) {
         if (fetchErr.name === 'AbortError') throw new Error('Gemini AI timed out (>60s) — server is overloaded. Please try again in a moment.');
         throw fetchErr;
@@ -2997,7 +3026,17 @@ Respond with ONLY this JSON (no markdown, no explanation):
         fibonacci:    { h4: h4Fib, d1: d1Fib },
         openInterest: oiData,
       },
+      // NEW: EXPORT — the exact same prompt text (every indicator value,
+      // ICT reading, funding/OI context, market memory summary — literally
+      // everything) that was sent to the AI provider for this analysis.
+      // Purely additive: does not change how this route behaves, does not
+      // affect grade/score/entry/SL/TP in any way. Lets a user download
+      // this and hand it to any OTHER AI (ChatGPT, Claude, etc.) they
+      // want a second opinion from, using the exact same underlying data
+      // this platform already gathered.
+      aiContextExport: prompt,
     });
+
 
   } catch(err) {
     console.error('/api/deep-analysis error:', err.message);

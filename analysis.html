@@ -1482,8 +1482,13 @@ function renderFullAnalysis(data, container) {
 
     `<div id="ptPanelWrap"></div>` +
 
+    `<button onclick="exportAiContextData('${(data.coin||'').toUpperCase()}')" class="btn"
+        style="width:100%;margin-top:10px;background:var(--surface);border:1px solid var(--border-soft);color:var(--text-sub);padding:10px;border-radius:var(--radius-sm);cursor:pointer;font-size:0.78rem;">
+        📤 Export Analysis Data (use with any other AI — ChatGPT, Claude, etc.)
+    </button>` +
+
     `<div style="font-size:0.65rem;color:var(--text-dim);text-align:center;padding-top:4px;">
-        Powered by Groq AI · Real Binance Futures Data · ${new Date().toLocaleTimeString()}
+        AI-Powered Analysis · Real Binance Futures Data · ${new Date().toLocaleTimeString()}
     </div>`;
 
     container.innerHTML = html;
@@ -1520,6 +1525,42 @@ function openChartWithAnalysis(coin) {
   } catch (e) { /* storage full/unavailable — chart still works, just without the AI report panel */ }
   window.location.href = 'chart.html?symbol=' + symbol;
 }
+
+// NEW: downloads the EXACT same context text (every indicator value, ICT
+// reading, funding/OI context, market memory summary) that this platform
+// sent to its own AI provider for the most recent analysis. Purely
+// additive — reads data already present in the last analysis response
+// (ptCurrentData), makes zero calls of its own, and changes nothing about
+// how analysis/scoring/entries work here. Lets anyone take this file and
+// get a second opinion from any other AI they prefer.
+function exportAiContextData(coin) {
+  if (!ptCurrentData || !ptCurrentData.aiContextExport) {
+    alert('Run a Deep Analysis first — there\'s no analysis data to export yet.');
+    return;
+  }
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `${coin || 'analysis'}_ai_data_${ts}.txt`;
+  const header =
+`════════════════════════════════════════════════════════════════
+This is the exact data InvestySignals sent to its AI for this
+analysis — every indicator, structure reading, and context value.
+Paste this into ChatGPT, Claude, or any other AI to get a second
+opinion, ask follow-up questions, or explore different entries.
+Generated: ${new Date().toLocaleString()}
+════════════════════════════════════════════════════════════════
+
+`;
+  const blob = new Blob([header + ptCurrentData.aiContextExport], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 let ptOrderType    = 'MARKET';
 let ptOpenTrades   = [];
 let ptBalance      = 0;
