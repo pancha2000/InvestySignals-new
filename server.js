@@ -2398,46 +2398,6 @@ Respond with ONLY this JSON (no markdown, no explanation):
   "overallBias": "LONG|SHORT|NEUTRAL",
   "summary": "2-3 sentence analysis",
   "warning": "risk warning or null",
-  "level1": {
-    "macroConclusion": "BULLISH|BEARISH|NEUTRAL",
-    "btcTrend": "text",
-    "fundingSignal": "text",
-    "oiSignal": "text — interpret: trend=${oiData?.trend||'N/A'} signal=${oiData?.signal||'N/A'}",
-    "adxContext": "text — D1 ADX=${d1ADX.adx}(${d1ADX.strength}), 4H ADX=${h4ADX.adx}(${h4ADX.strength}): trending or ranging?"
-  },
-  "level2": {
-    "structureConclusion": "BULLISH|BEARISH|NEUTRAL",
-    "dailyStructure": "text",
-    "dailyEMA": "text",
-    "h4Structure": "text",
-    "h4EMA": "text",
-    "h4Divergence": "text",
-    "keyLevels": "text",
-    "orderBlock": "text — reference nearest relevant OB from h4OBs/d1OBs",
-    "fvgZones": "text",
-    "fibLevels": "text — key Fib levels: 38.2=$${h4Fib?.f382||'N/A'}, 50=$${h4Fib?.f500||'N/A'}, 61.8=$${h4Fib?.f618||'N/A'}"
-  },
-  "level3": {
-    "momentumConclusion": "BULLISH|BEARISH|NEUTRAL",
-    "h1Structure": "text",
-    "h1EMA": "text",
-    "h1RSI": "text",
-    "h1Divergence": "text",
-    "macdSignal": "text",
-    "bollingerSignal": "text",
-    "volumeSignal": "text"
-  },
-  "level4": {
-    "entryConclusion": "CONFIRMED|AVOID|WAIT",
-    "m15Structure": "text",
-    "m15RSI": "text",
-    "m15Divergence": "text",
-    "macdCross": "text",
-    "candlePattern": "text",
-    "volumeConfirm": "text",
-    "fvgEntry": "text",
-    "sessionNote": "text"
-  },
   "level5": {
     "direction": "LONG|SHORT (NEVER NEUTRAL — always give best directional guess)",
     "entryZone": "$X.XX – $X.XX",
@@ -2669,6 +2629,67 @@ Respond with ONLY this JSON (no markdown, no explanation):
     if (!analysis || typeof analysis !== 'object') {
       throw new Error('AI returned invalid response after retry (expected JSON object). Please try again.');
     }
+
+    // ══════════════════════════════════════════════════════════════
+    // NEW: level1-4 built in JS from the SAME raw indicator values
+    // already computed above (RSI/MACD/EMA/structure/OB/FVG/Fib/ADX/
+    // funding/OI) instead of asking the AI to write ~30 prose fields
+    // describing them. Those fields were pure restatement — "4H
+    // structure shows bullish break of structure" instead of the
+    // h4Struct='BOS_BULLISH' value it was generated from — so asking
+    // the AI to write them out added no judgment, only output tokens
+    // (which is what was burning through the free-tier TPM limits so
+    // fast). The AI now only writes what genuinely needs judgment:
+    // grade, confluenceScore, overallBias, summary, warning, and
+    // level5 (entry/SL/TP). Field names/shape match exactly what
+    // analysis.html already reads — nothing on the frontend changes.
+    const fmtEMA = (arr) => arr && arr.length ? '$' + arr[arr.length - 1].toFixed(4) : 'N/A';
+    const fmtDiv = (d) => !d ? 'None' : (d.type || d);
+    const fmtOB = (ob) => !ob ? 'None' : `${ob.type} $${(ob.bodyLow ?? ob.low)}-$${(ob.bodyHigh ?? ob.high)}`;
+    const fmtOBList = (list) => !list || !list.length ? 'None' : list.map(o => `${o.type} $${o.bodyLow}-$${o.bodyHigh}`).join(' | ');
+    const fmtFVGList = (list) => !list || !list.length ? 'None' : list.map(f => `${f.type} $${f.low}-$${f.high}`).join(' | ');
+    const bullBear = (s) => (s || '').includes('BULL') ? 'BULLISH' : (s || '').includes('BEAR') ? 'BEARISH' : 'NEUTRAL';
+
+    analysis.level1 = {
+      macroConclusion: bullBear(btcTrend),
+      btcTrend: `BTC 4H trend is ${btcTrend.includes('BULL') ? 'bullish' : 'bearish'} (${btcTrend})`,
+      fundingSignal: `Funding rate ${fundingRate != null ? fundingRate.toFixed(4) + '%' : 'N/A'} — ${fundingBias}`,
+      oiSignal: `Open Interest trend=${oiData?.trend || 'N/A'}, signal=${oiData?.signal || 'N/A'}`,
+      adxContext: `D1 ADX=${d1ADX.adx} (${d1ADX.strength}, ${d1ADX.trend}) · 4H ADX=${h4ADX.adx} (${h4ADX.strength}, ${h4ADX.trend})`,
+    };
+    analysis.level2 = {
+      structureConclusion: bullBear(h4Struct),
+      dailyStructure: d1Struct,
+      dailyEMA: `EMA200=${fmtEMA(d1Ema200)} · price is ${price > d1Ema200[d1Ema200.length-1] ? 'above' : 'below'} it`,
+      h4Structure: h4Struct,
+      h4EMA: `20=${fmtEMA(h4Ema20)} · 50=${fmtEMA(h4Ema50)}`,
+      h4Divergence: fmtDiv(h4Div),
+      keyLevels: `4H S/R: ${h4SR.join(', ')} · 1D S/R: ${d1SR.join(', ')}`,
+      orderBlock: h4OBs.length ? fmtOBList(h4OBs) : fmtOB(h4OB),
+      fvgZones: fmtFVGList(h4FVGs),
+      fibLevels: h4Fib ? `38.2=$${h4Fib.f382} · 50=$${h4Fib.f500} · 61.8=$${h4Fib.f618}` : 'N/A',
+    };
+    analysis.level3 = {
+      momentumConclusion: bullBear(h1Struct),
+      h1Structure: h1Struct,
+      h1EMA: `20=${fmtEMA(h1Ema20)} · 50=${fmtEMA(h1Ema50)} · 200=${fmtEMA(h1Ema200)}`,
+      h1RSI: `${h1RSI}`,
+      h1Divergence: fmtDiv(h1Div),
+      macdSignal: `hist=${h1MACDv.histogram} (prev=${h1MACDv.prevHistogram}) — ${h1MACDv.histogram > 0 ? 'bullish' : 'bearish'}`,
+      bollingerSignal: `upper=$${h1BB.upper} mid=$${h1BB.middle} lower=$${h1BB.lower}`,
+      volumeSignal: h1Vol.spike ? `Volume spike (${h1Vol.ratio}x average)` : `Normal (${h1Vol.ratio}x average)`,
+    };
+    analysis.level4 = {
+      entryConclusion: analysis.overallBias === 'NEUTRAL' ? 'WAIT' : 'CONFIRMED',
+      m15Structure: m15Struct,
+      m15RSI: `${m15RSI}`,
+      m15Divergence: fmtDiv(m15Div),
+      macdCross: `hist=${m15MACDv.histogram}`,
+      candlePattern: m15CP.pattern,
+      volumeConfirm: m15Vol.spike ? `Volume spike (${m15Vol.ratio}x)` : `Normal (${m15Vol.ratio}x)`,
+      fvgEntry: fmtFVGList(m15FVGs),
+      sessionNote: ictData?.killZone?.inKillZone ? `Inside ${(ictData.killZone.activeZones || []).join(', ') || 'a'} kill zone` : 'Outside kill zone windows',
+    };
 
     // ── Enforce confluence threshold — NEUTRAL if score too low ────
     const finalScore = analysis.confluenceScore || 0;
